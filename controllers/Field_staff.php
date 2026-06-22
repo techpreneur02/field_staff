@@ -20,36 +20,15 @@ class Field_staff extends AdminController
     {
         $staff_id = $this->resolve_session_staff_id();
         $is_admin_user = function_exists('is_admin') ? (bool) is_admin() : false;
-        $can_view_global = function_exists('has_permission')
-            ? (bool) has_permission('field_staff', '', 'view')
-            : false;
 
-        $requested_scope = strtolower(trim((string) $this->input->get('scope', true)));
-        $requested_view = strtolower(trim((string) $this->input->get('view', true)));
-        $requested_staff_id = (int) $this->input->get('staff_id', true);
-        $requested_staff = (int) $this->input->get('staff', true);
-        $global_scope_requested = in_array($requested_scope, ['global', 'all'], true)
-            || in_array($requested_view, ['global', 'all'], true)
-            || ($requested_staff_id > 0 && $requested_staff_id !== $staff_id);
-
-        if ($requested_staff > 0 && $requested_staff !== $staff_id) {
-            $global_scope_requested = true;
-        }
-
-        if ($global_scope_requested && !($is_admin_user || $can_view_global)) {
-            access_denied('field_staff');
-        }
-
-        $can_access_all_rows = $is_admin_user || $can_view_global;
-
-        if ($can_access_all_rows) {
+        if ($is_admin_user) {
             $attendance_records = $this->field_staff_model->get_recent_attendance(20);
         } else {
             if ($staff_id <= 0) {
                 access_denied('field_staff');
             }
 
-            // Apply strict own-data boundary when global supervisor access is not granted.
+            // Enforce own-data boundary for all non-admin staff users.
             $attendance_records = $this->field_staff_model->get_recent_attendance_by_staff($staff_id, 20);
         }
 
