@@ -51,6 +51,11 @@ if (!defined('FS_MANAGER_SUPERVISOR_ROLE_IDS')) {
     define('FS_MANAGER_SUPERVISOR_ROLE_IDS', []);
 }
 
+if (!defined('FS_HR_PAYROLL_STAFF_IDS')) {
+    // Set explicit staff IDs allowed for Master Payroll HR and HR Management Workspace, for example: [1, 5, 9]
+    define('FS_HR_PAYROLL_STAFF_IDS', []);
+}
+
 if (function_exists('register_activation_hook')) {
     register_activation_hook('field_staff', 'field_staff_activation_hook');
 }
@@ -102,18 +107,32 @@ function field_staff_register_capabilities()
 
 function field_staff_can_manage_hr_workspace()
 {
-    $is_admin_user = function_exists('is_admin') ? (bool) is_admin() : false;
-    $can_view_global = function_exists('has_permission')
-        ? (bool) has_permission(FS_MODULE_NAME, '', 'view')
-        : false;
-    $can_edit = function_exists('has_permission')
-        ? (bool) has_permission(FS_MODULE_NAME, '', 'edit')
-        : false;
-    $can_create = function_exists('has_permission')
-        ? (bool) has_permission(FS_MODULE_NAME, '', 'create')
-        : false;
+    return field_staff_can_access_hr_payroll_workspace();
+}
 
-    return $is_admin_user || $can_view_global || $can_edit || $can_create || field_staff_is_manager_or_supervisor();
+function field_staff_can_access_hr_payroll_workspace()
+{
+    if (function_exists('is_admin') && (bool) is_admin()) {
+        return true;
+    }
+
+    $staff_id = 0;
+    if (function_exists('get_staff_user_id')) {
+        $staff_id = (int) get_staff_user_id();
+    }
+
+    if ($staff_id <= 0 && function_exists('get_instance')) {
+        $CI = &get_instance();
+        if ($CI && isset($CI->session)) {
+            $staff_id = (int) $CI->session->userdata('staff_user_id');
+        }
+    }
+
+    if ($staff_id <= 0) {
+        return false;
+    }
+
+    return in_array($staff_id, field_staff_get_hr_payroll_staff_ids(), true);
 }
 
 function field_staff_is_manager_or_supervisor()
@@ -199,6 +218,46 @@ function field_staff_get_manager_supervisor_role_ids()
     return $allowed_role_ids;
 }
 
+function field_staff_get_hr_payroll_staff_ids()
+{
+    $allowed_staff_ids = [];
+
+    if (function_exists('get_instance') && function_exists('db_prefix')) {
+        $CI = &get_instance();
+        if ($CI && isset($CI->db)) {
+            $settings_table = db_prefix() . 'fs_settings';
+            if ($CI->db->table_exists($settings_table)) {
+                $row = $CI->db
+                    ->select('setting_value')
+                    ->from($settings_table)
+                    ->where('setting_key', 'hr_payroll_staff_ids')
+                    ->limit(1)
+                    ->get()
+                    ->row_array();
+
+                $raw_value = is_array($row) && isset($row['setting_value']) ? trim((string) $row['setting_value']) : '';
+                if ($raw_value !== '') {
+                    foreach (preg_split('/[^0-9]+/', $raw_value) as $value) {
+                        if ($value !== '') {
+                            $allowed_staff_ids[] = (int) $value;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (empty($allowed_staff_ids) && defined('FS_HR_PAYROLL_STAFF_IDS') && is_array(FS_HR_PAYROLL_STAFF_IDS)) {
+        $allowed_staff_ids = array_map('intval', FS_HR_PAYROLL_STAFF_IDS);
+    }
+
+    $allowed_staff_ids = array_values(array_unique(array_filter($allowed_staff_ids, function ($value) {
+        return (int) $value > 0;
+    })));
+
+    return $allowed_staff_ids;
+}
+
 function field_staff_init_menu_items()
 {
     if (!function_exists('get_instance')) {
@@ -239,11 +298,13 @@ function field_staff_init_menu_items()
             'href' => field_staff_admin_url('field_staff/attendance'),
         ]);
 
-        $CI->app_menu->add_sidebar_children_item(FS_MODULE_NAME, [
-            'slug' => 'field_staff_payroll',
-            'name' => 'Master Payroll HR',
-            'href' => field_staff_admin_url('field_staff/payroll'),
-        ]);
+        if (field_staff_can_access_hr_payroll_workspace()) {
+            $CI->app_menu->add_sidebar_children_item(FS_MODULE_NAME, [
+                'slug' => 'field_staff_payroll',
+                'name' => 'Master Payroll HR',
+                'href' => field_staff_admin_url('field_staff/payroll'),
+            ]);
+        }
 
         if (field_staff_can_manage_hr_workspace()) {
             $CI->app_menu->add_sidebar_children_item(FS_MODULE_NAME, [
@@ -270,10 +331,12 @@ function field_staff_init_menu_items()
                 'href' => field_staff_admin_url('field_staff/attendance'),
             ]);
 
-            add_submenu_item(FS_MODULE_NAME, [
-                'name' => 'Master Payroll HR',
-                'href' => field_staff_admin_url('field_staff/payroll'),
-            ]);
+            if (field_staff_can_access_hr_payroll_workspace()) {
+                add_submenu_item(FS_MODULE_NAME, [
+                    'name' => 'Master Payroll HR',
+                    'href' => field_staff_admin_url('field_staff/payroll'),
+                ]);
+            }
 
             if (field_staff_can_manage_hr_workspace()) {
                 add_submenu_item(FS_MODULE_NAME, [

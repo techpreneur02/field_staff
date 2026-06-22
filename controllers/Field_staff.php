@@ -71,8 +71,8 @@ class Field_staff extends AdminController
         $can_manage_operations = $this->can_access_operations_tab();
         $can_manage_reporting = $this->can_access_reporting_tab();
         $can_manage_project_assignment = $this->can_access_project_assignment_tab();
-        $manager_supervisor_role_ids = $this->field_staff_model->get_manager_supervisor_role_ids();
-        $current_user_role_context = $this->get_current_user_role_context();
+        $hr_payroll_staff_ids = $this->field_staff_model->get_hr_payroll_staff_ids();
+        $current_user_staff_id = $this->resolve_session_staff_id();
 
         list($start_date, $end_date) = $this->resolve_filter_dates();
         $report_date = trim((string) $this->input->get('report_date', true));
@@ -133,11 +133,9 @@ class Field_staff extends AdminController
         $data['can_manage_operations'] = $can_manage_operations;
         $data['can_manage_reporting'] = $can_manage_reporting;
         $data['can_manage_project_assignment'] = $can_manage_project_assignment;
-        $data['can_manage_role_allowlist'] = $this->is_admin_user();
-        $data['manager_supervisor_role_ids'] = $manager_supervisor_role_ids;
-        $data['current_user_staff_id'] = isset($current_user_role_context['staff_id']) ? (int) $current_user_role_context['staff_id'] : 0;
-        $data['current_user_role_id'] = isset($current_user_role_context['role_id']) ? (int) $current_user_role_context['role_id'] : 0;
-        $data['current_user_role_name'] = isset($current_user_role_context['role_name']) ? (string) $current_user_role_context['role_name'] : '';
+        $data['can_manage_hr_payroll_staff_allowlist'] = $this->is_admin_user();
+        $data['hr_payroll_staff_ids'] = $hr_payroll_staff_ids;
+        $data['current_user_staff_id'] = (int) $current_user_staff_id;
         $data['default_hr_tab'] = $this->resolve_default_hr_tab($can_manage_pay_setup, $can_manage_operations, $can_manage_reporting, $can_manage_project_assignment);
         $data['export_urls'] = [
             'attendance_record' => field_staff_admin_url('field_staff/export_operations_report?type=attendance_record&' . $this->build_hr_filter_query($start_date, $end_date, $selected_staff_id, $selected_department_id, $report_date, $report_month)),
@@ -155,7 +153,7 @@ class Field_staff extends AdminController
         $data['update_leave_status_url'] = field_staff_admin_url('field_staff/update_leave_status');
         $data['generate_payrun_url'] = field_staff_admin_url('field_staff/generate_payrun');
         $data['save_project_assignment_url'] = field_staff_admin_url('field_staff/save_project_assignment');
-        $data['save_role_allowlist_url'] = field_staff_admin_url('field_staff/save_manager_supervisor_roles');
+        $data['save_hr_payroll_staff_allowlist_url'] = field_staff_admin_url('field_staff/save_hr_payroll_staff_ids');
 
         $this->load->view('hr_management', $data);
     }
@@ -165,6 +163,8 @@ class Field_staff extends AdminController
      */
     public function payroll()
     {
+        $this->enforce_payroll_access();
+
         $start_input = trim((string) $this->input->get_post('start_date', true));
         $end_input   = trim((string) $this->input->get_post('end_date', true));
 
@@ -710,6 +710,41 @@ class Field_staff extends AdminController
     }
 
     /**
+     * Save explicit staff ID allowlist for Master Payroll HR and HR Management Workspace.
+     */
+    public function save_hr_payroll_staff_ids()
+    {
+        if (!$this->is_admin_user()) {
+            access_denied('field_staff');
+        }
+
+        if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
+            $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
+        }
+
+        $raw_value = trim((string) $this->input->post('staff_ids', true));
+        $staff_ids = [];
+        if ($raw_value !== '') {
+            foreach (preg_split('/[^0-9]+/', $raw_value) as $value) {
+                if ($value !== '') {
+                    $staff_ids[] = (int) $value;
+                }
+            }
+        }
+
+        $saved = $this->field_staff_model->save_hr_payroll_staff_ids($staff_ids);
+        if (!$saved) {
+            $this->respond_json(['success' => false, 'message' => 'HR/payroll staff allowlist could not be saved.']);
+        }
+
+        $this->respond_json([
+            'success' => true,
+            'message' => 'HR/payroll staff allowlist updated successfully.',
+            'staff_ids' => $this->field_staff_model->get_hr_payroll_staff_ids(),
+        ]);
+    }
+
+    /**
      * Save, approve, or settle weekly payroll records.
      */
     public function save_payroll()
@@ -1073,6 +1108,13 @@ class Field_staff extends AdminController
         }
     }
 
+    private function enforce_payroll_access()
+    {
+        if (!$this->can_access_hr_payroll_workspace()) {
+            access_denied('field_staff');
+        }
+    }
+
     private function enforce_pay_setup_access()
     {
         if (!$this->can_access_pay_setup_tab()) {
@@ -1103,30 +1145,32 @@ class Field_staff extends AdminController
 
     private function can_access_hr_workspace()
     {
-        return $this->can_access_pay_setup_tab()
-            || $this->can_access_operations_tab()
-            || $this->can_access_reporting_tab()
-            || $this->can_access_project_assignment_tab();
+        return $this->can_access_hr_payroll_workspace();
+    }
+
+    private function can_access_hr_payroll_workspace()
+    {
+        return $this->is_admin_user() || $this->is_hr_payroll_allowed_staff();
     }
 
     private function can_access_pay_setup_tab()
     {
-        return $this->is_admin_user() || $this->has_module_permission('edit');
+        return $this->can_access_hr_payroll_workspace();
     }
 
     private function can_access_operations_tab()
     {
-        return $this->is_admin_user() || $this->has_module_permission('edit') || $this->has_module_permission('create');
+        return $this->can_access_hr_payroll_workspace();
     }
 
     private function can_access_reporting_tab()
     {
-        return $this->is_admin_user() || $this->has_module_permission('view');
+        return $this->can_access_hr_payroll_workspace();
     }
 
     private function can_access_project_assignment_tab()
     {
-        return $this->is_admin_user() || $this->is_manager_or_supervisor();
+        return $this->can_access_hr_payroll_workspace();
     }
 
     private function is_admin_user()
@@ -1141,6 +1185,16 @@ class Field_staff extends AdminController
         }
 
         return (bool) has_permission('field_staff', '', $capability);
+    }
+
+    private function is_hr_payroll_allowed_staff()
+    {
+        $staff_id = $this->resolve_session_staff_id();
+        if ($staff_id <= 0) {
+            return false;
+        }
+
+        return in_array($staff_id, $this->field_staff_model->get_hr_payroll_staff_ids(), true);
     }
 
     private function is_manager_or_supervisor()
@@ -1180,12 +1234,12 @@ class Field_staff extends AdminController
         $requested_tab = strtolower(trim((string) $this->input->get('tab', true)));
         $allowed_tabs = [];
 
-        if ($can_manage_pay_setup) {
-            $allowed_tabs[] = 'pay_setup';
-        }
-
         if ($can_manage_operations) {
             $allowed_tabs[] = 'operations';
+        }
+
+        if ($can_manage_pay_setup) {
+            $allowed_tabs[] = 'pay_setup';
         }
 
         if ($can_manage_reporting) {

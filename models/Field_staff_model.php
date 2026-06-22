@@ -653,6 +653,51 @@ class Field_staff_model extends App_Model
     }
 
     /**
+     * Get configured staff IDs allowed to access Master Payroll HR and HR Management Workspace.
+     *
+     * @return array
+     */
+    public function get_hr_payroll_staff_ids()
+    {
+        $raw = $this->get_module_setting('hr_payroll_staff_ids', '');
+        $staff_ids = [];
+
+        if ($raw !== '') {
+            foreach (preg_split('/[^0-9]+/', $raw) as $value) {
+                if ($value !== '') {
+                    $staff_ids[] = (int) $value;
+                }
+            }
+        }
+
+        if (empty($staff_ids) && defined('FS_HR_PAYROLL_STAFF_IDS') && is_array(FS_HR_PAYROLL_STAFF_IDS)) {
+            $staff_ids = array_map('intval', FS_HR_PAYROLL_STAFF_IDS);
+        }
+
+        $staff_ids = array_values(array_unique(array_filter($staff_ids, function ($value) {
+            return (int) $value > 0;
+        })));
+
+        return $staff_ids;
+    }
+
+    /**
+     * Save configured staff IDs allowed to access Master Payroll HR and HR Management Workspace.
+     *
+     * @param array $staff_ids
+     *
+     * @return bool
+     */
+    public function save_hr_payroll_staff_ids(array $staff_ids)
+    {
+        $normalized = array_values(array_unique(array_filter(array_map('intval', $staff_ids), function ($value) {
+            return (int) $value > 0;
+        })));
+
+        return $this->save_module_setting('hr_payroll_staff_ids', implode(',', $normalized));
+    }
+
+    /**
      * Insert or correct a manual attendance record.
      *
      * @param array $data

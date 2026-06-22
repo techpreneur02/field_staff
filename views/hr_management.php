@@ -36,7 +36,7 @@ $save_leave_url = isset($save_leave_url) ? (string) $save_leave_url : '';
 $update_leave_status_url = isset($update_leave_status_url) ? (string) $update_leave_status_url : '';
 $generate_payrun_url = isset($generate_payrun_url) ? (string) $generate_payrun_url : '';
 $save_project_assignment_url = isset($save_project_assignment_url) ? (string) $save_project_assignment_url : '';
-$save_role_allowlist_url = isset($save_role_allowlist_url) ? (string) $save_role_allowlist_url : '';
+$save_hr_payroll_staff_allowlist_url = isset($save_hr_payroll_staff_allowlist_url) ? (string) $save_hr_payroll_staff_allowlist_url : '';
 $export_urls = isset($export_urls) && is_array($export_urls) ? $export_urls : [];
 $current_url = function_exists('current_url') ? current_url() : '';
 $summary_total_hours = isset($attendance_summary['total_hours_worked']) ? (float) $attendance_summary['total_hours_worked'] : 0;
@@ -48,16 +48,14 @@ $can_manage_pay_setup = isset($can_manage_pay_setup) ? (bool) $can_manage_pay_se
 $can_manage_operations = isset($can_manage_operations) ? (bool) $can_manage_operations : false;
 $can_manage_reporting = isset($can_manage_reporting) ? (bool) $can_manage_reporting : false;
 $can_manage_project_assignment = isset($can_manage_project_assignment) ? (bool) $can_manage_project_assignment : false;
-$can_manage_role_allowlist = isset($can_manage_role_allowlist) ? (bool) $can_manage_role_allowlist : false;
-$manager_supervisor_role_ids = isset($manager_supervisor_role_ids) && is_array($manager_supervisor_role_ids) ? $manager_supervisor_role_ids : [];
-$manager_supervisor_role_ids_text = implode(',', array_map('intval', $manager_supervisor_role_ids));
+$can_manage_hr_payroll_staff_allowlist = isset($can_manage_hr_payroll_staff_allowlist) ? (bool) $can_manage_hr_payroll_staff_allowlist : false;
+$hr_payroll_staff_ids = isset($hr_payroll_staff_ids) && is_array($hr_payroll_staff_ids) ? $hr_payroll_staff_ids : [];
+$hr_payroll_staff_ids_text = implode(',', array_map('intval', $hr_payroll_staff_ids));
 $current_user_staff_id = isset($current_user_staff_id) ? (int) $current_user_staff_id : 0;
-$current_user_role_id = isset($current_user_role_id) ? (int) $current_user_role_id : 0;
-$current_user_role_name = isset($current_user_role_name) ? (string) $current_user_role_name : '';
 $default_hr_tab = isset($default_hr_tab) ? (string) $default_hr_tab : 'pay_setup';
 $tab_map = [
-    'pay_setup' => 'tab-profile-payroll',
     'operations' => 'tab-shifts',
+    'pay_setup' => 'tab-profile-payroll',
     'reporting' => 'tab-reporting-payrun',
     'project_assignment' => 'tab-project-assignment',
 ];
@@ -164,19 +162,21 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                         </div>
 
                         <ul class="nav nav-tabs mtop15" role="tablist">
+                            <?php if ($can_manage_operations) { ?>
+                                <li role="presentation" class="<?php echo $active_tab_id === 'tab-shifts' ? 'active' : ''; ?>"><a href="#tab-shifts" aria-controls="tab-shifts" role="tab" data-toggle="tab">1. Shift &amp; Department Setup</a></li>
+                            <?php } ?>
                             <?php if ($can_manage_pay_setup) { ?>
-                                <li role="presentation" class="<?php echo $active_tab_id === 'tab-profile-payroll' ? 'active' : ''; ?>"><a href="#tab-profile-payroll" aria-controls="tab-profile-payroll" role="tab" data-toggle="tab">Employee Pay Setup</a></li>
+                                <li role="presentation" class="<?php echo $active_tab_id === 'tab-profile-payroll' ? 'active' : ''; ?>"><a href="#tab-profile-payroll" aria-controls="tab-profile-payroll" role="tab" data-toggle="tab">2. Employee Pay Setup</a></li>
                             <?php } ?>
                             <?php if ($can_manage_operations) { ?>
-                                <li role="presentation" class="<?php echo $active_tab_id === 'tab-shifts' ? 'active' : ''; ?>"><a href="#tab-shifts" aria-controls="tab-shifts" role="tab" data-toggle="tab">Shift Scheduling &amp; Distribute</a></li>
-                                <li role="presentation" class="<?php echo $active_tab_id === 'tab-manual-attendance' ? 'active' : ''; ?>"><a href="#tab-manual-attendance" aria-controls="tab-manual-attendance" role="tab" data-toggle="tab">Manual Attendance Logger</a></li>
-                                <li role="presentation" class="<?php echo $active_tab_id === 'tab-leaves' ? 'active' : ''; ?>"><a href="#tab-leaves" aria-controls="tab-leaves" role="tab" data-toggle="tab">Employee Leave Tracking</a></li>
+                                <li role="presentation" class="<?php echo $active_tab_id === 'tab-manual-attendance' ? 'active' : ''; ?>"><a href="#tab-manual-attendance" aria-controls="tab-manual-attendance" role="tab" data-toggle="tab">3. Manual Attendance Logger</a></li>
+                                <li role="presentation" class="<?php echo $active_tab_id === 'tab-leaves' ? 'active' : ''; ?>"><a href="#tab-leaves" aria-controls="tab-leaves" role="tab" data-toggle="tab">4. Employee Leave Tracking</a></li>
                             <?php } ?>
                             <?php if ($can_manage_reporting) { ?>
-                                <li role="presentation" class="<?php echo $active_tab_id === 'tab-reporting-payrun' ? 'active' : ''; ?>"><a href="#tab-reporting-payrun" aria-controls="tab-reporting-payrun" role="tab" data-toggle="tab">Reporting &amp; Payrun</a></li>
+                                <li role="presentation" class="<?php echo $active_tab_id === 'tab-reporting-payrun' ? 'active' : ''; ?>"><a href="#tab-reporting-payrun" aria-controls="tab-reporting-payrun" role="tab" data-toggle="tab">5. Reporting &amp; Payrun</a></li>
                             <?php } ?>
                             <?php if ($can_manage_project_assignment) { ?>
-                                <li role="presentation" class="<?php echo $active_tab_id === 'tab-project-assignment' ? 'active' : ''; ?>"><a href="#tab-project-assignment" aria-controls="tab-project-assignment" role="tab" data-toggle="tab">Project Assignment</a></li>
+                                <li role="presentation" class="<?php echo $active_tab_id === 'tab-project-assignment' ? 'active' : ''; ?>"><a href="#tab-project-assignment" aria-controls="tab-project-assignment" role="tab" data-toggle="tab">6. Project Assignment</a></li>
                             <?php } ?>
                         </ul>
 
@@ -275,7 +275,34 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
 
                             <?php if ($can_manage_operations) { ?>
                                 <div role="tabpanel" class="tab-pane <?php echo $active_tab_id === 'tab-shifts' ? 'active' : ''; ?>" id="tab-shifts">
+                                    <?php if ($can_manage_hr_payroll_staff_allowlist) { ?>
+                                        <div class="row mtop5 mbot15">
+                                            <div class="col-md-12">
+                                                <div class="panel panel-default">
+                                                    <div class="panel-body">
+                                                        <h5 class="no-margin">HR/Payroll Staff ID Allowlist</h5>
+                                                        <p class="text-muted mtop5">Only these Staff IDs can access Master Payroll HR and HR Management Workspace. Example: 1,5,9</p>
+                                                        <p class="text-info mtop5 mbot10">Current user Staff ID: <?php echo (int) $current_user_staff_id; ?></p>
+                                                        <div class="row">
+                                                            <div class="col-md-9 col-sm-8 col-xs-12">
+                                                                <div class="form-group mbot0"><input type="text" id="hr-payroll-staff-ids" class="form-control" value="<?php echo field_staff_hr_escape($hr_payroll_staff_ids_text); ?>" placeholder="Example: 1,5,9"></div>
+                                                            </div>
+                                                            <div class="col-md-3 col-sm-4 col-xs-12">
+                                                                <button type="button" id="save-hr-payroll-staff-allowlist-btn" class="btn btn-primary btn-block">Save Staff Allowlist</button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <?php } ?>
                                     <div class="row">
+                                        <div class="col-md-3 col-sm-6 col-xs-12">
+                                            <div class="form-group"><label for="setup_department_name" class="control-label">Department Name</label><input type="text" id="setup_department_name" class="form-control" placeholder="Operations"></div>
+                                        </div>
+                                        <div class="col-md-3 col-sm-6 col-xs-12">
+                                            <div class="form-group mtop25"><button type="button" id="setup-save-department-btn" class="btn btn-default">Save Department</button></div>
+                                        </div>
                                         <div class="col-md-3 col-sm-6 col-xs-12">
                                             <div class="form-group"><label for="shift_name" class="control-label">Shift Name</label><input type="text" id="shift_name" class="form-control" placeholder="Day Shift"></div>
                                         </div>
@@ -614,33 +641,6 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                                             <p class="text-muted">Supervisor and manager assignment board for allocating projects to field staff.</p>
                                         </div>
                                     </div>
-                                    <?php if ($can_manage_role_allowlist) { ?>
-                                        <div class="row mtop10">
-                                            <div class="col-md-12">
-                                                <div class="panel panel-default">
-                                                    <div class="panel-body">
-                                                        <h5 class="no-margin">Manager/Supervisor Role ID Allowlist</h5>
-                                                        <p class="text-muted mtop5">Set comma-separated role IDs allowed to access Project Assignment, for example: 3,7</p>
-                                                        <p class="text-info mtop5 mbot10">
-                                                            Current user: Staff ID <?php echo (int) $current_user_staff_id; ?>,
-                                                            Role ID <?php echo (int) $current_user_role_id; ?>
-                                                            <?php if ($current_user_role_name !== '') { ?>
-                                                                (<?php echo field_staff_hr_escape($current_user_role_name); ?>)
-                                                            <?php } ?>
-                                                        </p>
-                                                        <div class="row">
-                                                            <div class="col-md-9 col-sm-8 col-xs-12">
-                                                                <div class="form-group mbot0"><input type="text" id="manager-supervisor-role-ids" class="form-control" value="<?php echo field_staff_hr_escape($manager_supervisor_role_ids_text); ?>" placeholder="Example: 3,7"></div>
-                                                            </div>
-                                                            <div class="col-md-3 col-sm-4 col-xs-12">
-                                                                <button type="button" id="save-role-allowlist-btn" class="btn btn-default btn-block">Save Role Allowlist</button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    <?php } ?>
                                     <div class="row">
                                         <div class="col-md-4 col-sm-6 col-xs-12">
                                             <div class="form-group"><label for="project_name" class="control-label">Project Name</label><input type="text" id="project_name" class="form-control" placeholder="Enter project or work package"></div>
@@ -755,7 +755,7 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
             var updateLeaveStatusUrl = <?php echo json_encode($update_leave_status_url); ?>;
             var generatePayrunUrl = <?php echo json_encode($generate_payrun_url); ?>;
             var saveProjectAssignmentUrl = <?php echo json_encode($save_project_assignment_url); ?>;
-            var saveRoleAllowlistUrl = <?php echo json_encode($save_role_allowlist_url); ?>;
+            var saveHrPayrollStaffAllowlistUrl = <?php echo json_encode($save_hr_payroll_staff_allowlist_url); ?>;
 
             function notify(type, message) {
                 if (typeof alert_float === 'function') {
@@ -927,6 +927,28 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                 });
             });
 
+            $('#setup-save-department-btn').click(function() {
+                var departmentName = ($('#setup_department_name').val() || '').trim();
+                if (!departmentName) {
+                    notify('danger', 'Department name is required.');
+                    return;
+                }
+
+                $.post(saveDepartmentUrl, appendCsrf({
+                    name: departmentName
+                }), function(response) {
+                    if (response && response.success) {
+                        notify('success', response.message || 'Department saved successfully.');
+                        $('#setup_department_name').val('');
+                        window.location.reload();
+                    } else {
+                        notify('danger', response && response.message ? response.message : 'Department save failed.');
+                    }
+                }, 'json').fail(function() {
+                    notify('danger', 'Department save failed.');
+                });
+            });
+
             $('#save-shift-btn').click(function() {
                 var payload = appendCsrf({
                     shift_name: $('#shift_name').val(),
@@ -1078,20 +1100,20 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                 });
             });
 
-            $('#save-role-allowlist-btn').click(function() {
-                var roleIds = ($('#manager-supervisor-role-ids').val() || '').trim();
+            $('#save-hr-payroll-staff-allowlist-btn').click(function() {
+                var staffIds = ($('#hr-payroll-staff-ids').val() || '').trim();
 
-                $.post(saveRoleAllowlistUrl, appendCsrf({
-                    role_ids: roleIds
+                $.post(saveHrPayrollStaffAllowlistUrl, appendCsrf({
+                    staff_ids: staffIds
                 }), function(response) {
                     if (response && response.success) {
-                        $('#manager-supervisor-role-ids').val((response.role_ids || []).join(','));
-                        notify('success', response.message || 'Role allowlist updated successfully.');
+                        $('#hr-payroll-staff-ids').val((response.staff_ids || []).join(','));
+                        notify('success', response.message || 'HR/payroll staff allowlist updated successfully.');
                     } else {
-                        notify('danger', response && response.message ? response.message : 'Role allowlist update failed.');
+                        notify('danger', response && response.message ? response.message : 'HR/payroll staff allowlist update failed.');
                     }
                 }, 'json').fail(function() {
-                    notify('danger', 'Role allowlist update failed.');
+                    notify('danger', 'HR/payroll staff allowlist update failed.');
                 });
             });
 
