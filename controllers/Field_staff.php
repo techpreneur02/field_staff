@@ -722,12 +722,23 @@ class Field_staff extends AdminController
             $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
         }
 
-        $raw_value = trim((string) $this->input->post('staff_ids', true));
         $staff_ids = [];
-        if ($raw_value !== '') {
-            foreach (preg_split('/[^0-9]+/', $raw_value) as $value) {
-                if ($value !== '') {
-                    $staff_ids[] = (int) $value;
+        $raw_value = $this->input->post('staff_ids', true);
+
+        if (is_array($raw_value)) {
+            foreach ($raw_value as $value) {
+                $id = (int) $value;
+                if ($id > 0) {
+                    $staff_ids[] = $id;
+                }
+            }
+        } else {
+            $raw_text = trim((string) $raw_value);
+            if ($raw_text !== '') {
+                foreach (preg_split('/[^0-9]+/', $raw_text) as $value) {
+                    if ($value !== '') {
+                        $staff_ids[] = (int) $value;
+                    }
                 }
             }
         }

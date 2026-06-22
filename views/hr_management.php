@@ -50,7 +50,7 @@ $can_manage_reporting = isset($can_manage_reporting) ? (bool) $can_manage_report
 $can_manage_project_assignment = isset($can_manage_project_assignment) ? (bool) $can_manage_project_assignment : false;
 $can_manage_hr_payroll_staff_allowlist = isset($can_manage_hr_payroll_staff_allowlist) ? (bool) $can_manage_hr_payroll_staff_allowlist : false;
 $hr_payroll_staff_ids = isset($hr_payroll_staff_ids) && is_array($hr_payroll_staff_ids) ? $hr_payroll_staff_ids : [];
-$hr_payroll_staff_ids_text = implode(',', array_map('intval', $hr_payroll_staff_ids));
+$hr_payroll_staff_ids_lookup = array_flip(array_map('intval', $hr_payroll_staff_ids));
 $current_user_staff_id = isset($current_user_staff_id) ? (int) $current_user_staff_id : 0;
 $default_hr_tab = isset($default_hr_tab) ? (string) $default_hr_tab : 'pay_setup';
 $tab_map = [
@@ -280,12 +280,23 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                                             <div class="col-md-12">
                                                 <div class="panel panel-default">
                                                     <div class="panel-body">
-                                                        <h5 class="no-margin">HR/Payroll Staff ID Allowlist</h5>
-                                                        <p class="text-muted mtop5">Only these Staff IDs can access Master Payroll HR and HR Management Workspace. Example: 1,5,9</p>
+                                                        <h5 class="no-margin">HR/Payroll Staff Allowlist</h5>
+                                                        <p class="text-muted mtop5">Only selected staff can access Master Payroll HR and HR Management Workspace.</p>
                                                         <p class="text-info mtop5 mbot10">Current user Staff ID: <?php echo (int) $current_user_staff_id; ?></p>
                                                         <div class="row">
                                                             <div class="col-md-9 col-sm-8 col-xs-12">
-                                                                <div class="form-group mbot0"><input type="text" id="hr-payroll-staff-ids" class="form-control" value="<?php echo field_staff_hr_escape($hr_payroll_staff_ids_text); ?>" placeholder="Example: 1,5,9"></div>
+                                                                <div class="form-group mbot0">
+                                                                    <label for="hr-payroll-staff-ids" class="control-label">Allowed Staff Names</label>
+                                                                    <select id="hr-payroll-staff-ids" class="form-control selectpicker" data-live-search="true" data-width="100%" multiple>
+                                                                        <?php foreach ($staff_directory as $staff_row) { ?>
+                                                                            <?php $staff_id = isset($staff_row['staff_id']) ? (int) $staff_row['staff_id'] : 0; ?>
+                                                                            <?php if ($staff_id <= 0) {
+                                                                                continue;
+                                                                            } ?>
+                                                                            <option value="<?php echo $staff_id; ?>" <?php echo isset($hr_payroll_staff_ids_lookup[$staff_id]) ? 'selected="selected"' : ''; ?>><?php echo field_staff_hr_escape(isset($staff_row['worker_name']) ? $staff_row['worker_name'] : ''); ?></option>
+                                                                        <?php } ?>
+                                                                    </select>
+                                                                </div>
                                                             </div>
                                                             <div class="col-md-3 col-sm-4 col-xs-12">
                                                                 <button type="button" id="save-hr-payroll-staff-allowlist-btn" class="btn btn-primary btn-block">Save Staff Allowlist</button>
@@ -1101,13 +1112,19 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
             });
 
             $('#save-hr-payroll-staff-allowlist-btn').click(function() {
-                var staffIds = ($('#hr-payroll-staff-ids').val() || '').trim();
+                var staffIds = $('#hr-payroll-staff-ids').val() || [];
 
                 $.post(saveHrPayrollStaffAllowlistUrl, appendCsrf({
                     staff_ids: staffIds
                 }), function(response) {
                     if (response && response.success) {
-                        $('#hr-payroll-staff-ids').val((response.staff_ids || []).join(','));
+                        var savedIds = (response.staff_ids || []).map(function(item) {
+                            return String(item);
+                        });
+                        $('#hr-payroll-staff-ids').val(savedIds);
+                        if ($.fn.selectpicker) {
+                            $('#hr-payroll-staff-ids').selectpicker('refresh');
+                        }
                         notify('success', response.message || 'HR/payroll staff allowlist updated successfully.');
                     } else {
                         notify('danger', response && response.message ? response.message : 'HR/payroll staff allowlist update failed.');
