@@ -112,8 +112,11 @@ function field_staff_can_manage_hr_workspace()
 
 function field_staff_can_access_hr_payroll_workspace()
 {
-    if (function_exists('is_admin') && (bool) is_admin()) {
-        return true;
+    $allowed_staff_ids = field_staff_get_hr_payroll_staff_ids();
+
+    // Bootstrap safety: allow admins until an explicit whitelist is configured.
+    if (empty($allowed_staff_ids)) {
+        return function_exists('is_admin') ? (bool) is_admin() : false;
     }
 
     $staff_id = 0;
@@ -132,7 +135,7 @@ function field_staff_can_access_hr_payroll_workspace()
         return false;
     }
 
-    return in_array($staff_id, field_staff_get_hr_payroll_staff_ids(), true);
+    return in_array($staff_id, $allowed_staff_ids, true);
 }
 
 function field_staff_is_manager_or_supervisor()

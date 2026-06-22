@@ -1161,7 +1161,14 @@ class Field_staff extends AdminController
 
     private function can_access_hr_payroll_workspace()
     {
-        return $this->is_admin_user() || $this->is_hr_payroll_allowed_staff();
+        $allowed_staff_ids = $this->field_staff_model->get_hr_payroll_staff_ids();
+
+        // Bootstrap safety: allow admins until an explicit whitelist is configured.
+        if (empty($allowed_staff_ids)) {
+            return $this->is_admin_user();
+        }
+
+        return $this->is_hr_payroll_allowed_staff();
     }
 
     private function can_access_pay_setup_tab()
