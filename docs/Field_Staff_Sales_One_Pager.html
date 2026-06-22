@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Field Staff Sales One-Pager</title>
+    <style>
+        :root {
+            --ink: #1b1f2a;
+            --muted: #5a657b;
+            --line: #d8dfec;
+            --paper: #ffffff;
+            --brand: #0a6a8c;
+            --brand-2: #134a9e;
+            --soft: #edf8ff;
+            --good: #0f7a4f;
+            --warn: #915f00;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            background: #f2f6fb;
+            color: var(--ink);
+            font-family: "Segoe UI", Calibri, Arial, sans-serif;
+            line-height: 1.4;
+        }
+
+        .page {
+            width: 210mm;
+            min-height: 297mm;
+            margin: 0 auto;
+            background: var(--paper);
+            border: 1px solid var(--line);
+            padding: 12mm;
+        }
+
+        h1,
+        h2,
+        h3 {
+            margin: 0 0 6px;
+            line-height: 1.2;
+        }
+
+        h1 {
+            font-size: 27px;
+            color: var(--brand-2);
+        }
+
+        h2 {
+            font-size: 16px;
+            color: var(--brand);
+            border-top: 2px solid var(--line);
+            padding-top: 8px;
+            margin-top: 12px;
+        }
+
+        h3 {
+            font-size: 13px;
+        }
+
+        p {
+            margin: 4px 0 8px;
+            font-size: 11.5px;
+        }
+
+        ul {
+            margin: 4px 0 8px 18px;
+            font-size: 11.5px;
+        }
+
+        li {
+            margin: 2px 0;
+        }
+
+        .hero {
+            background: linear-gradient(140deg, #f6fcff, #eaf2ff);
+            border: 1px solid var(--line);
+            padding: 10px;
+        }
+
+        .chips {
+            margin-top: 8px;
+        }
+
+        .chip {
+            display: inline-block;
+            border: 1px solid #bcd8f0;
+            background: var(--soft);
+            color: #144e78;
+            border-radius: 999px;
+            padding: 2px 8px;
+            margin: 2px 4px 0 0;
+            font-size: 10px;
+        }
+
+        .grid {
+            display: grid;
+            gap: 8px;
+            grid-template-columns: 1fr 1fr;
+            margin-top: 8px;
+        }
+
+        .card {
+            border: 1px solid var(--line);
+            padding: 8px;
+            background: #fcfdff;
+        }
+
+        .brand-box {
+            border: 1px dashed #9eb8d1;
+            background: #f8fbff;
+            padding: 8px;
+            margin-top: 6px;
+        }
+
+        .kicker {
+            color: var(--good);
+            font-weight: 700;
+            font-size: 11px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 8px;
+            font-size: 10.8px;
+        }
+
+        th,
+        td {
+            border: 1px solid var(--line);
+            padding: 6px;
+            vertical-align: top;
+            text-align: left;
+        }
+
+        th {
+            background: #f4f8ff;
+        }
+
+        .price {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--brand-2);
+        }
+
+        .note {
+            font-size: 10px;
+            color: var(--muted);
+        }
+
+        .warn {
+            color: var(--warn);
+            font-weight: 700;
+        }
+
+        .footer {
+            margin-top: 10px;
+            border-top: 1px solid var(--line);
+            padding-top: 6px;
+            font-size: 10px;
+            color: var(--muted);
+        }
+
+        @media print {
+            body {
+                background: #fff;
+            }
+
+            .page {
+                margin: 0;
+                width: auto;
+                min-height: auto;
+                border: 0;
+                padding: 8mm;
+            }
+
+            .card,
+            table {
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="page">
+        <section class="hero">
+            <h1>Field Staff Module</h1>
+            <p><strong>Sales One-Pager</strong> for Commercial, Marketing, and Support Conversations</p>
+            <p class="kicker">GPS Attendance + HR Operations + Payroll Readiness + Reporting</p>
+            <div class="chips">
+                <span class="chip">Field Teams</span>
+                <span class="chip">Construction & Industrial</span>
+                <span class="chip">Role-Based Access</span>
+                <span class="chip">CSV Exports</span>
+                <span class="chip">Payrun Workflow</span>
+            </div>
+        </section>
+
+        <h2>1. Brand Positioning (Editable)</h2>
+        <div class="brand-box">
+            <p><strong>Brand Name:</strong> [Your Brand Name]</p>
+            <p><strong>Tagline:</strong> [One-line promise, e.g., "From field attendance to payroll confidence."]</p>
+            <p><strong>Primary Buyer:</strong> Operations-led businesses with distributed staff and payroll compliance
+                needs.</p>
+            <p><strong>Differentiator:</strong> End-to-end workflow from geolocation attendance capture to payrun
+                reporting, with strict role-ID governance.</p>
+        </div>
+
+        <h2>2. Sales Value Narrative</h2>
+        <div class="grid">
+            <div class="card">
+                <h3>Business Pain It Solves</h3>
+                <ul>
+                    <li>Inaccurate or disputed attendance records</li>
+                    <li>Disconnected HR and payroll prep processes</li>
+                    <li>Weak governance for supervisor-level controls</li>
+                    <li>Manual report consolidation delays</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Commercial Outcomes</h3>
+                <ul>
+                    <li>Faster attendance verification cycles</li>
+                    <li>Better payroll cycle preparedness</li>
+                    <li>Clear role-based operational accountability</li>
+                    <li>Cleaner reporting handoff to finance/payroll teams</li>
+                </ul>
+            </div>
+        </div>
+
+        <h2>3. Feature Highlights for Demos</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Feature</th>
+                    <th>Demo Talking Point</th>
+                    <th>Why Buyers Care</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>GPS Clock In/Out</td>
+                    <td>Field users submit attendance with location proof and notes.</td>
+                    <td>Creates auditable attendance context.</td>
+                </tr>
+                <tr>
+                    <td>HR Workspace Tabs</td>
+                    <td>Pay setup, operations, reporting, and assignments in one control center.</td>
+                    <td>Reduces tool switching and admin overhead.</td>
+                </tr>
+                <tr>
+                    <td>Project Assignment Control</td>
+                    <td>Assign one project to multiple staff with supervisor traceability.</td>
+                    <td>Supports real scheduling and accountability.</td>
+                </tr>
+                <tr>
+                    <td>Strict Role-ID Allowlist</td>
+                    <td>Project access controlled by explicit role IDs, not title guessing.</td>
+                    <td>Stronger operational governance.</td>
+                </tr>
+                <tr>
+                    <td>Reporting and Payrun</td>
+                    <td>Generate exports and payrun-ready statements in workflow.</td>
+                    <td>Speeds payroll prep and decision visibility.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>4. Pricing Model (Editable Template)</h2>
+        <p class="note">Replace values below with your final commercial pricing before sharing externally.</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Plan</th>
+                    <th>Best For</th>
+                    <th>Includes</th>
+                    <th>Suggested Price</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Starter</strong></td>
+                    <td>Small field teams launching core attendance and reports</td>
+                    <td>Attendance, basic HR tabs, reporting exports, docs</td>
+                    <td><span class="price">$[XX]</span> one-time</td>
+                </tr>
+                <tr>
+                    <td><strong>Professional</strong></td>
+                    <td>Growing teams needing full operations + payroll setup</td>
+                    <td>All starter + shifts, leave, pay setup, project assignment</td>
+                    <td><span class="price">$[XX]</span> one-time</td>
+                </tr>
+                <tr>
+                    <td><strong>Business</strong></td>
+                    <td>Larger teams requiring implementation support</td>
+                    <td>All professional + onboarding package + priority support window</td>
+                    <td><span class="price">$[XX]</span> one-time</td>
+                </tr>
+            </tbody>
+        </table>
+        <p class="warn">Important: finalize license scope, support terms, and update policy before publication.</p>
+
+        <h2>5. Objection Handling Cheatsheet</h2>
+        <div class="grid">
+            <div class="card">
+                <h3>"Will this fit our current workflow?"</h3>
+                <p>Yes. The module mirrors standard attendance, scheduling, leave, and payroll-prep flow in one
+                    interface.</p>
+            </div>
+            <div class="card">
+                <h3>"How secure is supervisor access?"</h3>
+                <p>Project Assignment access uses strict explicit role-ID allowlist with server-side checks.</p>
+            </div>
+            <div class="card">
+                <h3>"Can we export data for finance?"</h3>
+                <p>Yes. Attendance and operations reports are exportable in CSV for downstream workflows.</p>
+            </div>
+            <div class="card">
+                <h3>"What if exceptions happen in the field?"</h3>
+                <p>Manual attendance and leave workflows cover operational exceptions with controlled updates.</p>
+            </div>
+        </div>
+
+        <h2>6. Support Handoff Summary</h2>
+        <ul>
+            <li>Full setup, permissions, API, and workflow docs are included.</li>
+            <li>Support policy and UAT checklist are available for consistent issue handling.</li>
+            <li>Versioned changelog supports release communication and customer updates.</li>
+        </ul>
+
+        <div class="footer">
+            <div><strong>Document:</strong> Field Staff Sales One-Pager</div>
+            <div><strong>Audience:</strong> Marketing, Sales, Support</div>
+            <div><strong>Author:</strong> Sherwin Armas</div>
+            <div><strong>Agency:</strong> scaenterprise.com</div>
+            <div><strong>Status:</strong> Ready for presentation, with editable brand and pricing sections.</div>
+        </div>
+    </main>
+</body>
+
+</html>

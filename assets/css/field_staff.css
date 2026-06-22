@@ -1,0 +1,145 @@
+/*
+ * Erpxolluxn field_staff module UI stylesheet.
+ * Mobile-first layout rules for attendance and payroll interfaces.
+ */
+
+:root {
+    --fs-success-bg: #e8f7ef;
+    --fs-success-border: #7cc9a2;
+    --fs-success-text: #1f6f46;
+    --fs-neutral-bg: #eef1f5;
+    --fs-neutral-border: #bcc6d4;
+    --fs-neutral-text: #334155;
+    --fs-danger-bg: #fcebec;
+    --fs-danger-border: #e39aa1;
+    --fs-danger-text: #9f2830;
+    --fs-card-radius: 1rem;
+    --fs-touch-height: 3.25rem;
+}
+
+/* Attendance status badges */
+.fs-status-badge,
+#clock-status {
+    border: 1px solid transparent;
+    border-radius: 999px;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.fs-status-badge.is-in,
+#clock-status.bg-success {
+    background-color: var(--fs-success-bg) !important;
+    border-color: var(--fs-success-border);
+    color: var(--fs-success-text) !important;
+}
+
+.fs-status-badge.is-out,
+#clock-status.bg-secondary {
+    background-color: var(--fs-neutral-bg) !important;
+    border-color: var(--fs-neutral-border);
+    color: var(--fs-neutral-text) !important;
+}
+
+.fs-status-badge.is-alert {
+    background-color: var(--fs-danger-bg);
+    border-color: var(--fs-danger-border);
+    color: var(--fs-danger-text);
+}
+
+/* Thumb-friendly actions for field workers */
+#attendance-form .btn,
+.fs-touch-btn {
+    min-height: var(--fs-touch-height);
+    padding: 0.85rem 1rem;
+    border-radius: 0.9rem;
+    font-size: 1rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+#attendance-form .btn i,
+.fs-touch-btn i {
+    font-size: 1.05rem;
+}
+
+#attendance-form .form-control,
+#attendance-form .form-control-lg {
+    border-radius: 0.8rem;
+}
+
+#attendance-form textarea.form-control {
+    min-height: 7rem;
+}
+
+/* Payroll ledger readability */
+.fs-payroll-table,
+.table {
+    font-variant-numeric: tabular-nums;
+}
+
+.fs-payroll-table thead th,
+.table thead th {
+    white-space: nowrap;
+    font-size: 0.82rem;
+    vertical-align: middle;
+}
+
+.fs-payroll-table tbody td,
+.table tbody td {
+    font-size: 0.92rem;
+    vertical-align: middle;
+}
+
+.fs-currency,
+.table td.text-end {
+    font-feature-settings: "tnum";
+    letter-spacing: 0.01em;
+}
+
+/* Compact cards and table behavior on small screens */
+@media (max-width: 767.98px) {
+    .card {
+        border-radius: var(--fs-card-radius) !important;
+    }
+
+    .card .card-body {
+        padding: 1rem;
+    }
+
+    .table-responsive {
+        border-top: 1px solid #e5e7eb;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .table thead th {
+        font-size: 0.74rem;
+        padding-top: 0.6rem;
+        padding-bottom: 0.6rem;
+    }
+
+    .table tbody td {
+        font-size: 0.84rem;
+        padding: 0.6rem 0.5rem;
+    }
+
+    #attendance-form .btn,
+    .fs-touch-btn {
+        width: 100%;
+        min-height: 3.5rem;
+        font-size: 1.02rem;
+    }
+}
+
+/* Additional space for larger touch interfaces */
+@media (min-width: 768px) {
+
+    #attendance-form .btn,
+    .fs-touch-btn {
+        min-height: 3rem;
+        padding: 0.75rem 1.15rem;
+    }
+}

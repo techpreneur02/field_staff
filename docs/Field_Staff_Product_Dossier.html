@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Field Staff Product Dossier</title>
+    <style>
+        :root {
+            --ink: #1d2433;
+            --muted: #4d5a73;
+            --line: #d9dfeb;
+            --paper: #ffffff;
+            --brand: #0d5c8f;
+            --brand-soft: #eaf4fb;
+            --accent: #127a57;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            background: #f3f6fb;
+            color: var(--ink);
+            font-family: "Segoe UI", Calibri, Arial, sans-serif;
+            line-height: 1.45;
+        }
+
+        .page {
+            width: 210mm;
+            min-height: 297mm;
+            margin: 0 auto;
+            background: var(--paper);
+            padding: 16mm 14mm;
+            border: 1px solid var(--line);
+        }
+
+        h1,
+        h2,
+        h3 {
+            margin: 0 0 8px;
+            line-height: 1.2;
+        }
+
+        h1 {
+            font-size: 28px;
+            color: var(--brand);
+        }
+
+        h2 {
+            font-size: 18px;
+            color: var(--brand);
+            border-top: 2px solid var(--line);
+            padding-top: 10px;
+            margin-top: 16px;
+        }
+
+        h3 {
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        p {
+            margin: 6px 0 10px;
+            font-size: 12px;
+        }
+
+        ul,
+        ol {
+            margin: 6px 0 10px 20px;
+            font-size: 12px;
+        }
+
+        li {
+            margin: 2px 0;
+        }
+
+        .cover {
+            border: 1px solid var(--line);
+            background: linear-gradient(135deg, #f8fcff, #eef7ff);
+            padding: 14px;
+            margin-bottom: 12px;
+        }
+
+        .badge {
+            display: inline-block;
+            background: var(--brand-soft);
+            color: var(--brand);
+            border: 1px solid #b8d7ec;
+            border-radius: 999px;
+            font-size: 11px;
+            padding: 3px 8px;
+            margin-right: 6px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .card {
+            border: 1px solid var(--line);
+            padding: 8px 10px;
+            background: #fcfdff;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 8px 0 12px;
+            font-size: 11px;
+        }
+
+        th,
+        td {
+            border: 1px solid var(--line);
+            padding: 6px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            background: #f6f9ff;
+        }
+
+        .kpi {
+            font-weight: 700;
+            color: var(--accent);
+            font-size: 13px;
+        }
+
+        .small {
+            font-size: 10px;
+            color: var(--muted);
+        }
+
+        .footer {
+            margin-top: 14px;
+            border-top: 1px solid var(--line);
+            padding-top: 8px;
+            color: var(--muted);
+            font-size: 10px;
+        }
+
+        @media print {
+            body {
+                background: #fff;
+            }
+
+            .page {
+                border: 0;
+                margin: 0;
+                width: auto;
+                min-height: auto;
+                padding: 8mm;
+            }
+
+            h2 {
+                page-break-after: avoid;
+            }
+
+            table,
+            .card {
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="page">
+        <section class="cover">
+            <h1>Field Staff Module</h1>
+            <p><strong>Product Dossier</strong> for Marketing, Sales, and Support Teams</p>
+            <p>
+                <span class="badge">Attendance + GPS</span>
+                <span class="badge">HR Operations</span>
+                <span class="badge">Payroll Workflow</span>
+                <span class="badge">Reporting & Payrun</span>
+                <span class="badge">Role-Based Access</span>
+            </p>
+            <p>
+                This dossier summarizes product capabilities, business value, user workflows, and support scope.
+            </p>
+        </section>
+
+        <h2>1. Product Overview</h2>
+        <p>
+            Field Staff is a white-labeled workforce operations module designed to connect field attendance,
+            HR controls, and payroll preparation in one workflow.
+        </p>
+        <div class="grid">
+            <div class="card">
+                <h3>Core Outcomes</h3>
+                <ul>
+                    <li>Capture verifiable attendance with geolocation data.</li>
+                    <li>Standardize HR operations through one workspace.</li>
+                    <li>Move from attendance to payrun with reporting clarity.</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Best Fit Use Cases</h3>
+                <ul>
+                    <li>Field service operations</li>
+                    <li>Construction and industrial teams</li>
+                    <li>Distributed mobile workforce management</li>
+                </ul>
+            </div>
+        </div>
+
+        <h2>2. Feature Set</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Area</th>
+                    <th>What It Does</th>
+                    <th>Business Impact</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Attendance</td>
+                    <td>Clock in/out with GPS coordinates, notes, and attendance ledger history.</td>
+                    <td>Reduces time ambiguity and supports accountability in field operations.</td>
+                </tr>
+                <tr>
+                    <td>Employee Pay Setup</td>
+                    <td>Stores payroll profile data (rates, allowances, deductions, statutory values).</td>
+                    <td>Improves payroll consistency and reduces manual recalculation.</td>
+                </tr>
+                <tr>
+                    <td>Shift Scheduling</td>
+                    <td>Creates shift templates and distributes shifts by staff/department/date range.</td>
+                    <td>Improves workforce planning and attendance alignment.</td>
+                </tr>
+                <tr>
+                    <td>Manual Attendance</td>
+                    <td>HR can apply controlled attendance adjustments when needed.</td>
+                    <td>Handles real-world exceptions without breaking payroll cycles.</td>
+                </tr>
+                <tr>
+                    <td>Leave Tracking</td>
+                    <td>Records leave entries and status changes (Pending/Approved/Rejected).</td>
+                    <td>Keeps scheduling and payroll context synchronized.</td>
+                </tr>
+                <tr>
+                    <td>Reporting & Payrun</td>
+                    <td>Attendance reports + CSV export + payrun statement generation.</td>
+                    <td>Supports management visibility and payroll cycle readiness.</td>
+                </tr>
+                <tr>
+                    <td>Project Assignment</td>
+                    <td>Assigns projects to one or multiple staff with date ranges and status tracking.</td>
+                    <td>Improves supervisor-level resource allocation.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>3. Role and Access Control</h2>
+        <p>
+            The module enforces server-side access checks and renders only permitted workspace tabs.
+        </p>
+        <ul>
+            <li>Capabilities: view_own, view, edit, create</li>
+            <li>Project Assignment access uses strict role-ID allowlist (not title matching)</li>
+            <li>Admin panel allows explicit role-ID updates and displays current user role context</li>
+        </ul>
+
+        <h2>4. Workflow Summary by Team</h2>
+        <div class="grid">
+            <div class="card">
+                <h3>Marketing Talking Points</h3>
+                <ul>
+                    <li>End-to-end attendance-to-payrun workflow in one module.</li>
+                    <li>Geolocation-backed attendance evidence.</li>
+                    <li>Operationally practical for field-heavy teams.</li>
+                    <li>Permission-driven workspace for governance and scale.</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Sales Qualification Points</h3>
+                <ul>
+                    <li>Does client run distributed teams? Strong fit.</li>
+                    <li>Need payroll prep from attendance records? Strong fit.</li>
+                    <li>Need manager/supervisor assignment controls? Strong fit.</li>
+                    <li>Need exportable operational reporting? Strong fit.</li>
+                </ul>
+            </div>
+        </div>
+
+        <h3>Support Team Operational Flow</h3>
+        <ol>
+            <li>Verify installation and schema readiness.</li>
+            <li>Validate role capabilities and allowlist configuration.</li>
+            <li>Reproduce issue path (attendance, operations, reporting, payrun).</li>
+            <li>Confirm expected behavior vs configured permissions.</li>
+            <li>Use changelog and docs set for version-specific troubleshooting.</li>
+        </ol>
+
+        <h2>5. Payroll Rules Built In</h2>
+        <ul>
+            <li>Weekly regular hours cap: <span class="kpi">44.00</span></li>
+            <li>Overtime multiplier: <span class="kpi">1.5x</span></li>
+            <li>NIB split: <span class="kpi">5.5% employee / 6.5% employer</span></li>
+            <li>NHIP split: <span class="kpi">3.0% employee / 3.0% employer</span></li>
+            <li>NHIP monthly ceiling reference: <span class="kpi">7800.00</span></li>
+            <li>Flexible additions/deductions supported via EAV payroll attributes.</li>
+        </ul>
+
+        <h2>6. Reporting Outputs</h2>
+        <p>CSV exports are available for:</p>
+        <ul>
+            <li>Attendance record report</li>
+            <li>Attendance summary report</li>
+            <li>Daily attendance report</li>
+            <li>Monthly attendance report</li>
+            <li>Department-wise report</li>
+        </ul>
+
+        <h2>7. Packaging and Readiness</h2>
+        <p>
+            The module includes an Envato readiness kit with packaging guidance, listing template,
+            UAT checklist, and support policy for commercial release workflows.
+        </p>
+
+        <h2>8. Documentation Set Included</h2>
+        <ul>
+            <li>README and full feature specification</li>
+            <li>Setup and operations handbook</li>
+            <li>Permissions matrix</li>
+            <li>Endpoint reference</li>
+            <li>Business workflow runbook</li>
+            <li>Envato readiness and support policy documents</li>
+        </ul>
+
+        <div class="footer">
+            <div><strong>Document:</strong> Field Staff Product Dossier</div>
+            <div><strong>Audience:</strong> Marketing, Sales, Support</div>
+            <div><strong>Author:</strong> Sherwin Armas</div>
+            <div><strong>Agency:</strong> scaenterprise.com</div>
+            <div class="small">Generated from current project documentation and feature implementation.</div>
+        </div>
+    </main>
+</body>
+
+</html>
