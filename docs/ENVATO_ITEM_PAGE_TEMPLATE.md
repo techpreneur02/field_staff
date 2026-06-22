@@ -8,7 +8,7 @@ Field Staff Module - Attendance, HR Workspace, Payroll and Reporting
 
 ## 2. Short Description
 
-A production-ready field workforce module with GPS attendance, HR operations, payroll-ready reporting, and strict role-ID access control for project assignments.
+A production-ready field workforce module with GPS attendance, HR operations, payroll-ready reporting, and strict staff-ID allowlist access control for HR/payroll workspace routes.
 
 ## 3. Full Description
 
@@ -19,7 +19,7 @@ Key features:
 - Employee payroll profile setup and statutory settings
 - Shift scheduling, shift distribution, and leave management
 - Reporting exports (CSV) and payrun statement generation
-- Project assignment workflow with strict manager/supervisor role-ID allowlist
+- Project assignment workflow within strict HR/payroll staff allowlist controls
 
 Use cases:
 - Field service teams

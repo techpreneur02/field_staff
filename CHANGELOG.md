@@ -10,9 +10,9 @@ The format follows Keep a Changelog principles and semantic versioning intent.
 - Project Assignment tab and persistence flow for assigning projects to one or multiple staff.
 - fs_project_assignments schema support in runtime schema guard.
 - fs_settings table support for module-level settings persistence.
-- Admin endpoint to save manager/supervisor role allowlist by explicit role IDs.
-- Admin UI panel to manage manager/supervisor role ID allowlist.
-- Current user role context in allowlist panel (Staff ID, Role ID, Role name when available).
+- Admin endpoint to save HR/payroll staff allowlist by explicit staff IDs.
+- Name-based HR/payroll allowlist picker in HR setup flow with searchable multi-select.
+- Bootstrap-safe whitelist behavior: admin recovery access when allowlist is empty.
 - Envato submission documentation kit:
   - Envato readiness guide
   - Package structure blueprint
@@ -21,20 +21,22 @@ The format follows Keep a Changelog principles and semantic versioning intent.
   - Support policy
 
 ### Changed
-- HR workspace tab structure split into dedicated sections:
+- HR workspace tab structure split and sequenced into dedicated sections:
+  - Shift and Department Setup
   - Employee Pay Setup
-  - Shift Scheduling and Distribute
   - Manual Attendance Logger
   - Employee Leave Tracking
   - Reporting and Payrun
   - Project Assignment
-- Project Assignment access now uses strict explicit role-ID allowlist checks instead of role-title matching.
-- Access checks centralized and reinforced in controller helpers.
-- Bootstrap helper access logic aligned with strict role-ID allowlist model.
+- HR and payroll workspace access now uses strict explicit staff-ID allowlist checks.
+- Access checks centralized and reinforced in controller helpers and menu helpers.
+- Allowlist save endpoint now supports both multi-select array payloads and legacy comma-separated text.
 
 ### Fixed
 - Removed duplicated template/script content in HR management view.
 - Improved consistency between menu visibility and runtime access enforcement.
+- Enforced own-only attendance ledger visibility for non-admin staff accounts.
+- Removed stale role-allowlist UI references from HR management flow.
 
 ## [1.0.0] - 2026-06-22
 

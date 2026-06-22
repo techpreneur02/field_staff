@@ -13,21 +13,21 @@ Run this checklist before every Envato submission or update.
 - Clock in captures GPS and saves row
 - Clock out closes open row and saves GPS
 - Ledger updates show in/out coordinates and notes
-- Users without global rights cannot access unauthorized scope
+- Non-admin users see own attendance ledger rows only
 
 ## 3. HR Workspace and Permissions
 
 - Employee Pay Setup tab appears only for authorized users
 - Operations tabs appear only for authorized users
 - Reporting and Payrun tab appears only for authorized users
-- Project Assignment tab appears only for allowlisted role IDs
+- Project Assignment tab appears only for allowlisted HR/payroll staff IDs
 
-## 4. Project Assignment and Role Allowlist
+## 4. HR/Payroll Staff Allowlist
 
-- Admin can save role allowlist values
-- Role allowlist persists across reloads
-- Current user role indicator is visible in allowlist panel
-- Non-allowlisted users cannot access project assignment routes
+- Admin can save staff allowlist values from searchable name picker
+- Staff allowlist persists across reloads
+- Current user staff indicator is visible in allowlist panel
+- Non-allowlisted users cannot access HR/payroll workspace routes
 
 ## 5. Reporting and Exports
 

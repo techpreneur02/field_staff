@@ -28,9 +28,9 @@ Operational benefit:
 ## 4. Post-Install Configuration
 
 1. Assign module capabilities to roles.
-2. Configure departments and shift templates.
-3. Configure payroll profiles per staff.
-4. Configure manager/supervisor role-ID allowlist for Project Assignment.
+2. Configure HR/payroll staff allowlist in Shift and Department Setup.
+3. Configure departments and shift templates.
+4. Configure payroll profiles per staff.
 
 ## 5. Data Objects Created
 
@@ -66,14 +66,14 @@ Weekly:
 - Run payrun statement after attendance lock.
 
 Monthly:
-- Revalidate role allowlist against active role design.
+- Revalidate HR/payroll staff allowlist against active staffing.
 - Verify statutory rates and payroll profile drift.
 
 ## 8. QA and Validation
 
 - Clock in/out success with valid coordinates.
 - Unauthorized users blocked from restricted HR tabs.
-- Allowlisted role IDs gain Project Assignment access only.
+- Allowlisted staff IDs gain HR/payroll workspace access.
 - CSV report exports generate expected columns.
 - Payrun returns rows for completed attendance periods.
 
@@ -81,9 +81,9 @@ Monthly:
 
 ### Missing Access
 
-- Verify role capabilities.
-- Verify allowlist values in fs_settings for manager_supervisor_role_ids.
-- Confirm user session resolves to expected staff and role.
+- Verify allowlist values in fs_settings for hr_payroll_staff_ids.
+- Confirm user session resolves to expected staff ID.
+- Confirm at least one trusted admin staff ID remains allowlisted.
 
 ### Empty Payrun
 

@@ -12,7 +12,7 @@ Core value proposition:
 - HR operations workspace
 - Payroll and statutory handling
 - Report export and payrun workflow
-- Strict role-ID access controls for project assignment
+- Strict staff-ID allowlist access controls for HR/payroll workspace
 
 ## 2. Required Submission Assets
 
@@ -50,7 +50,7 @@ Must include:
 Before packaging, verify:
 - Attendance clock in/out with GPS data works
 - Restricted tabs are hidden for unauthorized users
-- Role allowlist updates persist and enforce access rules
+- Staff allowlist updates persist and enforce access rules
 - Reporting exports generate expected CSV columns
 - Payrun statement builds correctly for valid periods
 

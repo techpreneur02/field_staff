@@ -13,15 +13,18 @@ This runbook is for HR operations, supervisors, and payroll administrators.
 
 Outcome:
 - One attendance row with geolocation evidence and optional notes.
+- Non-admin staff can view only their own attendance ledger history.
 
 ## 2. HR Profile Setup Workflow
 
 1. Open HR Management.
-2. Select Employee Pay Setup tab.
-3. Select staff member.
-4. Assign department and default shift.
-5. Enter pay profile and statutory values.
-6. Save profile.
+2. Select Shift and Department Setup tab.
+3. Create required departments and shift templates.
+4. Select Employee Pay Setup tab.
+5. Select staff member.
+6. Assign department and default shift.
+7. Enter pay profile and statutory values.
+8. Save profile.
 
 Outcome:
 - Payroll profile stored and ready for reporting/payrun.
@@ -58,7 +61,7 @@ Outcome:
 
 ## 6. Project Assignment Workflow
 
-1. Ensure acting role is allowlisted for Project Assignment.
+1. Ensure acting staff account is allowlisted for HR/payroll workspace access.
 2. Open Project Assignment tab.
 3. Enter project name, date range, and status.
 4. Select one or many staff.
@@ -67,16 +70,16 @@ Outcome:
 Outcome:
 - Project-to-staff allocation with supervisor traceability.
 
-## 7. Role Allowlist Admin Workflow
+## 7. HR/Payroll Staff Allowlist Admin Workflow
 
-1. Open Project Assignment panel as admin.
-2. Read Current user Staff ID and Role ID indicator.
-3. Enter comma-separated role IDs.
-4. Save role allowlist.
+1. Open Shift and Department Setup as admin.
+2. Locate HR/Payroll Staff Allowlist panel.
+3. Use staff name picker to select allowed users.
+4. Save allowlist.
 5. Validate access behavior with test users.
 
 Outcome:
-- Strict role-ID controlled access for Project Assignment tab.
+- Strict staff-ID controlled access for all HR/payroll workspace tabs.
 
 ## 8. Weekly Operating Rhythm (Recommended)
 

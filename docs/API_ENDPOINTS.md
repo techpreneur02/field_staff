@@ -13,7 +13,8 @@ Purpose:
 - Render attendance dashboard.
 
 Notes:
-- Enforces own-only scope unless user has global rights.
+- Non-admin users always receive own attendance records only.
+- Admin users can retrieve global attendance records.
 
 ### POST clock_action
 
@@ -125,21 +126,21 @@ Key fields:
 - status
 - notes
 
-### POST save_manager_supervisor_roles
+### POST save_hr_payroll_staff_ids
 
 Purpose:
-- Save explicit manager/supervisor role ID allowlist.
+- Save explicit HR/payroll workspace staff-ID allowlist.
 
 Access:
 - Admin only
 
 Key fields:
-- role_ids: comma-separated integer IDs
+- staff_ids: array of integer IDs from multi-select, or legacy comma-separated integer string
 
 Response:
 - success: boolean
 - message: string
-- role_ids: normalized integer array
+- staff_ids: normalized integer array
 
 ## 6. Error and Access Behavior
 
