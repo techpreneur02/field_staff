@@ -7,6 +7,11 @@
 - Existing staff/auth/session infrastructure in host application
 - jQuery and Bootstrap available in admin views
 
+## 1.1 Release Identity
+
+- Module display name: Field Staff module by Sherwin Armas
+- Current release baseline: 1.1.0
+
 ## 2. Installation
 
 1. Place module folder as field_staff inside your modules path.
@@ -28,9 +33,14 @@ Operational benefit:
 ## 4. Post-Install Configuration
 
 1. Assign module capabilities to roles.
-2. Configure HR/payroll staff allowlist in Shift and Department Setup.
+2. Configure HR/payroll staff allowlist in Payroll Admin tab.
 3. Configure departments and shift templates.
 4. Configure payroll profiles per staff.
+
+Employee portal rollout checks (v1.1):
+- Verify live attendance map is visible beside Record Attendance panel.
+- Verify mobile tabs are swipeable/touch-friendly and preserve active tab state.
+- Verify check in/out status refreshes immediately after attendance submission.
 
 ## 5. Data Objects Created
 

@@ -1,614 +1,830 @@
-<?php defined('BASEPATH') or exit('No direct script access allowed'); ?>
+﻿<?php defined('BASEPATH') or exit('No direct script access allowed'); ?>
 <?php init_head(); ?>
 <?php
-$is_clocked_in = isset($is_clocked_in) ? (bool) $is_clocked_in : false;
-$status_label = $is_clocked_in ? 'Clocked In' : 'Clocked Out';
-$status_class = $is_clocked_in ? 'bg-success' : 'bg-secondary';
-$title_text = isset($title) ? htmlspecialchars((string) $title, ENT_QUOTES, 'UTF-8') : 'Field Attendance Tracker';
-$clock_action_url = function_exists('admin_url') ? admin_url('field_staff/clock_action') : 'field_staff/clock_action';
-$attendance_records = isset($attendance_records) && is_array($attendance_records) ? $attendance_records : [];
-
-if (!function_exists('field_staff_map_url')) {
-    function field_staff_map_url($latitude, $longitude)
+if (!function_exists('fs_portal_escape')) {
+    function fs_portal_escape($value)
     {
-        $latitude = trim((string) $latitude);
-        $longitude = trim((string) $longitude);
-
-        if ($latitude === '' || $longitude === '' || $latitude === '-' || $longitude === '-') {
-            return '';
-        }
-
-        $lat = (float) $latitude;
-        $lng = (float) $longitude;
-        $offset = 0.0035;
-        $left = $lng - $offset;
-        $right = $lng + $offset;
-        $top = $lat + $offset;
-        $bottom = $lat - $offset;
-
-        return 'https://www.openstreetmap.org/export/embed.html?bbox=' . rawurlencode($left) . '%2C' . rawurlencode($bottom) . '%2C' . rawurlencode($right) . '%2C' . rawurlencode($top) . '&layer=mapnik&marker=' . rawurlencode($lat) . '%2C' . rawurlencode($lng);
+        return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
     }
 }
+
+$title_text   = isset($title) ? fs_portal_escape($title) : 'Employee Workforce Portal';
+$attendance_records = isset($attendance_records) && is_array($attendance_records) ? $attendance_records : [];
+$leave_rows   = isset($leave_rows) && is_array($leave_rows) ? $leave_rows : [];
+$payslip_rows = isset($payslip_rows) && is_array($payslip_rows) ? $payslip_rows : [];
+$start_date   = isset($start_date) ? fs_portal_escape($start_date) : date('Y-m-d', strtotime('-14 days'));
+$end_date     = isset($end_date) ? fs_portal_escape($end_date) : date('Y-m-d');
+$is_clocked_in = isset($is_clocked_in) ? (bool) $is_clocked_in : false;
+$save_leave_request_url    = isset($save_leave_request_url) ? (string) $save_leave_request_url : field_staff_admin_url('field_staff/save_leave_request');
+$get_payslip_statement_url = isset($get_payslip_statement_url) ? (string) $get_payslip_statement_url : field_staff_admin_url('field_staff/get_employee_payslip_statement');
+$clock_action_url = isset($clock_action_url) ? (string) $clock_action_url : field_staff_admin_url('field_staff/clock_action');
 ?>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+<style>
+    .fs-portal-hero {
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 55%, #334155 100%);
+        color: #fff;
+        border-radius: 18px;
+        padding: 24px;
+        margin-bottom: 18px;
+        box-shadow: 0 18px 45px rgba(15, 23, 42, 0.18);
+    }
+
+    .fs-portal-hero p {
+        color: rgba(255, 255, 255, 0.82);
+    }
+
+    .fs-portal-badge {
+        display: inline-block;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+
+    .fs-portal-badge.on {
+        background: #16a34a;
+        color: #fff;
+    }
+
+    .fs-portal-badge.off {
+        background: #475569;
+        color: #fff;
+    }
+
+    .fs-portal-panel {
+        border-radius: 16px;
+        overflow: hidden;
+    }
+
+    .fs-portal-tabs {
+        display: flex;
+        gap: 8px;
+        border-bottom: 0;
+        margin-bottom: 4px;
+    }
+
+    .fs-portal-tabs>li {
+        float: none;
+        margin-bottom: 0;
+    }
+
+    .fs-portal-tabs>li>a {
+        border-radius: 999px;
+        border: 1px solid #dbe3ee;
+        background: #f8fafc;
+        color: #334155;
+        padding: 10px 14px;
+        font-weight: 600;
+        margin-right: 0;
+        line-height: 1.2;
+        transition: all 0.18s ease;
+    }
+
+    .fs-portal-tabs>li.active>a,
+    .fs-portal-tabs>li.active>a:focus,
+    .fs-portal-tabs>li.active>a:hover {
+        background: #0f172a;
+        color: #fff;
+        border-color: #0f172a;
+    }
+
+    .fs-portal-tabs>li>a:focus,
+    .fs-portal-tabs>li>a:hover {
+        background: #eef2ff;
+        border-color: #c7d2fe;
+    }
+
+    .fs-portal-subtle {
+        color: #64748b;
+    }
+
+    .fs-table-wrap {
+        overflow-x: auto;
+    }
+
+    .fs-statement-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .fs-statement-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 14px;
+        background: #fff;
+    }
+
+    .fs-statement-card h5 {
+        margin-top: 0;
+    }
+
+    .fs-attendance-map-wrap {
+        height: 100%;
+        min-height: 320px;
+    }
+
+    .fs-attendance-map {
+        width: 100%;
+        height: 260px;
+        border-radius: 10px;
+        border: 1px solid #e5e7eb;
+    }
+
+    .fs-attendance-meta {
+        margin-top: 10px;
+        font-size: 12px;
+        color: #64748b;
+    }
+
+    .tab-content {
+        border-top: 1px solid #e2e8f0;
+        padding-top: 12px;
+    }
+
+    @media (max-width: 767px) {
+        .panel_s.fs-portal-panel .panel-body {
+            padding: 12px;
+        }
+
+        .fs-portal-hero {
+            border-radius: 14px;
+            padding: 14px;
+            margin-bottom: 12px;
+        }
+
+        .fs-portal-hero h3 {
+            font-size: 20px;
+        }
+
+        .fs-portal-tabs {
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            position: sticky;
+            top: 0;
+            z-index: 4;
+            background: #fff;
+            padding: 4px 0 8px;
+        }
+
+        .fs-portal-tabs::-webkit-scrollbar {
+            display: none;
+        }
+
+        .fs-portal-tabs>li {
+            flex: 0 0 auto;
+            scroll-snap-align: start;
+        }
+
+        .fs-portal-tabs>li>a {
+            white-space: nowrap;
+            min-height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            padding: 10px 12px;
+        }
+
+        .tab-content {
+            padding-top: 8px;
+        }
+
+        .fs-statement-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .fs-attendance-map-wrap {
+            min-height: 0;
+            margin-top: 12px;
+        }
+
+        .fs-attendance-map {
+            height: 220px;
+        }
+    }
+</style>
 
 <div id="wrapper">
     <div class="content">
         <div class="row">
             <div class="col-md-12">
-                <div class="panel_s">
+
+                <div class="fs-portal-hero">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <h3 class="no-margin"><?php echo $title_text; ?></h3>
+                            <p class="mbot0 mtop5">Private self-service workspace for personal attendance history, leave requests, and issued pay statements.</p>
+                        </div>
+                        <div class="col-md-4 text-right">
+                            <span class="fs-portal-badge <?php echo $is_clocked_in ? 'on' : 'off'; ?>">
+                                <?php echo $is_clocked_in ? 'Clocked In' : 'Clocked Out'; ?>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel_s fs-portal-panel">
                     <div class="panel-body">
-                        <div class="row">
-                            <div class="col-md-6 col-md-offset-3 col-sm-10 col-sm-offset-1 col-xs-12">
-                                <div class="panel panel-default mtop10">
-                                    <div class="panel-body">
-                                        <div class="clearfix mtop5 mbot15">
-                                            <h4 class="pull-left no-margin"><?php echo $title_text; ?></h4>
-                                            <span id="clock-status" class="badge <?php echo htmlspecialchars($status_class, ENT_QUOTES, 'UTF-8'); ?> pull-right">
-                                                <?php echo htmlspecialchars($status_label, ENT_QUOTES, 'UTF-8'); ?>
-                                            </span>
+
+                        <ul class="nav nav-tabs fs-portal-tabs" role="tablist">
+                            <li role="presentation" class="active">
+                                <a href="#tab-my-daily-logs" aria-controls="tab-my-daily-logs" role="tab" data-toggle="tab">My Daily Logs</a>
+                            </li>
+                            <li role="presentation">
+                                <a href="#tab-request-time-off" aria-controls="tab-request-time-off" role="tab" data-toggle="tab">Request Time Off</a>
+                            </li>
+                            <li role="presentation">
+                                <a href="#tab-my-payslips" aria-controls="tab-my-payslips" role="tab" data-toggle="tab">My Payslips</a>
+                            </li>
+                        </ul>
+
+                        <div class="tab-content mtop20">
+
+                            <!-- Tab A: My Daily Logs -->
+                            <div role="tabpanel" class="tab-pane active" id="tab-my-daily-logs">
+
+                                <!-- Clock in / Clock out panel -->
+                                <div class="row mbot20">
+                                    <div class="col-md-5">
+                                        <div class="panel panel-default">
+                                            <div class="panel-heading clearfix">
+                                                <strong class="pull-left">Record Attendance</strong>
+                                                <span id="clock-status-badge" class="badge pull-right <?php echo $is_clocked_in ? 'bg-success' : 'bg-secondary'; ?>"><?php echo $is_clocked_in ? 'Clocked In' : 'Clocked Out'; ?></span>
+                                            </div>
+                                            <div class="panel-body">
+                                                <?php if (isset($this->security) && method_exists($this->security, 'get_csrf_token_name') && method_exists($this->security, 'get_csrf_hash')) { ?>
+                                                    <input type="hidden" id="portal-csrf-name" value="<?php echo fs_portal_escape($this->security->get_csrf_token_name()); ?>">
+                                                    <input type="hidden" id="portal-csrf-hash" value="<?php echo fs_portal_escape($this->security->get_csrf_hash()); ?>">
+                                                <?php } ?>
+                                                <form id="attendance-form" autocomplete="off">
+                                                    <div class="form-group">
+                                                        <label for="attendance_notes" class="control-label">Field Notes (Optional)</label>
+                                                        <textarea id="attendance_notes" name="notes" class="form-control" rows="3" placeholder="Add attendance or location context"></textarea>
+                                                    </div>
+                                                    <p id="gps-preview" class="text-muted mbot15">GPS: waiting for capture</p>
+                                                    <div class="btn-group btn-group-justified" role="group">
+                                                        <div class="btn-group" role="group">
+                                                            <button type="button" id="clock-in-btn" class="btn btn-success" <?php echo $is_clocked_in ? 'disabled' : ''; ?>>Clock In</button>
+                                                        </div>
+                                                        <div class="btn-group" role="group">
+                                                            <button type="button" id="clock-out-btn" class="btn btn-warning" <?php echo !$is_clocked_in ? 'disabled' : ''; ?>>Clock Out</button>
+                                                        </div>
+                                                    </div>
+                                                </form>
+                                            </div>
                                         </div>
-
-                                        <p class="text-muted mbot20">Record field attendance with location verification in your workforce workflow.</p>
-                                        <p id="gps-preview" class="text-muted mbot15">GPS: waiting for capture</p>
-                                        <p class="mbot20">
-                                            <a id="gps-map-btn" href="#" class="btn btn-info btn-sm disabled" aria-disabled="true" data-map-url="" data-lat="" data-lng="">Show on Map</a>
-                                        </p>
-
-                                        <form id="attendance-form" method="post" action="<?php echo htmlspecialchars($clock_action_url, ENT_QUOTES, 'UTF-8'); ?>" novalidate>
-                                            <input type="hidden" name="action" id="attendance_action" value="">
-                                            <input type="hidden" name="action_type" id="attendance_action_type" value="">
-                                            <input type="hidden" name="latitude" id="attendance_latitude" value="">
-                                            <input type="hidden" name="longitude" id="attendance_longitude" value="">
-                                            <input type="hidden" name="in_latitude" id="in_latitude" value="">
-                                            <input type="hidden" name="in_longitude" id="in_longitude" value="">
-                                            <input type="hidden" name="out_latitude" id="out_latitude" value="">
-                                            <input type="hidden" name="out_longitude" id="out_longitude" value="">
-
-                                            <?php if (isset($this->security) && method_exists($this->security, 'get_csrf_token_name') && method_exists($this->security, 'get_csrf_hash')) { ?>
-                                                <input
-                                                    type="hidden"
-                                                    name="<?php echo htmlspecialchars($this->security->get_csrf_token_name(), ENT_QUOTES, 'UTF-8'); ?>"
-                                                    value="<?php echo htmlspecialchars($this->security->get_csrf_hash(), ENT_QUOTES, 'UTF-8'); ?>">
-                                            <?php } ?>
-
-                                            <div class="form-group">
-                                                <label for="field_notes" class="control-label">Field Notes (Optional)</label>
-                                                <textarea
-                                                    id="field_notes"
-                                                    name="notes"
-                                                    class="form-control"
-                                                    rows="4"
-                                                    placeholder="Add attendance or location context"></textarea>
+                                    </div>
+                                    <div class="col-md-7">
+                                        <div class="panel panel-default fs-attendance-map-wrap">
+                                            <div class="panel-heading clearfix">
+                                                <strong class="pull-left">Attendance Map</strong>
+                                                <button type="button" id="show-map-btn" class="btn btn-default btn-xs pull-right">Hide Map</button>
                                             </div>
-
-                                            <div class="row">
-                                                <div class="col-xs-12 col-sm-6 mbot10">
-                                                    <button
-                                                        type="button"
-                                                        id="clock-in-btn"
-                                                        class="btn btn-success btn-lg btn-block"
-                                                        <?php echo $is_clocked_in ? 'disabled="disabled"' : ''; ?>>
-                                                        <i class="fa fa-sign-in" aria-hidden="true"></i>
-                                                        Clock In
-                                                    </button>
-                                                </div>
-                                                <div class="col-xs-12 col-sm-6 mbot10">
-                                                    <button
-                                                        type="button"
-                                                        id="clock-out-btn"
-                                                        class="btn btn-danger btn-lg btn-block"
-                                                        <?php echo !$is_clocked_in ? 'disabled="disabled"' : ''; ?>>
-                                                        <i class="fa fa-sign-out" aria-hidden="true"></i>
-                                                        Clock Out
-                                                    </button>
-                                                </div>
+                                            <div class="panel-body" id="attendance-map-panel">
+                                                <div id="attendance-live-map" class="fs-attendance-map"></div>
+                                                <p id="map-status" class="fs-attendance-meta mbot0">Map is tracking your latest GPS position and attendance event.</p>
                                             </div>
-                                        </form>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        </div>
 
-                        <div class="row mtop20">
-                            <div class="col-md-12">
-                                <h5 class="mbot10">Attendance Ledger History</h5>
-                                <div class="table-responsive">
+                                <div class="row">
+                                    <div class="col-md-12">
+                                        <div class="well well-sm">
+                                            <div class="row">
+                                                <div class="col-sm-3 col-xs-12">
+                                                    <label for="my-logs-start-date" class="control-label">Start Date</label>
+                                                    <input type="date" id="my-logs-start-date" class="form-control" value="<?php echo $start_date; ?>">
+                                                </div>
+                                                <div class="col-sm-3 col-xs-12">
+                                                    <label for="my-logs-end-date" class="control-label">End Date</label>
+                                                    <input type="date" id="my-logs-end-date" class="form-control" value="<?php echo $end_date; ?>">
+                                                </div>
+                                                <div class="col-sm-3 col-xs-12">
+                                                    <label class="control-label">&nbsp;</label>
+                                                    <button type="button" id="js-my-logs-filter" class="btn btn-primary btn-block">Run History Report</button>
+                                                </div>
+                                                <div class="col-sm-3 col-xs-12">
+                                                    <label class="control-label">&nbsp;</label>
+                                                    <button type="button" id="js-my-logs-reset" class="btn btn-default btn-block">Reset Range</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="fs-table-wrap">
                                     <table class="table table-striped table-bordered">
                                         <thead>
                                             <tr>
                                                 <th>Date</th>
                                                 <th>Clock In</th>
                                                 <th>Clock Out</th>
-                                                <th>In GPS</th>
-                                                <th>Out GPS</th>
-                                                <th>Notes</th>
+                                                <th>Field Notes</th>
+                                                <th>GPS Tracking</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             <?php if (!empty($attendance_records)) { ?>
                                                 <?php foreach ($attendance_records as $row) { ?>
                                                     <?php
-                                                    $date = isset($row['date']) ? (string) $row['date'] : '-';
-                                                    $clock_in = isset($row['clock_in']) ? (string) $row['clock_in'] : '-';
-                                                    $clock_out = isset($row['clock_out']) && $row['clock_out'] !== null ? (string) $row['clock_out'] : '-';
-                                                    $in_latitude = isset($row['in_latitude']) ? (string) $row['in_latitude'] : '-';
-                                                    $in_longitude = isset($row['in_longitude']) ? (string) $row['in_longitude'] : '-';
-                                                    $out_latitude = isset($row['out_latitude']) && $row['out_latitude'] !== null ? (string) $row['out_latitude'] : '-';
-                                                    $out_longitude = isset($row['out_longitude']) && $row['out_longitude'] !== null ? (string) $row['out_longitude'] : '-';
-                                                    $in_gps = $in_latitude . ', ' . $in_longitude;
-                                                    $out_gps = $out_latitude . ', ' . $out_longitude;
-                                                    $in_map_url = field_staff_map_url($in_latitude, $in_longitude);
-                                                    $out_map_url = field_staff_map_url($out_latitude, $out_longitude);
-                                                    $notes = isset($row['notes']) && trim((string) $row['notes']) !== '' ? (string) $row['notes'] : '-';
+                                                    $in_lat  = (string) ($row['in_latitude']  ?? '');
+                                                    $in_lng  = (string) ($row['in_longitude'] ?? '');
+                                                    $out_lat = (string) ($row['out_latitude'] ?? '');
+                                                    $out_lng = (string) ($row['out_longitude'] ?? '');
+                                                    $in_coords  = ($in_lat  !== '' && $in_lng  !== '') ? trim($in_lat  . ', ' . $in_lng)  : '';
+                                                    $out_coords = ($out_lat !== '' && $out_lng !== '') ? trim($out_lat . ', ' . $out_lng) : '';
                                                     ?>
                                                     <tr>
-                                                        <td><?php echo htmlspecialchars($date, ENT_QUOTES, 'UTF-8'); ?></td>
-                                                        <td><?php echo htmlspecialchars($clock_in, ENT_QUOTES, 'UTF-8'); ?></td>
-                                                        <td><?php echo htmlspecialchars($clock_out, ENT_QUOTES, 'UTF-8'); ?></td>
+                                                        <td><?php echo fs_portal_escape($row['date'] ?? ''); ?></td>
+                                                        <td><?php echo fs_portal_escape($row['clock_in'] ?? ''); ?></td>
+                                                        <td><?php echo fs_portal_escape($row['clock_out'] ?? ''); ?></td>
+                                                        <td><?php echo fs_portal_escape($row['notes'] ?? ''); ?></td>
                                                         <td>
-                                                            <div><?php echo htmlspecialchars($in_gps, ENT_QUOTES, 'UTF-8'); ?></div>
-                                                            <?php if ($in_map_url !== '') { ?>
-                                                                <a href="#" data-map-url="<?php echo htmlspecialchars($in_map_url, ENT_QUOTES, 'UTF-8'); ?>" data-lat="<?php echo htmlspecialchars($in_latitude, ENT_QUOTES, 'UTF-8'); ?>" data-lng="<?php echo htmlspecialchars($in_longitude, ENT_QUOTES, 'UTF-8'); ?>" class="btn btn-info btn-xs mtop5 js-attendance-map-trigger">Show on Map</a>
-                                                            <?php } ?>
+                                                            <div><strong>In:</strong> <?php echo fs_portal_escape($in_coords !== '' ? $in_coords : 'Unavailable'); ?></div>
+                                                            <div class="mtop5"><strong>Out:</strong> <?php echo fs_portal_escape($out_coords !== '' ? $out_coords : 'Unavailable'); ?></div>
                                                         </td>
-                                                        <td>
-                                                            <div><?php echo htmlspecialchars($out_gps, ENT_QUOTES, 'UTF-8'); ?></div>
-                                                            <?php if ($out_map_url !== '') { ?>
-                                                                <a href="#" data-map-url="<?php echo htmlspecialchars($out_map_url, ENT_QUOTES, 'UTF-8'); ?>" data-lat="<?php echo htmlspecialchars($out_latitude, ENT_QUOTES, 'UTF-8'); ?>" data-lng="<?php echo htmlspecialchars($out_longitude, ENT_QUOTES, 'UTF-8'); ?>" class="btn btn-info btn-xs mtop5 js-attendance-map-trigger">Show on Map</a>
-                                                            <?php } ?>
-                                                        </td>
-                                                        <td><?php echo htmlspecialchars($notes, ENT_QUOTES, 'UTF-8'); ?></td>
                                                     </tr>
                                                 <?php } ?>
                                             <?php } else { ?>
                                                 <tr>
-                                                    <td colspan="6" class="text-center text-muted">No attendance records available yet.</td>
+                                                    <td colspan="5" class="text-center text-muted">No personal attendance records were found for the selected period.</td>
                                                 </tr>
                                             <?php } ?>
                                         </tbody>
                                     </table>
                                 </div>
                             </div>
+
+                            <!-- Tab B: Request Time Off -->
+                            <div role="tabpanel" class="tab-pane" id="tab-request-time-off">
+                                <div class="row">
+                                    <div class="col-md-5">
+                                        <div class="panel panel-default">
+                                            <div class="panel-heading"><strong>Submit Leave Request</strong></div>
+                                            <div class="panel-body">
+                                                <form id="leave-request-form" autocomplete="off">
+                                                    <div class="form-group">
+                                                        <label for="leave_type" class="control-label">Leave Type</label>
+                                                        <select id="leave_type" class="form-control">
+                                                            <option value="Vacation">Vacation</option>
+                                                            <option value="Sick">Sick</option>
+                                                            <option value="Maternity">Maternity</option>
+                                                            <option value="Unpaid">Unpaid</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="leave_start_date" class="control-label">Start Date</label>
+                                                        <input type="date" id="leave_start_date" class="form-control">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="leave_end_date" class="control-label">End Date</label>
+                                                        <input type="date" id="leave_end_date" class="form-control">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="leave_reason" class="control-label">Reason</label>
+                                                        <textarea id="leave_reason" class="form-control" rows="4" placeholder="Add a short request note"></textarea>
+                                                    </div>
+                                                    <button type="button" id="js-submit-leave-request" class="btn btn-primary btn-block">Submit Request</button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-7">
+                                        <div class="panel panel-default">
+                                            <div class="panel-heading"><strong>Recent Leave Requests</strong></div>
+                                            <div class="panel-body">
+                                                <div class="fs-table-wrap">
+                                                    <table class="table table-striped table-bordered mbot0">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Type</th>
+                                                                <th>Dates</th>
+                                                                <th>Status</th>
+                                                                <th>Reason</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            <?php if (!empty($leave_rows)) { ?>
+                                                                <?php foreach ($leave_rows as $leave_row) { ?>
+                                                                    <tr>
+                                                                        <td><?php echo fs_portal_escape($leave_row['leave_type'] ?? ''); ?></td>
+                                                                        <td><?php echo fs_portal_escape(($leave_row['start_date'] ?? '') . ' to ' . ($leave_row['end_date'] ?? '')); ?></td>
+                                                                        <td><?php echo fs_portal_escape($leave_row['status'] ?? ''); ?></td>
+                                                                        <td><?php echo fs_portal_escape($leave_row['reason'] ?? ''); ?></td>
+                                                                    </tr>
+                                                                <?php } ?>
+                                                            <?php } else { ?>
+                                                                <tr>
+                                                                    <td colspan="4" class="text-center text-muted">No leave requests have been submitted yet.</td>
+                                                                </tr>
+                                                            <?php } ?>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Tab C: My Payslips -->
+                            <div role="tabpanel" class="tab-pane" id="tab-my-payslips">
+                                <div class="panel panel-default">
+                                    <div class="panel-heading"><strong>Issued Pay Statements</strong></div>
+                                    <div class="panel-body">
+                                        <div class="fs-table-wrap">
+                                            <table class="table table-hover table-bordered mbot0">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Pay Date</th>
+                                                        <th>Period</th>
+                                                        <th>Net Salary</th>
+                                                        <th>Status</th>
+                                                        <th class="text-center">Action</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <?php if (!empty($payslip_rows)) { ?>
+                                                        <?php foreach ($payslip_rows as $row) { ?>
+                                                            <tr>
+                                                                <td><?php echo fs_portal_escape($row['created_at'] ?? ($row['end_date'] ?? '')); ?></td>
+                                                                <td><?php echo fs_portal_escape(($row['start_date'] ?? '') . ' to ' . ($row['end_date'] ?? '')); ?></td>
+                                                                <td>$<?php echo number_format((float) ($row['net_salary'] ?? 0), 2); ?></td>
+                                                                <td><?php echo fs_portal_escape($row['status'] ?? 'draft'); ?></td>
+                                                                <td class="text-center">
+                                                                    <button type="button" class="btn btn-primary btn-sm js-view-payslip" data-payroll-id="<?php echo (int) ($row['id'] ?? 0); ?>">View Statement</button>
+                                                                </td>
+                                                            </tr>
+                                                        <?php } ?>
+                                                    <?php } else { ?>
+                                                        <tr>
+                                                            <td colspan="5" class="text-center text-muted">No issued pay statements are available yet.</td>
+                                                        </tr>
+                                                    <?php } ?>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                         </div>
                     </div>
                 </div>
+
             </div>
         </div>
     </div>
 </div>
 
-<div class="modal fade" id="attendance-map-modal" tabindex="-1" role="dialog" aria-hidden="true">
+<div class="modal fade" id="payslip-statement-modal" tabindex="-1" role="dialog" aria-hidden="true">
     <div class="modal-dialog modal-lg" role="document">
         <div class="modal-content">
             <div class="modal-header">
                 <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
-                <h4 class="modal-title">Attendance Location Map</h4>
+                <h4 class="modal-title">Compiled Pay Statement</h4>
             </div>
-            <div class="modal-body" style="padding:0;">
-                <div class="clearfix" style="padding:12px 15px 8px; border-bottom:1px solid #ececec;">
-                    <div class="btn-group btn-group-sm" role="group" aria-label="Map Layer">
-                        <button type="button" id="map-layer-street" class="btn btn-default active" data-layer="street">Street</button>
-                        <button type="button" id="map-layer-satellite" class="btn btn-default" data-layer="satellite">Satellite</button>
-                    </div>
-                    <button type="button" id="copy-map-coords" class="btn btn-info btn-sm pull-right" disabled="disabled">Copy Coordinates</button>
-                    <button type="button" id="open-full-map" class="btn btn-default btn-sm pull-right mright5" disabled="disabled">Open Full Map</button>
-                    <p id="map-coords-preview" class="text-muted mbot0 mtop10">Coordinates: unavailable</p>
-                </div>
-                <iframe
-                    id="attendance-map-frame"
-                    src=""
-                    style="border:0; width:100%; height:420px;"
-                    loading="lazy"
-                    referrerpolicy="no-referrer-when-downgrade"></iframe>
+            <div class="modal-body" id="payslip-statement-body">
+                <p class="text-muted">Select a pay statement to review the compiled details.</p>
             </div>
         </div>
     </div>
 </div>
 
-<?php init_tail(); ?>
-
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script>
     (function() {
-        'use strict';
-
-        function getJq() {
-            if (window.jQuery && window.jQuery.fn) {
-                return window.jQuery;
-            }
-
-            if (window.$ && window.$.fn) {
-                return window.$;
-            }
-
-            return null;
-        }
-
-        function bootAttendance() {
-            var jq = getJq();
-            if (!jq) {
-                console.error('jQuery is unavailable for attendance handlers.');
+        function bootPortal() {
+            var $ = window.jQuery;
+            if (!$) {
                 return;
             }
 
-            var $ = jq;
-            var isClockedIn = <?php echo $is_clocked_in ? 'true' : 'false'; ?>;
+            var saveLeaveRequestUrl = <?php echo json_encode($save_leave_request_url); ?>;
+            var getPayslipStatementUrl = <?php echo json_encode($get_payslip_statement_url); ?>;
+            var clockActionUrl = <?php echo json_encode($clock_action_url); ?>;
+            var TAB_STORAGE_KEY = 'fs_portal_active_tab';
+            var map = null;
+            var mapMarker = null;
+            var mapVisible = true;
 
-            function notify(type, message) {
-                if (typeof alert_float === 'function') {
-                    alert_float(type, message);
-                } else {
-                    window.alert(message);
+            function activeTabHref() {
+                return $('.fs-portal-tabs li.active a').attr('href') || '';
+            }
+
+            function restoreActiveTab() {
+                var saved = '';
+                try {
+                    saved = window.sessionStorage.getItem(TAB_STORAGE_KEY) || '';
+                } catch (e) {
+                    saved = '';
+                }
+                if (!saved) {
+                    return;
+                }
+                var $tab = $('.fs-portal-tabs a[href="' + saved + '"]');
+                if ($tab.length) {
+                    $tab.tab('show');
                 }
             }
 
-            function appendCsrf(payload) {
-                var $csrf = $('#attendance-form input[type="hidden"]').filter(function() {
-                    var name = ($(this).attr('name') || '').toLowerCase();
-                    return name.indexOf('csrf') !== -1;
-                }).first();
-
-                if ($csrf.length) {
-                    payload[$csrf.attr('name')] = $csrf.val();
+            function persistActiveTab(href) {
+                try {
+                    window.sessionStorage.setItem(TAB_STORAGE_KEY, href || activeTabHref());
+                } catch (e) {
+                    // Ignore storage availability errors.
                 }
+            }
 
+            function refreshAttendanceView(delayMs) {
+                var wait = typeof delayMs === 'number' ? delayMs : 0;
+                window.setTimeout(function() {
+                    window.location.reload();
+                }, wait);
+            }
+
+            function showMessage(msg) {
+                if (window.alert) {
+                    alert(msg);
+                }
+            }
+
+            function escapeHtml(v) {
+                return String(v || '')
+                    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+
+            // Clock in / Clock out
+            function getGeo(cb, errCb) {
+                if (!navigator.geolocation) {
+                    errCb('Location services are unavailable in this browser.');
+                    return;
+                }
+                navigator.geolocation.getCurrentPosition(
+                    function(pos) {
+                        cb(pos.coords.latitude, pos.coords.longitude);
+                    },
+                    function() {
+                        errCb('Unable to capture GPS location.');
+                    }, {
+                        enableHighAccuracy: true,
+                        timeout: 15000,
+                        maximumAge: 0
+                    }
+                );
+            }
+
+            function appendPortalCsrf(payload) {
+                var csrfName = ($('#portal-csrf-name').val() || '').trim();
+                var csrfHash = ($('#portal-csrf-hash').val() || '').trim();
+                if (csrfName && csrfHash) {
+                    payload[csrfName] = csrfHash;
+                }
                 return payload;
             }
 
-            function escapeHtml(value) {
-                return $('<div>').text(value === null || typeof value === 'undefined' ? '' : value).html();
+            function ensureMap() {
+                if (map || typeof window.L === 'undefined') {
+                    return;
+                }
+                map = window.L.map('attendance-live-map', {
+                    zoomControl: true
+                }).setView([21.75, -72.27], 10);
+
+                window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '&copy; OpenStreetMap contributors'
+                }).addTo(map);
             }
 
-            function updateStatusDisplay() {
-                $('#clock-status')
-                    .removeClass('bg-success bg-secondary')
-                    .addClass(isClockedIn ? 'bg-success' : 'bg-secondary')
-                    .text(isClockedIn ? 'Clocked In' : 'Clocked Out');
-
-                $('#clock-in-btn').prop('disabled', isClockedIn);
-                $('#clock-out-btn').prop('disabled', !isClockedIn);
-            }
-
-            function updateMapButton(latitude, longitude) {
-                var $mapBtn = $('#gps-map-btn');
-
-                if (!$mapBtn.length) {
+            function updateMapPosition(lat, lng, label) {
+                ensureMap();
+                if (!map) {
                     return;
                 }
 
-                if (typeof latitude === 'undefined' || typeof longitude === 'undefined' || latitude === null || longitude === null) {
-                    $mapBtn.attr('href', '#').attr('data-map-url', '').attr('data-lat', '').attr('data-lng', '').addClass('disabled').attr('aria-disabled', 'true');
-                    return;
-                }
-
-                var lat = parseFloat(latitude);
-                var lng = parseFloat(longitude);
-                var offset = 0.0035;
-                var left = lng - offset;
-                var right = lng + offset;
-                var top = lat + offset;
-                var bottom = lat - offset;
-                var mapUrl = 'https://www.openstreetmap.org/export/embed.html?bbox=' +
-                    encodeURIComponent(left) + '%2C' + encodeURIComponent(bottom) + '%2C' + encodeURIComponent(right) + '%2C' + encodeURIComponent(top) +
-                    '&layer=mapnik&marker=' + encodeURIComponent(lat) + '%2C' + encodeURIComponent(lng);
-                $mapBtn.attr('href', '#').attr('data-map-url', mapUrl).attr('data-lat', lat.toFixed(8)).attr('data-lng', lng.toFixed(8)).removeClass('disabled').removeAttr('aria-disabled');
-            }
-
-            function buildStreetMapUrl(latitude, longitude) {
-                var lat = parseFloat(latitude);
-                var lng = parseFloat(longitude);
-                var offset = 0.0035;
-                var left = lng - offset;
-                var right = lng + offset;
-                var top = lat + offset;
-                var bottom = lat - offset;
-
-                return 'https://www.openstreetmap.org/export/embed.html?bbox=' +
-                    encodeURIComponent(left) + '%2C' + encodeURIComponent(bottom) + '%2C' + encodeURIComponent(right) + '%2C' + encodeURIComponent(top) +
-                    '&layer=mapnik&marker=' + encodeURIComponent(lat) + '%2C' + encodeURIComponent(lng);
-            }
-
-            function buildSatelliteMapUrl(latitude, longitude) {
-                var lat = parseFloat(latitude);
-                var lng = parseFloat(longitude);
-
-                return 'https://maps.google.com/maps?q=' + encodeURIComponent(lat + ',' + lng) + '&t=k&z=18&output=embed';
-            }
-
-            function buildStreetExternalMapUrl(latitude, longitude) {
-                var lat = parseFloat(latitude);
-                var lng = parseFloat(longitude);
-
-                return 'https://www.openstreetmap.org/?mlat=' + encodeURIComponent(lat) + '&mlon=' + encodeURIComponent(lng) + '#map=18/' + encodeURIComponent(lat) + '/' + encodeURIComponent(lng);
-            }
-
-            function buildSatelliteExternalMapUrl(latitude, longitude) {
-                var lat = parseFloat(latitude);
-                var lng = parseFloat(longitude);
-
-                return 'https://maps.google.com/?q=' + encodeURIComponent(lat + ',' + lng) + '&t=k&z=18';
-            }
-
-            function updateOpenFullMapButton(url) {
-                var $btn = $('#open-full-map');
-                var safeUrl = (url || '').trim();
-
-                if (!safeUrl) {
-                    $btn.prop('disabled', true).attr('data-external-url', '');
-                    return;
-                }
-
-                $btn.prop('disabled', false).attr('data-external-url', safeUrl);
-            }
-
-            function updateMapLayerButtons(layer) {
-                $('#map-layer-street').toggleClass('active', layer === 'street');
-                $('#map-layer-satellite').toggleClass('active', layer === 'satellite');
-            }
-
-            function renderModalMap(layer) {
-                var $modal = $('#attendance-map-modal');
-                var latitude = parseFloat($modal.attr('data-lat') || '');
-                var longitude = parseFloat($modal.attr('data-lng') || '');
-
-                if (isNaN(latitude) || isNaN(longitude)) {
-                    return;
-                }
-
-                var mapUrl = layer === 'satellite' ? buildSatelliteMapUrl(latitude, longitude) : buildStreetMapUrl(latitude, longitude);
-                $modal.attr('data-layer', layer);
-                updateMapLayerButtons(layer);
-                updateOpenFullMapButton(layer === 'satellite' ? buildSatelliteExternalMapUrl(latitude, longitude) : buildStreetExternalMapUrl(latitude, longitude));
-                $('#attendance-map-frame').attr('src', mapUrl);
-            }
-
-            function setModalCoordinates(latitude, longitude) {
-                var $modal = $('#attendance-map-modal');
-                var lat = parseFloat(latitude);
-                var lng = parseFloat(longitude);
-
-                if (isNaN(lat) || isNaN(lng)) {
-                    $modal.attr('data-lat', '').attr('data-lng', '');
-                    $('#map-coords-preview').text('Coordinates: unavailable');
-                    $('#copy-map-coords').prop('disabled', true).attr('data-coords', '');
-                    updateOpenFullMapButton('');
-                    return;
-                }
-
-                var latText = lat.toFixed(8);
-                var lngText = lng.toFixed(8);
-                $modal.attr('data-lat', latText).attr('data-lng', lngText);
-                $('#map-coords-preview').text('Coordinates: ' + latText + ', ' + lngText);
-                $('#copy-map-coords').prop('disabled', false).attr('data-coords', latText + ', ' + lngText);
-            }
-
-            function openMapModal(mapUrl, latitude, longitude) {
-                if ((!mapUrl || mapUrl === '#') && (typeof latitude === 'undefined' || typeof longitude === 'undefined')) {
-                    return;
-                }
-
-                setModalCoordinates(latitude, longitude);
-                var lat = parseFloat(latitude);
-                var lng = parseFloat(longitude);
-                if ((isNaN(lat) || isNaN(lng)) && mapUrl) {
-                    updateOpenFullMapButton(mapUrl);
-                    $('#attendance-map-frame').attr('src', mapUrl);
+                var point = [lat, lng];
+                if (!mapMarker) {
+                    mapMarker = window.L.marker(point).addTo(map);
                 } else {
-                    renderModalMap($('#attendance-map-modal').attr('data-layer') || 'street');
+                    mapMarker.setLatLng(point);
                 }
 
-                $('#attendance-map-modal').modal('show');
-            }
-
-            function renderAttendanceRecord(record, actionKey) {
-                if (!record) {
-                    return;
-                }
-
-                var dateValue = record.date || '-';
-                var clockInValue = record.clock_in || '-';
-                var clockOutValue = record.clock_out || '-';
-                var inGpsValue = (record.in_latitude || '-') + ', ' + (record.in_longitude || '-');
-                var outGpsValue = (record.out_latitude || '-') + ', ' + (record.out_longitude || '-');
-                var notesValue = record.notes || '-';
-                var $tbody = $('.table-responsive table tbody').first();
-
-                if (!$tbody.length) {
-                    return;
-                }
-
-                if (actionKey === 'clock_in') {
-                    var inMapUrl = record.in_latitude && record.in_longitude ?
-                        'https://www.openstreetmap.org/export/embed.html?bbox=' +
-                        encodeURIComponent(parseFloat(record.in_longitude) - 0.0035) + '%2C' + encodeURIComponent(parseFloat(record.in_latitude) - 0.0035) + '%2C' + encodeURIComponent(parseFloat(record.in_longitude) + 0.0035) + '%2C' + encodeURIComponent(parseFloat(record.in_latitude) + 0.0035) +
-                        '&layer=mapnik&marker=' + encodeURIComponent(record.in_latitude) + '%2C' + encodeURIComponent(record.in_longitude) :
-                        '';
-                    var outMapUrl = record.out_latitude && record.out_longitude ?
-                        'https://www.openstreetmap.org/export/embed.html?bbox=' +
-                        encodeURIComponent(parseFloat(record.out_longitude) - 0.0035) + '%2C' + encodeURIComponent(parseFloat(record.out_latitude) - 0.0035) + '%2C' + encodeURIComponent(parseFloat(record.out_longitude) + 0.0035) + '%2C' + encodeURIComponent(parseFloat(record.out_latitude) + 0.0035) +
-                        '&layer=mapnik&marker=' + encodeURIComponent(record.out_latitude) + '%2C' + encodeURIComponent(record.out_longitude) :
-                        '';
-                    var newRow = '<tr data-attendance-id="' + escapeHtml(record.id || '') + '">' +
-                        '<td>' + escapeHtml(dateValue) + '</td>' +
-                        '<td>' + escapeHtml(clockInValue) + '</td>' +
-                        '<td>' + escapeHtml(clockOutValue) + '</td>' +
-                        '<td><div>' + escapeHtml(inGpsValue) + '</div>' + (inMapUrl ? '<a href="#" data-map-url="' + escapeHtml(inMapUrl) + '" data-lat="' + escapeHtml(record.in_latitude || '') + '" data-lng="' + escapeHtml(record.in_longitude || '') + '" class="btn btn-info btn-xs mtop5 js-attendance-map-trigger">Show on Map</a>' : '') + '</td>' +
-                        '<td><div>' + escapeHtml(outGpsValue) + '</div>' + (outMapUrl ? '<a href="#" data-map-url="' + escapeHtml(outMapUrl) + '" data-lat="' + escapeHtml(record.out_latitude || '') + '" data-lng="' + escapeHtml(record.out_longitude || '') + '" class="btn btn-info btn-xs mtop5 js-attendance-map-trigger">Show on Map</a>' : '') + '</td>' +
-                        '<td>' + escapeHtml(notesValue) + '</td>' +
-                        '</tr>';
-
-                    $tbody.find('tr td[colspan="6"]').closest('tr').remove();
-                    $tbody.prepend(newRow);
-                    return;
-                }
-
-                if (actionKey === 'clock_out') {
-                    var $row = $tbody.find('tr[data-attendance-id="' + record.id + '"]').first();
-                    if ($row.length) {
-                        var outMapUrl = record.out_latitude && record.out_longitude ?
-                            'https://www.openstreetmap.org/export/embed.html?bbox=' +
-                            encodeURIComponent(parseFloat(record.out_longitude) - 0.0035) + '%2C' + encodeURIComponent(parseFloat(record.out_latitude) - 0.0035) + '%2C' + encodeURIComponent(parseFloat(record.out_longitude) + 0.0035) + '%2C' + encodeURIComponent(parseFloat(record.out_latitude) + 0.0035) +
-                            '&layer=mapnik&marker=' + encodeURIComponent(record.out_latitude) + '%2C' + encodeURIComponent(record.out_longitude) :
-                            '';
-                        $row.find('td').eq(2).html(escapeHtml(clockOutValue));
-                        $row.find('td').eq(4).html('<div>' + escapeHtml(outGpsValue) + '</div>' + (outMapUrl ? '<a href="#" data-map-url="' + escapeHtml(outMapUrl) + '" data-lat="' + escapeHtml(record.out_latitude || '') + '" data-lng="' + escapeHtml(record.out_longitude || '') + '" class="btn btn-info btn-xs mtop5 js-attendance-map-trigger">Show on Map</a>' : ''));
-                        $row.find('td').eq(5).html(escapeHtml(notesValue));
-                    }
+                map.setView(point, 16);
+                if (label) {
+                    mapMarker.bindPopup(label).openPopup();
+                    $('#map-status').text(label + ' at ' + lat.toFixed(6) + ', ' + lng.toFixed(6));
                 }
             }
 
-            function postAttendance(actionKey) {
-                if (!navigator.geolocation || typeof navigator.geolocation.getCurrentPosition !== 'function') {
-                    notify('danger', 'Location service is unavailable on this device.');
-                    return;
-                }
-
-                notify('success', 'Requesting GPS location...');
-
-                navigator.geolocation.getCurrentPosition(
-                    function(position) {
-                        var latitude = position.coords.latitude;
-                        var longitude = position.coords.longitude;
-
-                        $('#gps-preview').text('GPS: ' + latitude.toFixed(8) + ', ' + longitude.toFixed(8));
-                        updateMapButton(latitude.toFixed(8), longitude.toFixed(8));
-
-                        var payload = appendCsrf({
+            function postClock(actionKey) {
+                var $btn = actionKey === 'clock_in' ? $('#clock-in-btn') : $('#clock-out-btn');
+                $btn.prop('disabled', true);
+                getGeo(
+                    function(lat, lng) {
+                        $('#gps-preview').text('GPS: ' + lat.toFixed(6) + ', ' + lng.toFixed(6));
+                        updateMapPosition(lat, lng, actionKey === 'clock_in' ? 'Clock In location captured' : 'Clock Out location captured');
+                        var payload = appendPortalCsrf({
                             action: actionKey,
-                            latitude: latitude,
-                            longitude: longitude,
-                            notes: $('#field_notes').val()
+                            latitude: lat,
+                            longitude: lng,
+                            notes: $('#attendance_notes').val() || ''
                         });
-
-                        $.post("<?php echo admin_url('field_staff/clock_action'); ?>", payload, function(response) {
-                            if (response && response.success) {
-                                isClockedIn = actionKey === 'clock_in';
-                                updateStatusDisplay();
-                                renderAttendanceRecord(response.record || null, actionKey);
-                                notify('success', response.message || 'Attendance updated successfully');
-                                setTimeout(function() {
-                                    window.location.reload();
-                                }, 1000);
-                            } else {
-                                notify('danger', 'Server routing communication error or action denied.');
-                            }
-                        }, 'json').fail(function() {
-                            notify('danger', 'Server routing communication error or action denied.');
-                        });
+                        $.ajax({
+                                url: clockActionUrl,
+                                method: 'POST',
+                                dataType: 'json',
+                                data: payload
+                            })
+                            .done(function(r) {
+                                if (r && r.success) {
+                                    showMessage(r.message || 'Attendance recorded.');
+                                    var clocked = (actionKey === 'clock_in');
+                                    $('#clock-in-btn').prop('disabled', clocked);
+                                    $('#clock-out-btn').prop('disabled', !clocked);
+                                    $('#clock-status-badge')
+                                        .removeClass('bg-success bg-secondary')
+                                        .addClass(clocked ? 'bg-success' : 'bg-secondary')
+                                        .text(clocked ? 'Clocked In' : 'Clocked Out');
+                                    $('.fs-portal-badge')
+                                        .removeClass('on off')
+                                        .addClass(clocked ? 'on' : 'off')
+                                        .text(clocked ? 'Clocked In' : 'Clocked Out');
+                                    refreshAttendanceView(900);
+                                } else {
+                                    showMessage(r && r.message ? r.message : 'Could not save attendance.');
+                                    $btn.prop('disabled', false);
+                                }
+                            })
+                            .fail(function() {
+                                showMessage('Server error while saving attendance.');
+                                $btn.prop('disabled', false);
+                            });
                     },
-                    function(error) {
-                        var message = 'Unable to capture GPS location.';
-
-                        if (error && error.code === error.PERMISSION_DENIED) {
-                            message = 'Location permission denied. Please allow GPS access.';
-                        } else if (error && error.code === error.POSITION_UNAVAILABLE) {
-                            message = 'Location signal unavailable. Move to an open area and retry.';
-                        } else if (error && error.code === error.TIMEOUT) {
-                            message = 'Location request timed out. Please try again.';
-                        }
-
-                        notify('danger', message);
-                    }, {
-                        enableHighAccuracy: true,
-                        timeout: 20000,
-                        maximumAge: 0
+                    function(errMsg) {
+                        showMessage(errMsg);
+                        $btn.prop('disabled', false);
                     }
                 );
             }
 
             $('#clock-in-btn').click(function(e) {
                 e.preventDefault();
-                console.log('Button clicked, initializing tracking...');
-                postAttendance('clock_in');
+                postClock('clock_in');
             });
-
             $('#clock-out-btn').click(function(e) {
                 e.preventDefault();
-                console.log('Button clicked, initializing tracking...');
-                postAttendance('clock_out');
+                postClock('clock_out');
             });
 
-            $('#gps-map-btn').click(function(e) {
+            restoreActiveTab();
+            $('.fs-portal-tabs a[data-toggle="tab"]').on('shown.bs.tab', function(e) {
+                var href = $(e.target).attr('href') || '';
+                persistActiveTab(href);
+                if (window.matchMedia && window.matchMedia('(max-width: 767px)').matches) {
+                    try {
+                        e.target.scrollIntoView({
+                            behavior: 'smooth',
+                            inline: 'center',
+                            block: 'nearest'
+                        });
+                    } catch (err) {
+                        // Fallback no-op for older browsers.
+                    }
+                }
+            });
+            persistActiveTab();
+
+            // Prefetch GPS to show coordinates early
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(pos) {
+                    $('#gps-preview').text('GPS: ' + pos.coords.latitude.toFixed(6) + ', ' + pos.coords.longitude.toFixed(6));
+                    updateMapPosition(pos.coords.latitude, pos.coords.longitude, 'Current location ready');
+                });
+            }
+
+            $('#show-map-btn').on('click', function() {
+                mapVisible = !mapVisible;
+                $('#attendance-map-panel').toggle(mapVisible);
+                $(this).text(mapVisible ? 'Hide Map' : 'Show Map');
+                if (mapVisible && map) {
+                    window.setTimeout(function() {
+                        map.invalidateSize();
+                    }, 50);
+                }
+            });
+
+            // Keep attendance view fresh so clock updates appear quickly.
+            window.setInterval(function() {
+                if (document.visibilityState === 'visible' && activeTabHref() === '#tab-my-daily-logs') {
+                    refreshAttendanceView(0);
+                }
+            }, 30000);
+
+            $('#js-my-logs-filter').click(function(e) {
                 e.preventDefault();
-                if ($(this).hasClass('disabled')) {
-                    return;
-                }
-
-                openMapModal($(this).attr('data-map-url'), $(this).attr('data-lat'), $(this).attr('data-lng'));
+                var q = '?start_date=' + encodeURIComponent($('#my-logs-start-date').val() || '') +
+                    '&end_date=' + encodeURIComponent($('#my-logs-end-date').val() || '');
+                window.location.href = window.location.pathname + q;
             });
 
-            $(document).on('click', '.js-attendance-map-trigger', function(e) {
+            $('#js-my-logs-reset').click(function(e) {
                 e.preventDefault();
-                openMapModal($(this).attr('data-map-url'), $(this).attr('data-lat'), $(this).attr('data-lng'));
+                window.location.href = window.location.pathname;
             });
 
-            $('#map-layer-street, #map-layer-satellite').click(function(e) {
+            $('#js-submit-leave-request').click(function(e) {
                 e.preventDefault();
-                renderModalMap($(this).attr('data-layer') || 'street');
+                $.ajax({
+                    url: saveLeaveRequestUrl,
+                    method: 'POST',
+                    dataType: 'json',
+                    data: {
+                        leave_type: $('#leave_type').val() || '',
+                        start_date: $('#leave_start_date').val() || '',
+                        end_date: $('#leave_end_date').val() || '',
+                        reason: $('#leave_reason').val() || ''
+                    }
+                }).done(function(r) {
+                    showMessage(r && r.message ? r.message : 'Leave request submitted.');
+                    if (r && r.success) {
+                        $('#leave-request-form')[0].reset();
+                    }
+                }).fail(function() {
+                    showMessage('Leave request could not be submitted at this time.');
+                });
             });
 
-            $('#copy-map-coords').click(function() {
-                var coords = ($(this).attr('data-coords') || '').trim();
-                if (!coords) {
-                    notify('danger', 'No coordinates available to copy.');
+            function renderStatement(s) {
+                var adj = s.adjustments || {};
+                var h = '<div class="fs-statement-grid">';
+                h += '<div class="fs-statement-card"><h5>' + escapeHtml(s.worker_name || '') + '</h5>' +
+                    '<p class="fs-portal-subtle mbot0">Period: ' + escapeHtml(s.start_date || '') + ' to ' + escapeHtml(s.end_date || '') + '</p>' +
+                    '<p class="mbot0">Status: ' + escapeHtml(s.status || '') + '</p>' +
+                    '<p class="mbot0">Issued: ' + escapeHtml(s.created_at || '') + '</p></div>';
+                h += '<div class="fs-statement-card"><h5>Earnings Summary</h5>' +
+                    '<p class="mbot5">Regular Hours: ' + escapeHtml(s.regular_hours || 0) + '</p>' +
+                    '<p class="mbot5">Overtime Hours: ' + escapeHtml(s.overtime_hours || 0) + '</p>' +
+                    '<p class="mbot5">Gross Salary: $' + escapeHtml(Number(s.gross_salary || 0).toFixed(2)) + '</p>' +
+                    '<p class="mbot0">Net Salary: <strong>$' + escapeHtml(Number(s.net_salary || 0).toFixed(2)) + '</strong></p></div>';
+                h += '</div><div class="fs-statement-grid mtop15">';
+                h += '<div class="fs-statement-card"><h5>Statutory Deductions</h5>' +
+                    '<p class="mbot5">Employee NIB (5.5%): $' + escapeHtml(Number(s.nib_ee || 0).toFixed(2)) + '</p>' +
+                    '<p class="mbot5">Employer NIB (6.5%): $' + escapeHtml(Number(s.nib_er || 0).toFixed(2)) + '</p>' +
+                    '<p class="mbot5">Employee NHIP (3.0%): $' + escapeHtml(Number(s.nhip_ee || 0).toFixed(2)) + '</p>' +
+                    '<p class="mbot0">Employer NHIP (3.0%): $' + escapeHtml(Number(s.nhip_er || 0).toFixed(2)) + '</p></div>';
+                h += '<div class="fs-statement-card"><h5>EAV Adjustments</h5>' +
+                    '<p class="mbot5">Commission: $' + escapeHtml(Number(adj.commission || 0).toFixed(2)) + '</p>' +
+                    '<p class="mbot5">Loan Adjustment: $' + escapeHtml(Number(adj.loan_adjustment || 0).toFixed(2)) + '</p>' +
+                    '<p class="mbot5">Advance: $' + escapeHtml(Number(adj.advance || 0).toFixed(2)) + '</p>' +
+                    '<p class="mbot0">Vacation Pay: $' + escapeHtml(Number(adj.vacation_pay || 0).toFixed(2)) + '</p></div>';
+                h += '</div><div class="fs-statement-card mtop15"><h5 class="mtop0">Payment Details</h5>' +
+                    '<p class="mbot5">Method: ' + escapeHtml(s.payment_method || '') + '</p>' +
+                    '<p class="mbot0">Staff ID: ' + escapeHtml(s.staff_id || '') + '</p></div>';
+                $('#payslip-statement-body').html(h);
+            }
+
+            $(document).on('click', '.js-view-payslip', function(e) {
+                e.preventDefault();
+                var pid = $(this).data('payroll-id');
+                if (!pid) {
+                    showMessage('A valid payslip selection is required.');
                     return;
                 }
-
-                if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-                    navigator.clipboard.writeText(coords).then(function() {
-                        notify('success', 'Coordinates copied.');
-                    }).catch(function() {
-                        notify('danger', 'Unable to copy coordinates.');
-                    });
-                    return;
-                }
-
-                var $temp = $('<textarea>').css({
-                    position: 'fixed',
-                    top: '-9999px',
-                    left: '-9999px'
-                }).val(coords).appendTo('body');
-                $temp[0].focus();
-                $temp[0].select();
-                try {
-                    document.execCommand('copy');
-                    notify('success', 'Coordinates copied.');
-                } catch (err) {
-                    notify('danger', 'Unable to copy coordinates.');
-                }
-                $temp.remove();
+                $.ajax({
+                    url: getPayslipStatementUrl,
+                    method: 'GET',
+                    dataType: 'json',
+                    data: {
+                        payroll_id: pid
+                    }
+                }).done(function(r) {
+                    if (r && r.success && r.statement) {
+                        renderStatement(r.statement);
+                        $('#payslip-statement-modal').modal('show');
+                        return;
+                    }
+                    showMessage(r && r.message ? r.message : 'The selected payslip could not be loaded.');
+                }).fail(function() {
+                    showMessage('The selected payslip could not be loaded.');
+                });
             });
-
-            $('#open-full-map').click(function() {
-                var url = ($(this).attr('data-external-url') || '').trim();
-                if (!url) {
-                    notify('danger', 'No map link available.');
-                    return;
-                }
-
-                var opened = window.open(url, '_blank', 'noopener,noreferrer');
-                if (!opened) {
-                    notify('danger', 'Browser blocked opening a new tab.');
-                }
-            });
-
-            $('#attendance-map-modal').on('hidden.bs.modal', function() {
-                $('#attendance-map-frame').attr('src', '');
-                $('#attendance-map-modal').attr('data-lat', '').attr('data-lng', '').attr('data-layer', 'street');
-                updateMapLayerButtons('street');
-                $('#map-coords-preview').text('Coordinates: unavailable');
-                $('#copy-map-coords').prop('disabled', true).attr('data-coords', '');
-                updateOpenFullMapButton('');
-            });
-
-            updateStatusDisplay();
-            updateMapButton(null, null);
-            $('#attendance-map-modal').attr('data-layer', 'street');
         }
 
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', bootAttendance);
+            document.addEventListener('DOMContentLoaded', bootPortal);
         } else {
-            bootAttendance();
+            bootPortal();
         }
     })();
 </script>
+<?php init_tail(); ?>

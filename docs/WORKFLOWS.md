@@ -10,6 +10,8 @@ This runbook is for HR operations, supervisors, and payroll administrators.
 4. Continue work shift.
 5. Click Clock Out.
 6. Confirm ledger row shows in/out timestamps and coordinates.
+7. Confirm live map updates position beside attendance controls.
+8. On mobile, verify native-style tab strip remains on current tab after refresh.
 
 Outcome:
 - One attendance row with geolocation evidence and optional notes.
@@ -72,7 +74,7 @@ Outcome:
 
 ## 7. HR/Payroll Staff Allowlist Admin Workflow
 
-1. Open Shift and Department Setup as admin.
+1. Open Payroll Admin tab as admin.
 2. Locate HR/Payroll Staff Allowlist panel.
 3. Use staff name picker to select allowed users.
 4. Save allowlist.

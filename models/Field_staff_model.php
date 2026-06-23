@@ -78,6 +78,53 @@ class Field_staff_model extends App_Model
     }
 
     /**
+     * Get a date-filtered personal attendance history for one staff member.
+     *
+     * @param int    $staff_id
+     * @param string $start_date
+     * @param string $end_date
+     * @param int    $limit
+     *
+     * @return array
+     */
+    public function get_attendance_history_by_staff($staff_id, $start_date = '', $end_date = '', $limit = 50)
+    {
+        $staff_id = (int) $staff_id;
+        $limit = (int) $limit;
+        $start_date = trim((string) $start_date);
+        $end_date = trim((string) $end_date);
+
+        if ($staff_id <= 0) {
+            return [];
+        }
+
+        if ($limit <= 0) {
+            $limit = 50;
+        }
+
+        $attendance_table = db_prefix() . 'fs_attendance';
+        $query = $this->db
+            ->select('id, date, clock_in, clock_out, in_latitude, in_longitude, out_latitude, out_longitude, notes')
+            ->from($attendance_table)
+            ->where('staff_id', $staff_id);
+
+        if ($start_date !== '') {
+            $query->where('date >=', $start_date);
+        }
+
+        if ($end_date !== '') {
+            $query->where('date <=', $end_date);
+        }
+
+        return $query
+            ->order_by('date', 'DESC')
+            ->order_by('clock_in', 'DESC')
+            ->limit($limit)
+            ->get()
+            ->result_array();
+    }
+
+    /**
      * Get recent attendance rows across the attendance table.
      *
      * @param int $limit
@@ -491,6 +538,180 @@ class Field_staff_model extends App_Model
     }
 
     /**
+     * Retrieve payroll rows for one staff member.
+     *
+     * @param int $staff_id
+     * @param int $limit
+     *
+     * @return array
+     */
+    public function get_employee_payslips($staff_id, $limit = 12)
+    {
+        $staff_id = (int) $staff_id;
+        $limit = (int) $limit;
+
+        if ($staff_id <= 0) {
+            return [];
+        }
+
+        if ($limit <= 0) {
+            $limit = 12;
+        }
+
+        $table = db_prefix() . 'fs_payroll_master';
+        if (!$this->db->table_exists($table)) {
+            return [];
+        }
+
+        return $this->db
+            ->select('id, staff_id, start_date, end_date, regular_hours, ot_hours, hourly_rate, gross_salary, nib_ee, nib_er, nhip_ee, nhip_er, net_salary, payment_method, status, created_at')
+            ->from($table)
+            ->where('staff_id', $staff_id)
+            ->order_by('end_date', 'DESC')
+            ->order_by('id', 'DESC')
+            ->limit($limit)
+            ->get()
+            ->result_array();
+    }
+
+    /**
+     * Retrieve a compiled payroll statement for one master row.
+     *
+     * @param int  $payroll_id
+     * @param bool $force_staff_scope
+     * @param int  $viewer_staff_id
+     *
+     * @return array
+     */
+    public function get_employee_payslip_statement($payroll_id, $force_staff_scope = true, $viewer_staff_id = 0)
+    {
+        $payroll_id = (int) $payroll_id;
+        if ($payroll_id <= 0) {
+            return [];
+        }
+
+        $table = db_prefix() . 'fs_payroll_master';
+        if (!$this->db->table_exists($table)) {
+            return [];
+        }
+
+        $row = $this->db
+            ->from($table)
+            ->where('id', $payroll_id)
+            ->limit(1)
+            ->get()
+            ->row_array();
+
+        if (!is_array($row) || empty($row)) {
+            return [];
+        }
+
+        $row_staff_id = isset($row['staff_id']) ? (int) $row['staff_id'] : 0;
+        if ($force_staff_scope && $viewer_staff_id > 0 && $row_staff_id !== (int) $viewer_staff_id) {
+            return [];
+        }
+
+        $staff_row = $this->get_staff_row($row_staff_id);
+
+        return [
+            'payroll_id' => $payroll_id,
+            'staff_id' => $row_staff_id,
+            'worker_name' => $this->resolve_staff_name($staff_row, $row_staff_id),
+            'start_date' => isset($row['start_date']) ? (string) $row['start_date'] : '',
+            'end_date' => isset($row['end_date']) ? (string) $row['end_date'] : '',
+            'created_at' => isset($row['created_at']) ? (string) $row['created_at'] : '',
+            'payment_method' => isset($row['payment_method']) ? (string) $row['payment_method'] : 'online_transfer',
+            'status' => isset($row['status']) ? (string) $row['status'] : 'draft',
+            'regular_hours' => isset($row['regular_hours']) ? (float) $row['regular_hours'] : 0.0,
+            'overtime_hours' => isset($row['ot_hours']) ? (float) $row['ot_hours'] : 0.0,
+            'hourly_rate' => isset($row['hourly_rate']) ? (float) $row['hourly_rate'] : 0.0,
+            'gross_salary' => isset($row['gross_salary']) ? (float) $row['gross_salary'] : 0.0,
+            'nib_ee' => isset($row['nib_ee']) ? (float) $row['nib_ee'] : 0.0,
+            'nib_er' => isset($row['nib_er']) ? (float) $row['nib_er'] : 0.0,
+            'nhip_ee' => isset($row['nhip_ee']) ? (float) $row['nhip_ee'] : 0.0,
+            'nhip_er' => isset($row['nhip_er']) ? (float) $row['nhip_er'] : 0.0,
+            'net_salary' => isset($row['net_salary']) ? (float) $row['net_salary'] : 0.0,
+            'adjustments' => $this->get_payroll_adjustments($payroll_id),
+        ];
+    }
+
+    /**
+     * Return payroll adjustment totals from the seeded EAV tables.
+     *
+     * @param int $payroll_id
+     *
+     * @return array
+     */
+    public function get_payroll_adjustments($payroll_id)
+    {
+        $payroll_id = (int) $payroll_id;
+        $defaults = [
+            'commission' => 0.0,
+            'loan_adjustment' => 0.0,
+            'advance' => 0.0,
+            'vacation_pay' => 0.0,
+        ];
+
+        if ($payroll_id <= 0) {
+            return $defaults;
+        }
+
+        $attributes_table = db_prefix() . 'fs_payroll_attributes';
+        $values_table = db_prefix() . 'fs_payroll_values';
+        if (!$this->db->table_exists($attributes_table) || !$this->db->table_exists($values_table)) {
+            return $defaults;
+        }
+
+        $rows = $this->db
+            ->select('a.code, COALESCE(SUM(v.value), 0) AS total_value', false)
+            ->from($values_table . ' v')
+            ->join($attributes_table . ' a', 'a.id = v.attribute_id', 'left')
+            ->where('v.payroll_id', $payroll_id)
+            ->where_in('a.code', array_keys($defaults))
+            ->group_by('a.code')
+            ->get()
+            ->result_array();
+
+        foreach ($rows as $row) {
+            $code = isset($row['code']) ? (string) $row['code'] : '';
+            if ($code !== '' && array_key_exists($code, $defaults)) {
+                $defaults[$code] = round((float) ($row['total_value'] ?? 0), 2);
+            }
+        }
+
+        return $defaults;
+    }
+
+    /**
+     * Get one payroll master row by ID.
+     *
+     * @param int $payroll_id
+     *
+     * @return array
+     */
+    public function get_payroll_master_row($payroll_id)
+    {
+        $payroll_id = (int) $payroll_id;
+        if ($payroll_id <= 0) {
+            return [];
+        }
+
+        $table = db_prefix() . 'fs_payroll_master';
+        if (!$this->db->table_exists($table)) {
+            return [];
+        }
+
+        $row = $this->db
+            ->from($table)
+            ->where('id', $payroll_id)
+            ->limit(1)
+            ->get()
+            ->row_array();
+
+        return is_array($row) ? $row : [];
+    }
+
+    /**
      * Save one project assignment row.
      *
      * @param array $data
@@ -608,36 +829,17 @@ class Field_staff_model extends App_Model
     }
 
     /**
-     * Get configured manager/supervisor role IDs.
+     * Get configured staff IDs allowed into supervisor-level workspaces.
      *
      * @return array
      */
     public function get_manager_supervisor_role_ids()
     {
-        $raw = $this->get_module_setting('manager_supervisor_role_ids', '');
-        $role_ids = [];
-
-        if ($raw !== '') {
-            foreach (preg_split('/[^0-9]+/', $raw) as $value) {
-                if ($value !== '') {
-                    $role_ids[] = (int) $value;
-                }
-            }
-        }
-
-        if (empty($role_ids) && defined('FS_MANAGER_SUPERVISOR_ROLE_IDS') && is_array(FS_MANAGER_SUPERVISOR_ROLE_IDS)) {
-            $role_ids = array_map('intval', FS_MANAGER_SUPERVISOR_ROLE_IDS);
-        }
-
-        $role_ids = array_values(array_unique(array_filter($role_ids, function ($value) {
-            return (int) $value > 0;
-        })));
-
-        return $role_ids;
+        return $this->get_hr_payroll_staff_ids();
     }
 
     /**
-     * Save configured manager/supervisor role IDs.
+     * Save configured staff IDs allowed into supervisor-level workspaces.
      *
      * @param array $role_ids
      *
@@ -645,11 +847,7 @@ class Field_staff_model extends App_Model
      */
     public function save_manager_supervisor_role_ids(array $role_ids)
     {
-        $normalized = array_values(array_unique(array_filter(array_map('intval', $role_ids), function ($value) {
-            return (int) $value > 0;
-        })));
-
-        return $this->save_module_setting('manager_supervisor_role_ids', implode(',', $normalized));
+        return $this->save_hr_payroll_staff_ids($role_ids);
     }
 
     /**
@@ -1361,18 +1559,17 @@ class Field_staff_model extends App_Model
             $overtime_pay = round((float) $row['overtime_hours'] * $rate * $overtime_multiplier, 2);
             $allowance_pay = round((float) $row['total_allowance_due'], 2);
             $vacation_pay = round((float) ($row['vacation_pay'] ?? 0), 2);
-            $employee_nib_rate = ((float) ($row['employee_nib_rate'] ?? 5.5)) / 100;
-            $employer_nib_rate = ((float) ($row['employer_nib_rate'] ?? 6.5)) / 100;
-            $employee_nhip_rate = ((float) ($row['employee_nhip_rate'] ?? 3.0)) / 100;
+            $commission_pay = round((float) ($row['commission_pay'] ?? 0), 2);
             $loan_repayment = round((float) ($row['loan_repayment'] ?? 0), 2);
+            $advance_repayment = round((float) ($row['advance_repayment'] ?? 0), 2);
             $other_misc_deductions = round((float) ($row['other_misc_deductions'] ?? 0), 2);
-            $gross_pay = round($regular_pay + $overtime_pay + $allowance_pay + $vacation_pay, 2);
-            $nib_ee = round($gross_pay * $employee_nib_rate, 2);
-            $nib_er = round($gross_pay * $employer_nib_rate, 2);
+            $gross_pay = round($regular_pay + $overtime_pay + $allowance_pay + $vacation_pay + $commission_pay, 2);
+            $nib_ee = round($gross_pay * $this->get_nib_employee_rate(), 2);
+            $nib_er = round($gross_pay * $this->get_nib_employer_rate(), 2);
             $nhip_base = min($gross_pay, $this->get_nhip_ceiling());
-            $nhip_ee = round($nhip_base * $employee_nhip_rate, 2);
+            $nhip_ee = round($nhip_base * $this->get_nhip_employee_rate(), 2);
             $nhip_er = round($nhip_base * $this->get_nhip_employer_rate(), 2);
-            $total_deductions = round($nib_ee + $nhip_ee + $loan_repayment + $other_misc_deductions, 2);
+            $total_deductions = round($nib_ee + $nhip_ee + $loan_repayment + $advance_repayment + $other_misc_deductions, 2);
             $net_pay = round($gross_pay - $total_deductions, 2);
 
             $statement_rows[] = [
@@ -1387,6 +1584,7 @@ class Field_staff_model extends App_Model
                 'daily_field_allowance' => round((float) $row['daily_field_allowance'], 2),
                 'allowance_due' => $allowance_pay,
                 'vacation_pay' => $vacation_pay,
+                'commission_pay' => $commission_pay,
                 'regular_pay' => $regular_pay,
                 'overtime_pay' => $overtime_pay,
                 'gross_pay' => $gross_pay,
@@ -1395,6 +1593,7 @@ class Field_staff_model extends App_Model
                 'nhip_ee' => $nhip_ee,
                 'nhip_er' => $nhip_er,
                 'loan_repayment' => $loan_repayment,
+                'advance_repayment' => $advance_repayment,
                 'other_misc_deductions' => $other_misc_deductions,
                 'total_deductions' => $total_deductions,
                 'net_pay' => $net_pay,
@@ -1492,18 +1691,19 @@ class Field_staff_model extends App_Model
         $total_hours   = $total_seconds / 3600;
 
         // Weekly statutory overtime threshold.
-        $regular_hours = min($total_hours, 44.0);
-        $ot_hours      = max($total_hours - 44.0, 0.0);
+        $regular_hours_cap = $this->get_regular_hours_cap();
+        $regular_hours = min($total_hours, $regular_hours_cap);
+        $ot_hours      = max($total_hours - $regular_hours_cap, 0.0);
 
         $gross_salary = ($regular_hours * $hourly_rate) + ($ot_hours * $hourly_rate * 1.5);
 
-        $nib_ee = $gross_salary * 0.055;
-        $nib_er = $gross_salary * 0.065;
+        $nib_ee = $gross_salary * $this->get_nib_employee_rate();
+        $nib_er = $gross_salary * $this->get_nib_employer_rate();
 
         // NHIP monthly cap checkpoint: apply 7,800 USD monthly ceiling when monthly aggregation is available.
-        $nhip_base_gross = $gross_salary;
-        $nhip_ee         = $nhip_base_gross * 0.03;
-        $nhip_er         = $nhip_base_gross * 0.03;
+        $nhip_base_gross = min($gross_salary, $this->get_nhip_ceiling());
+        $nhip_ee         = $nhip_base_gross * $this->get_nhip_employee_rate();
+        $nhip_er         = $nhip_base_gross * $this->get_nhip_employer_rate();
 
         $net_salary = $gross_salary - ($nib_ee + $nhip_ee);
 
@@ -1511,6 +1711,7 @@ class Field_staff_model extends App_Model
             'regular_hours' => round($regular_hours, 2),
             'ot_hours'      => round($ot_hours, 2),
             'gross_salary'  => round($gross_salary, 2),
+            'nhip_base_gross' => round($nhip_base_gross, 2),
             'nib_ee'        => round($nib_ee, 2),
             'nib_er'        => round($nib_er, 2),
             'nhip_ee'       => round($nhip_ee, 2),

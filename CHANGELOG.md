@@ -4,7 +4,7 @@ All notable changes to this module are documented in this file.
 
 The format follows Keep a Changelog principles and semantic versioning intent.
 
-## [Unreleased]
+## [1.1.0] - 2026-06-22
 
 ### Added
 - Project Assignment tab and persistence flow for assigning projects to one or multiple staff.
@@ -13,6 +13,9 @@ The format follows Keep a Changelog principles and semantic versioning intent.
 - Admin endpoint to save HR/payroll staff allowlist by explicit staff IDs.
 - Name-based HR/payroll allowlist picker in HR setup flow with searchable multi-select.
 - Bootstrap-safe whitelist behavior: admin recovery access when allowlist is empty.
+- Employee attendance map panel beside the attendance capture form.
+- Show/Hide map toggle in employee attendance workflow.
+- Payslip management documentation for statement lifecycle and operations.
 - Envato submission documentation kit:
   - Envato readiness guide
   - Package structure blueprint
@@ -31,12 +34,15 @@ The format follows Keep a Changelog principles and semantic versioning intent.
 - HR and payroll workspace access now uses strict explicit staff-ID allowlist checks.
 - Access checks centralized and reinforced in controller helpers and menu helpers.
 - Allowlist save endpoint now supports both multi-select array payloads and legacy comma-separated text.
+- Employee attendance portal tabs updated for native-style mobile behavior (touch-friendly pills, swipeable tab strip, sticky tabs).
+- Attendance auto-refresh behavior now surfaces clock in/out updates immediately and preserves active tab state.
 
 ### Fixed
 - Removed duplicated template/script content in HR management view.
 - Improved consistency between menu visibility and runtime access enforcement.
 - Enforced own-only attendance ledger visibility for non-admin staff accounts.
 - Removed stale role-allowlist UI references from HR management flow.
+- Restored attendance map visibility and aligned mobile tab usability in employee portal.
 
 ## [1.0.0] - 2026-06-22
 

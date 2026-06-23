@@ -1,5 +1,234 @@
 <?php defined('BASEPATH') or exit('No direct script access allowed'); ?>
 <?php init_head(); ?>
+<style>
+    .hr-dashboard-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px 20px;
+        border-radius: 8px;
+        margin-bottom: 30px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .hr-dashboard-header h1 {
+        margin: 0 0 5px 0;
+        font-size: 28px;
+        font-weight: 600;
+    }
+
+    .hr-dashboard-header p {
+        margin: 0;
+        opacity: 0.95;
+        font-size: 14px;
+    }
+
+    .stat-card {
+        background: white;
+        border-left: 4px solid #667eea;
+        padding: 20px;
+        border-radius: 6px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        text-align: center;
+        transition: transform 0.3s, box-shadow 0.3s;
+        margin-bottom: 20px;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    }
+
+    .stat-card.warning {
+        border-left-color: #f59e0b;
+    }
+
+    .stat-card.success {
+        border-left-color: #10b981;
+    }
+
+    .stat-card.danger {
+        border-left-color: #ef4444;
+    }
+
+    .stat-label {
+        color: #6b7280;
+        font-size: 12px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
+    }
+
+    .stat-value {
+        color: #1f2937;
+        font-size: 32px;
+        font-weight: 700;
+        line-height: 1;
+    }
+
+    .filter-panel {
+        background: #f9fafb;
+        padding: 20px;
+        border-radius: 6px;
+        margin-bottom: 25px;
+        border: 1px solid #e5e7eb;
+    }
+
+    .filter-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: #374151;
+        margin-bottom: 15px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .form-section-title {
+        font-size: 16px;
+        font-weight: 700;
+        color: #1f2937;
+        margin-top: 25px;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #e5e7eb;
+    }
+
+    .nav-tabs {
+        border-bottom: 2px solid #e5e7eb;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0;
+    }
+
+    .nav-tabs>li>a {
+        border: none;
+        border-bottom: 3px solid transparent;
+        padding: 12px 16px;
+        color: #6b7280;
+        font-weight: 500;
+        font-size: 13px;
+        transition: all 0.3s;
+    }
+
+    .nav-tabs>li.active>a,
+    .nav-tabs>li>a:hover {
+        background-color: transparent;
+        border-bottom-color: #667eea;
+        color: #667eea;
+    }
+
+    .panel_s {
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+
+    .form-group label {
+        font-weight: 600;
+        color: #374151;
+        font-size: 13px;
+        margin-bottom: 6px;
+    }
+
+    .btn-primary {
+        background-color: #667eea;
+        border-color: #667eea;
+    }
+
+    .btn-primary:hover {
+        background-color: #5568d3;
+        border-color: #5568d3;
+    }
+
+    .btn-success {
+        background-color: #10b981;
+        border-color: #10b981;
+    }
+
+    .btn-success:hover {
+        background-color: #059669;
+        border-color: #059669;
+    }
+
+    .table {
+        font-size: 13px;
+    }
+
+    .badge {
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .admin-panel {
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.05), rgba(118, 75, 162, 0.05));
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+
+    .admin-panel .panel-heading {
+        background-color: #f9fafb;
+        border-bottom: 2px solid #e5e7eb;
+        margin: -20px -20px 15px -20px;
+        padding: 15px 20px;
+        border-radius: 6px 6px 0 0;
+    }
+
+    @media (max-width: 768px) {
+        .hr-dashboard-header {
+            padding: 20px 15px;
+        }
+
+        .hr-dashboard-header h1 {
+            font-size: 22px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+        }
+
+        .nav-tabs>li {
+            flex: 1 1 50%;
+        }
+
+        .nav-tabs>li>a {
+            padding: 10px 8px;
+            font-size: 11px;
+            text-align: center;
+        }
+
+        .form-section-title {
+            font-size: 14px;
+        }
+
+        .table {
+            font-size: 12px;
+        }
+
+        .table-responsive {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+    }
+
+    @media (max-width: 576px) {
+        .stat-card {
+            margin-bottom: 15px;
+        }
+
+        .filter-panel {
+            padding: 15px;
+        }
+
+        .nav-tabs>li {
+            flex: 1 1 100%;
+        }
+    }
+</style>
 <?php
 if (!function_exists('field_staff_hr_escape')) {
     function field_staff_hr_escape($value)
@@ -49,686 +278,751 @@ $can_manage_operations = isset($can_manage_operations) ? (bool) $can_manage_oper
 $can_manage_reporting = isset($can_manage_reporting) ? (bool) $can_manage_reporting : false;
 $can_manage_project_assignment = isset($can_manage_project_assignment) ? (bool) $can_manage_project_assignment : false;
 $can_manage_hr_payroll_staff_allowlist = isset($can_manage_hr_payroll_staff_allowlist) ? (bool) $can_manage_hr_payroll_staff_allowlist : false;
+$can_access_hr_workspace = isset($can_access_hr_workspace) ? (bool) $can_access_hr_workspace : false;
 $hr_payroll_staff_ids = isset($hr_payroll_staff_ids) && is_array($hr_payroll_staff_ids) ? $hr_payroll_staff_ids : [];
 $hr_payroll_staff_ids_lookup = array_flip(array_map('intval', $hr_payroll_staff_ids));
 $current_user_staff_id = isset($current_user_staff_id) ? (int) $current_user_staff_id : 0;
 $default_hr_tab = isset($default_hr_tab) ? (string) $default_hr_tab : 'pay_setup';
 $tab_map = [
-    'operations' => 'tab-shifts',
-    'pay_setup' => 'tab-profile-payroll',
-    'reporting' => 'tab-reporting-payrun',
+    'shift_setup' => 'tab-shift-department',
+    'pay_setup' => 'tab-employee-pay-setup',
+    'manual_attendance' => 'tab-manual-attendance',
+    'leave_tracking' => 'tab-leave-tracking',
+    'reporting_payrun' => 'tab-reporting-payrun',
     'project_assignment' => 'tab-project-assignment',
 ];
-$active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 'tab-profile-payroll';
+$active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 'tab-employee-pay-setup';
 ?>
 <div id="wrapper">
     <div class="content">
+        <!-- Dashboard Header -->
+        <div class="hr-dashboard-header">
+            <h1><?php echo $title_text; ?></h1>
+            <p>Complete workforce management, payroll, and reporting control center</p>
+        </div>
+
+        <!-- Summary Cards -->
         <div class="row">
-            <div class="col-md-12">
-                <div class="panel_s">
-                    <div class="panel-body">
-                        <h4 class="no-margin"><?php echo $title_text; ?></h4>
-                        <p class="text-muted mtop5">Industrial workforce operations engine for payroll setup, shifts, leave, attendance controls, and enterprise reporting.</p>
-
-                        <form method="get" action="<?php echo field_staff_hr_escape($current_url); ?>" class="row mtop20">
-                            <div class="col-md-2 col-sm-6 col-xs-12">
-                                <div class="form-group">
-                                    <label for="filter_start_date" class="control-label">Start Date</label>
-                                    <input type="date" id="filter_start_date" name="start_date" class="form-control" value="<?php echo $start_date; ?>">
-                                </div>
-                            </div>
-                            <div class="col-md-2 col-sm-6 col-xs-12">
-                                <div class="form-group">
-                                    <label for="filter_end_date" class="control-label">End Date</label>
-                                    <input type="date" id="filter_end_date" name="end_date" class="form-control" value="<?php echo $end_date; ?>">
-                                </div>
-                            </div>
-                            <div class="col-md-2 col-sm-6 col-xs-12">
-                                <div class="form-group">
-                                    <label for="filter_report_date" class="control-label">Daily Report Date</label>
-                                    <input type="date" id="filter_report_date" name="report_date" class="form-control" value="<?php echo $report_date; ?>">
-                                </div>
-                            </div>
-                            <div class="col-md-2 col-sm-6 col-xs-12">
-                                <div class="form-group">
-                                    <label for="filter_report_month" class="control-label">Monthly Report</label>
-                                    <input type="month" id="filter_report_month" name="report_month" class="form-control" value="<?php echo $report_month; ?>">
-                                </div>
-                            </div>
-                            <div class="col-md-2 col-sm-6 col-xs-12">
-                                <div class="form-group">
-                                    <label for="filter_department_id" class="control-label">Department</label>
-                                    <select id="filter_department_id" name="department_id" class="form-control selectpicker" data-width="100%" data-live-search="true" title="All departments">
-                                        <option value="0" <?php echo $selected_department_id <= 0 ? 'selected="selected"' : ''; ?>>All Departments</option>
-                                        <?php foreach ($departments as $department_row) { ?>
-                                            <?php $department_id = isset($department_row['id']) ? (int) $department_row['id'] : 0; ?>
-                                            <option value="<?php echo $department_id; ?>" <?php echo $selected_department_id === $department_id ? 'selected="selected"' : ''; ?>><?php echo field_staff_hr_escape(isset($department_row['name']) ? $department_row['name'] : ''); ?></option>
-                                        <?php } ?>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="col-md-2 col-sm-6 col-xs-12">
-                                <div class="form-group">
-                                    <label for="filter_staff_id" class="control-label">Staff Filter</label>
-                                    <select id="filter_staff_id" name="staff_id" class="form-control selectpicker" data-width="100%" data-live-search="true" title="All staff">
-                                        <option value="0" <?php echo $selected_staff_id <= 0 ? 'selected="selected"' : ''; ?>>All Staff</option>
-                                        <?php foreach ($staff_directory as $staff_row) { ?>
-                                            <?php $staff_id = isset($staff_row['staff_id']) ? (int) $staff_row['staff_id'] : 0; ?>
-                                            <option value="<?php echo $staff_id; ?>" <?php echo $selected_staff_id === $staff_id ? 'selected="selected"' : ''; ?>><?php echo field_staff_hr_escape(isset($staff_row['worker_name']) ? $staff_row['worker_name'] : ''); ?></option>
-                                        <?php } ?>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="col-md-12">
-                                <div class="form-group">
-                                    <button type="submit" class="btn btn-default">Apply Workspace Filters</button>
-                                </div>
-                            </div>
-                        </form>
-
-                        <div class="row mtop10">
-                            <div class="col-md-3 col-sm-6 col-xs-12">
-                                <div class="panel panel-default">
-                                    <div class="panel-body text-center">
-                                        <p class="text-muted mbot5">Total Hours Worked</p>
-                                        <h3 class="no-margin"><?php echo number_format($summary_total_hours, 2); ?></h3>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3 col-sm-6 col-xs-12">
-                                <div class="panel panel-default">
-                                    <div class="panel-body text-center">
-                                        <p class="text-muted mbot5">Regular Hours</p>
-                                        <h3 class="no-margin"><?php echo number_format($summary_regular_hours, 2); ?></h3>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3 col-sm-6 col-xs-12">
-                                <div class="panel panel-default">
-                                    <div class="panel-body text-center">
-                                        <p class="text-muted mbot5">Overtime Hours</p>
-                                        <h3 class="no-margin"><?php echo number_format($summary_overtime_hours, 2); ?></h3>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3 col-sm-6 col-xs-12">
-                                <div class="panel panel-default">
-                                    <div class="panel-body text-center">
-                                        <p class="text-muted mbot5">Total Allowance Due</p>
-                                        <h3 class="no-margin">$<?php echo number_format($summary_allowance_due, 2); ?></h3>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <ul class="nav nav-tabs mtop15" role="tablist">
-                            <?php if ($can_manage_operations) { ?>
-                                <li role="presentation" class="<?php echo $active_tab_id === 'tab-shifts' ? 'active' : ''; ?>"><a href="#tab-shifts" aria-controls="tab-shifts" role="tab" data-toggle="tab">1. Shift &amp; Department Setup</a></li>
-                            <?php } ?>
-                            <?php if ($can_manage_pay_setup) { ?>
-                                <li role="presentation" class="<?php echo $active_tab_id === 'tab-profile-payroll' ? 'active' : ''; ?>"><a href="#tab-profile-payroll" aria-controls="tab-profile-payroll" role="tab" data-toggle="tab">2. Employee Pay Setup</a></li>
-                            <?php } ?>
-                            <?php if ($can_manage_operations) { ?>
-                                <li role="presentation" class="<?php echo $active_tab_id === 'tab-manual-attendance' ? 'active' : ''; ?>"><a href="#tab-manual-attendance" aria-controls="tab-manual-attendance" role="tab" data-toggle="tab">3. Manual Attendance Logger</a></li>
-                                <li role="presentation" class="<?php echo $active_tab_id === 'tab-leaves' ? 'active' : ''; ?>"><a href="#tab-leaves" aria-controls="tab-leaves" role="tab" data-toggle="tab">4. Employee Leave Tracking</a></li>
-                            <?php } ?>
-                            <?php if ($can_manage_reporting) { ?>
-                                <li role="presentation" class="<?php echo $active_tab_id === 'tab-reporting-payrun' ? 'active' : ''; ?>"><a href="#tab-reporting-payrun" aria-controls="tab-reporting-payrun" role="tab" data-toggle="tab">5. Reporting &amp; Payrun</a></li>
-                            <?php } ?>
-                            <?php if ($can_manage_project_assignment) { ?>
-                                <li role="presentation" class="<?php echo $active_tab_id === 'tab-project-assignment' ? 'active' : ''; ?>"><a href="#tab-project-assignment" aria-controls="tab-project-assignment" role="tab" data-toggle="tab">6. Project Assignment</a></li>
-                            <?php } ?>
-                        </ul>
-
-                        <div class="tab-content mtop15">
-                            <?php if ($can_manage_pay_setup) { ?>
-                                <div role="tabpanel" class="tab-pane <?php echo $active_tab_id === 'tab-profile-payroll' ? 'active' : ''; ?>" id="tab-profile-payroll">
-                                    <div class="row">
-                                        <div class="col-md-4 col-sm-6 col-xs-12">
-                                            <div class="form-group">
-                                                <label for="profile_staff_id" class="control-label">Employee Selector</label>
-                                                <select id="profile_staff_id" class="form-control selectpicker" data-live-search="true" data-width="100%" title="Select employee profile">
-                                                    <option value=""></option>
-                                                    <?php foreach ($staff_directory as $staff_row) { ?>
-                                                        <?php $staff_id = isset($staff_row['staff_id']) ? (int) $staff_row['staff_id'] : 0; ?>
-                                                        <option value="<?php echo $staff_id; ?>" <?php echo $selected_staff_id === $staff_id ? 'selected="selected"' : ''; ?>><?php echo field_staff_hr_escape(isset($staff_row['worker_name']) ? $staff_row['worker_name'] : ''); ?></option>
-                                                    <?php } ?>
-                                                </select>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-4 col-sm-6 col-xs-12">
-                                            <div class="form-group">
-                                                <label for="department_id" class="control-label">Department Selector</label>
-                                                <div class="input-group">
-                                                    <select id="department_id" class="form-control selectpicker" data-width="100%" data-live-search="true" title="Select department">
-                                                        <option value="0">Unassigned</option>
-                                                        <?php foreach ($departments as $department_row) { ?>
-                                                            <?php $department_id = isset($department_row['id']) ? (int) $department_row['id'] : 0; ?>
-                                                            <option value="<?php echo $department_id; ?>"><?php echo field_staff_hr_escape(isset($department_row['name']) ? $department_row['name'] : ''); ?></option>
-                                                        <?php } ?>
-                                                    </select>
-                                                    <span class="input-group-btn">
-                                                        <button type="button" id="save-department-btn" class="btn btn-default">Add Department</button>
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-4 col-sm-12 col-xs-12">
-                                            <div class="form-group">
-                                                <label for="default_shift_id" class="control-label">Shift Assignment</label>
-                                                <select id="default_shift_id" class="form-control selectpicker" data-width="100%" data-live-search="true" title="Assign default shift">
-                                                    <option value="0">No Default Shift</option>
-                                                    <?php foreach ($shifts as $shift_row) { ?>
-                                                        <?php $shift_id = isset($shift_row['id']) ? (int) $shift_row['id'] : 0; ?>
-                                                        <option value="<?php echo $shift_id; ?>"><?php echo field_staff_hr_escape(isset($shift_row['shift_name']) ? $shift_row['shift_name'] : ''); ?></option>
-                                                    <?php } ?>
-                                                </select>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="base_hourly_rate" class="control-label">Base Hourly Rate</label><input type="number" min="0" step="0.01" id="base_hourly_rate" class="form-control"></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="overtime_multiplier" class="control-label">Overtime Multiplier</label><input type="number" min="0" step="0.01" id="overtime_multiplier" class="form-control"></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="daily_field_allowance" class="control-label">Daily Field Allowance</label><input type="number" min="0" step="0.01" id="daily_field_allowance" class="form-control"></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="employee_nib_rate" class="control-label">Employee NIB %</label><input type="number" min="0" step="0.01" id="employee_nib_rate" class="form-control"></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="employer_nib_rate" class="control-label">Employer NIB %</label><input type="number" min="0" step="0.01" id="employer_nib_rate" class="form-control"></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="employee_nhip_rate" class="control-label">Employee NHIP %</label><input type="number" min="0" step="0.01" id="employee_nhip_rate" class="form-control"></div>
-                                        </div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="vacation_pay" class="control-label">Vacation Pay</label><input type="number" min="0" step="0.01" id="vacation_pay" class="form-control"></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="outstanding_loan" class="control-label">Outstanding Loan</label><input type="number" min="0" step="0.01" id="outstanding_loan" class="form-control"></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="loan_repayment" class="control-label">Loan Repayment</label><input type="number" min="0" step="0.01" id="loan_repayment" class="form-control"></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="payment_method" class="control-label">Payment Method</label><select id="payment_method" class="form-control">
-                                                    <option value="online_transfer">Online Transfer</option>
-                                                    <option value="cash">Cash</option>
-                                                    <option value="check">Check</option>
-                                                </select></div>
-                                        </div>
-                                        <div class="col-md-4 col-sm-12 col-xs-12">
-                                            <div class="form-group"><label for="bank_account_info" class="control-label">Bank Account Info</label><textarea id="bank_account_info" class="form-control" rows="3"></textarea></div>
-                                        </div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-md-12"><button type="button" id="save-profile-btn" class="btn btn-primary btn-lg">Save Profile</button></div>
-                                    </div>
-                                </div>
-                            <?php } ?>
-
-                            <?php if ($can_manage_operations) { ?>
-                                <div role="tabpanel" class="tab-pane <?php echo $active_tab_id === 'tab-shifts' ? 'active' : ''; ?>" id="tab-shifts">
-                                    <?php if ($can_manage_hr_payroll_staff_allowlist) { ?>
-                                        <div class="row mtop5 mbot15">
-                                            <div class="col-md-12">
-                                                <div class="panel panel-default">
-                                                    <div class="panel-body">
-                                                        <h5 class="no-margin">HR/Payroll Staff Allowlist</h5>
-                                                        <p class="text-muted mtop5">Only selected staff can access Master Payroll HR and HR Management Workspace.</p>
-                                                        <p class="text-info mtop5 mbot10">Current user Staff ID: <?php echo (int) $current_user_staff_id; ?></p>
-                                                        <div class="row">
-                                                            <div class="col-md-9 col-sm-8 col-xs-12">
-                                                                <div class="form-group mbot0">
-                                                                    <label for="hr-payroll-staff-ids" class="control-label">Allowed Staff Names</label>
-                                                                    <select id="hr-payroll-staff-ids" class="form-control selectpicker" data-live-search="true" data-width="100%" multiple>
-                                                                        <?php foreach ($staff_directory as $staff_row) { ?>
-                                                                            <?php $staff_id = isset($staff_row['staff_id']) ? (int) $staff_row['staff_id'] : 0; ?>
-                                                                            <?php if ($staff_id <= 0) {
-                                                                                continue;
-                                                                            } ?>
-                                                                            <option value="<?php echo $staff_id; ?>" <?php echo isset($hr_payroll_staff_ids_lookup[$staff_id]) ? 'selected="selected"' : ''; ?>><?php echo field_staff_hr_escape(isset($staff_row['worker_name']) ? $staff_row['worker_name'] : ''); ?></option>
-                                                                        <?php } ?>
-                                                                    </select>
-                                                                </div>
-                                                            </div>
-                                                            <div class="col-md-3 col-sm-4 col-xs-12">
-                                                                <button type="button" id="save-hr-payroll-staff-allowlist-btn" class="btn btn-primary btn-block">Save Staff Allowlist</button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    <?php } ?>
-                                    <div class="row">
-                                        <div class="col-md-3 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="setup_department_name" class="control-label">Department Name</label><input type="text" id="setup_department_name" class="form-control" placeholder="Operations"></div>
-                                        </div>
-                                        <div class="col-md-3 col-sm-6 col-xs-12">
-                                            <div class="form-group mtop25"><button type="button" id="setup-save-department-btn" class="btn btn-default">Save Department</button></div>
-                                        </div>
-                                        <div class="col-md-3 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="shift_name" class="control-label">Shift Name</label><input type="text" id="shift_name" class="form-control" placeholder="Day Shift"></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="shift_start_time" class="control-label">Start Time</label><input type="time" id="shift_start_time" class="form-control"></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="shift_end_time" class="control-label">End Time</label><input type="time" id="shift_end_time" class="form-control"></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="grace_period_mins" class="control-label">Grace Minutes</label><input type="number" min="0" step="1" id="grace_period_mins" class="form-control" value="0"></div>
-                                        </div>
-                                        <div class="col-md-3 col-sm-12 col-xs-12">
-                                            <div class="form-group mtop25"><button type="button" id="save-shift-btn" class="btn btn-default">Save Shift Template</button></div>
-                                        </div>
-                                    </div>
-                                    <div class="row mtop15">
-                                        <div class="col-md-3 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="distribution_shift_id" class="control-label">Shift Template</label><select id="distribution_shift_id" class="form-control selectpicker" data-live-search="true" data-width="100%">
-                                                    <option value="0">Select Shift</option><?php foreach ($shifts as $shift_row) { ?><option value="<?php echo (int) ($shift_row['id'] ?? 0); ?>"><?php echo field_staff_hr_escape($shift_row['shift_name'] ?? ''); ?></option><?php } ?>
-                                                </select></div>
-                                        </div>
-                                        <div class="col-md-3 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="distribution_department_id" class="control-label">Department Target</label><select id="distribution_department_id" class="form-control selectpicker" data-live-search="true" data-width="100%">
-                                                    <option value="0">No Department Filter</option><?php foreach ($departments as $department_row) { ?><option value="<?php echo (int) ($department_row['id'] ?? 0); ?>"><?php echo field_staff_hr_escape($department_row['name'] ?? ''); ?></option><?php } ?>
-                                                </select></div>
-                                        </div>
-                                        <div class="col-md-3 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="distribution_start_date" class="control-label">Start Date</label><input type="date" id="distribution_start_date" class="form-control" value="<?php echo $start_date; ?>"></div>
-                                        </div>
-                                        <div class="col-md-3 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="distribution_end_date" class="control-label">End Date</label><input type="date" id="distribution_end_date" class="form-control" value="<?php echo $end_date; ?>"></div>
-                                        </div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-md-8 col-sm-12 col-xs-12">
-                                            <div class="form-group"><label for="distribution_staff_ids" class="control-label">Individual Workers</label><select id="distribution_staff_ids" class="form-control selectpicker" data-live-search="true" data-width="100%" multiple><?php foreach ($staff_directory as $staff_row) { ?><option value="<?php echo (int) ($staff_row['staff_id'] ?? 0); ?>"><?php echo field_staff_hr_escape($staff_row['worker_name'] ?? ''); ?></option><?php } ?></select></div>
-                                        </div>
-                                        <div class="col-md-4 col-sm-12 col-xs-12">
-                                            <div class="form-group mtop25"><button type="button" id="distribute-shift-btn" class="btn btn-primary">Distribute Shift</button></div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div role="tabpanel" class="tab-pane <?php echo $active_tab_id === 'tab-manual-attendance' ? 'active' : ''; ?>" id="tab-manual-attendance">
-                                    <div class="row">
-                                        <div class="col-md-3 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="manual_staff_id" class="control-label">Employee</label><select id="manual_staff_id" class="form-control selectpicker" data-live-search="true" data-width="100%">
-                                                    <option value="0">Select Employee</option><?php foreach ($staff_directory as $staff_row) { ?><option value="<?php echo (int) ($staff_row['staff_id'] ?? 0); ?>"><?php echo field_staff_hr_escape($staff_row['worker_name'] ?? ''); ?></option><?php } ?>
-                                                </select></div>
-                                        </div>
-                                        <div class="col-md-3 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="manual_date" class="control-label">Attendance Date</label><input type="date" id="manual_date" class="form-control" value="<?php echo $report_date; ?>"></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="manual_clock_in" class="control-label">Clock In</label><input type="time" id="manual_clock_in" class="form-control"></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="manual_clock_out" class="control-label">Clock Out</label><input type="time" id="manual_clock_out" class="form-control"></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-12 col-xs-12">
-                                            <div class="form-group mtop25"><button type="button" id="save-manual-attendance-btn" class="btn btn-primary">Post Manual Log</button></div>
-                                        </div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-md-12">
-                                            <div class="form-group"><label for="manual_notes" class="control-label">Adjustment Notes</label><textarea id="manual_notes" class="form-control" rows="3"></textarea></div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div role="tabpanel" class="tab-pane <?php echo $active_tab_id === 'tab-leaves' ? 'active' : ''; ?>" id="tab-leaves">
-                                    <div class="row">
-                                        <div class="col-md-3 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="leave_staff_id" class="control-label">Employee</label><select id="leave_staff_id" class="form-control selectpicker" data-live-search="true" data-width="100%">
-                                                    <option value="0">Select Employee</option><?php foreach ($staff_directory as $staff_row) { ?><option value="<?php echo (int) ($staff_row['staff_id'] ?? 0); ?>"><?php echo field_staff_hr_escape($staff_row['worker_name'] ?? ''); ?></option><?php } ?>
-                                                </select></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="leave_type" class="control-label">Leave Type</label><select id="leave_type" class="form-control">
-                                                    <option value="Vacation">Vacation</option>
-                                                    <option value="Sick">Sick</option>
-                                                    <option value="Maternity">Maternity</option>
-                                                    <option value="Unpaid">Unpaid</option>
-                                                </select></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="leave_start_date" class="control-label">Start Date</label><input type="date" id="leave_start_date" class="form-control" value="<?php echo $start_date; ?>"></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="leave_end_date" class="control-label">End Date</label><input type="date" id="leave_end_date" class="form-control" value="<?php echo $end_date; ?>"></div>
-                                        </div>
-                                        <div class="col-md-3 col-sm-12 col-xs-12">
-                                            <div class="form-group"><label for="leave_status" class="control-label">Status</label><select id="leave_status" class="form-control">
-                                                    <option value="Pending">Pending</option>
-                                                    <option value="Approved">Approved</option>
-                                                    <option value="Rejected">Rejected</option>
-                                                </select></div>
-                                        </div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-md-9 col-sm-12 col-xs-12">
-                                            <div class="form-group"><label for="leave_reason" class="control-label">Reason</label><textarea id="leave_reason" class="form-control" rows="3"></textarea></div>
-                                        </div>
-                                        <div class="col-md-3 col-sm-12 col-xs-12">
-                                            <div class="form-group mtop25"><button type="button" id="save-leave-btn" class="btn btn-primary">Save Leave Request</button></div>
-                                        </div>
-                                    </div>
-                                    <div class="table-responsive mtop15">
-                                        <table class="table table-striped table-bordered">
-                                            <thead>
-                                                <tr>
-                                                    <th>Employee</th>
-                                                    <th>Type</th>
-                                                    <th>Start</th>
-                                                    <th>End</th>
-                                                    <th>Status</th>
-                                                    <th>Reason</th>
-                                                    <th>Actions</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody><?php if (!empty($leave_rows)) {
-                                                        foreach ($leave_rows as $leave_row) { ?><tr data-leave-id="<?php echo (int) ($leave_row['id'] ?? 0); ?>">
-                                                            <td><?php echo field_staff_hr_escape($leave_row['worker_name'] ?? ''); ?></td>
-                                                            <td><?php echo field_staff_hr_escape($leave_row['leave_type'] ?? ''); ?></td>
-                                                            <td><?php echo field_staff_hr_escape($leave_row['start_date'] ?? ''); ?></td>
-                                                            <td><?php echo field_staff_hr_escape($leave_row['end_date'] ?? ''); ?></td>
-                                                            <td class="js-leave-status"><?php echo field_staff_hr_escape($leave_row['status'] ?? ''); ?></td>
-                                                            <td><?php echo field_staff_hr_escape($leave_row['reason'] ?? ''); ?></td>
-                                                            <td><button type="button" class="btn btn-success btn-xs js-leave-status-btn" data-status="Approved">Approve</button> <button type="button" class="btn btn-danger btn-xs js-leave-status-btn" data-status="Rejected">Reject</button></td>
-                                                        </tr><?php }
-                                                        } else { ?><tr>
-                                                        <td colspan="7" class="text-center text-muted">No leave records found for the selected filter period.</td>
-                                                    </tr><?php } ?></tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            <?php } ?>
-
-                            <?php if ($can_manage_reporting) { ?>
-                                <div role="tabpanel" class="tab-pane <?php echo $active_tab_id === 'tab-reporting-payrun' ? 'active' : ''; ?>" id="tab-reporting-payrun">
-                                    <div class="row">
-                                        <div class="col-md-12">
-                                            <h5 class="bold">Reporting and Payrun Workspace</h5>
-                                            <p class="text-muted">Export each ledger instantly in CSV/Excel-compatible format and generate an immutable payrun statement from the active filter state.</p>
-                                        </div>
-                                    </div>
-
-                                    <div class="row mtop10">
-                                        <div class="col-md-12">
-                                            <a href="<?php echo field_staff_hr_escape($export_urls['attendance_record'] ?? '#'); ?>" class="btn btn-default">Export Attendance Record</a>
-                                            <a href="<?php echo field_staff_hr_escape($export_urls['attendance_summary'] ?? '#'); ?>" class="btn btn-default">Export Attendance Summary</a>
-                                            <a href="<?php echo field_staff_hr_escape($export_urls['daily_attendance'] ?? '#'); ?>" class="btn btn-default">Export Daily Attendance</a>
-                                            <a href="<?php echo field_staff_hr_escape($export_urls['monthly_attendance'] ?? '#'); ?>" class="btn btn-default">Export Monthly Attendance</a>
-                                            <a href="<?php echo field_staff_hr_escape($export_urls['department_wise'] ?? '#'); ?>" class="btn btn-default">Export Department Wise</a>
-                                            <button type="button" id="generate-payrun-btn" class="btn btn-primary">Generate Payrun Ledger</button>
-                                        </div>
-                                    </div>
-
-                                    <div class="panel panel-default mtop20">
-                                        <div class="panel-heading"><strong>Attendance Record</strong></div>
-                                        <div class="panel-body table-responsive">
-                                            <table class="table table-striped table-bordered">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Employee</th>
-                                                        <th>Department</th>
-                                                        <th>Date</th>
-                                                        <th>Clock In</th>
-                                                        <th>Clock Out</th>
-                                                        <th>Total Hours</th>
-                                                        <th>Late In</th>
-                                                        <th>Early Out</th>
-                                                        <th>Over Work</th>
-                                                        <th>GPS</th>
-                                                        <th>Notes</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody><?php if (!empty($attendance_record_rows)) {
-                                                            foreach ($attendance_record_rows as $row) {
-                                                                $inCoords = trim(($row['in_latitude'] ?? '') . ', ' . ($row['in_longitude'] ?? ''));
-                                                                $outCoords = trim(($row['out_latitude'] ?? '') . ', ' . ($row['out_longitude'] ?? '')); ?><tr>
-                                                                <td><?php echo field_staff_hr_escape($row['worker_name'] ?? ''); ?></td>
-                                                                <td><?php echo field_staff_hr_escape($row['department_name'] ?? ''); ?></td>
-                                                                <td><?php echo field_staff_hr_escape($row['date'] ?? ''); ?></td>
-                                                                <td><?php echo field_staff_hr_escape($row['clock_in'] ?? ''); ?></td>
-                                                                <td><?php echo field_staff_hr_escape($row['clock_out'] ?? ''); ?></td>
-                                                                <td><?php echo number_format((float) ($row['total_hours'] ?? 0), 2); ?></td>
-                                                                <td><?php echo (int) ($row['late_in_minutes'] ?? 0); ?> mins</td>
-                                                                <td><?php echo (int) ($row['early_out_minutes'] ?? 0); ?> mins</td>
-                                                                <td><?php echo (int) ($row['over_work_minutes'] ?? 0); ?> mins</td>
-                                                                <td>
-                                                                    <div><?php echo field_staff_hr_escape($inCoords); ?></div>
-                                                                    <div><?php echo field_staff_hr_escape($outCoords); ?></div>
-                                                                </td>
-                                                                <td><?php echo field_staff_hr_escape($row['notes'] ?? ''); ?></td>
-                                                            </tr><?php }
-                                                            } else { ?><tr>
-                                                            <td colspan="11" class="text-center text-muted">No attendance record rows available for the selected period.</td>
-                                                        </tr><?php } ?></tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-
-                                    <div class="panel panel-default mtop15">
-                                        <div class="panel-heading"><strong>Attendance Summary</strong></div>
-                                        <div class="panel-body table-responsive">
-                                            <table class="table table-striped table-bordered">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Employee</th>
-                                                        <th>Department</th>
-                                                        <th>Total Days Worked</th>
-                                                        <th>Total Late Ins</th>
-                                                        <th>Total Early Outs</th>
-                                                        <th>Total Hours Worked</th>
-                                                        <th>Regular Hours</th>
-                                                        <th>Overtime Hours</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody><?php if (!empty($attendance_summary_rows)) {
-                                                            foreach ($attendance_summary_rows as $row) { ?><tr>
-                                                                <td><?php echo field_staff_hr_escape($row['worker_name'] ?? ''); ?></td>
-                                                                <td><?php echo field_staff_hr_escape($row['department_name'] ?? ''); ?></td>
-                                                                <td><?php echo (int) ($row['total_days_worked'] ?? 0); ?></td>
-                                                                <td><?php echo (int) ($row['total_late_ins'] ?? 0); ?></td>
-                                                                <td><?php echo (int) ($row['total_early_outs'] ?? 0); ?></td>
-                                                                <td><?php echo number_format((float) ($row['total_hours_worked'] ?? 0), 2); ?></td>
-                                                                <td><?php echo number_format((float) ($row['regular_hours'] ?? 0), 2); ?></td>
-                                                                <td><?php echo number_format((float) ($row['overtime_hours'] ?? 0), 2); ?></td>
-                                                            </tr><?php }
-                                                            } else { ?><tr>
-                                                            <td colspan="8" class="text-center text-muted">No attendance summary rows available for the selected period.</td>
-                                                        </tr><?php } ?></tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-
-                                    <div class="panel panel-default mtop15">
-                                        <div class="panel-heading"><strong>Daily Attendance Report</strong></div>
-                                        <div class="panel-body table-responsive">
-                                            <table class="table table-striped table-bordered">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Employee</th>
-                                                        <th>Department</th>
-                                                        <th>Status</th>
-                                                        <th>Clock In</th>
-                                                        <th>Clock Out</th>
-                                                        <th>Late In Minutes</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody><?php if (!empty($daily_attendance_rows)) {
-                                                            foreach ($daily_attendance_rows as $row) { ?><tr>
-                                                                <td><?php echo field_staff_hr_escape($row['worker_name'] ?? ''); ?></td>
-                                                                <td><?php echo field_staff_hr_escape($row['department_name'] ?? ''); ?></td>
-                                                                <td><?php echo field_staff_hr_escape($row['status'] ?? ''); ?></td>
-                                                                <td><?php echo field_staff_hr_escape($row['clock_in'] ?? ''); ?></td>
-                                                                <td><?php echo field_staff_hr_escape($row['clock_out'] ?? ''); ?></td>
-                                                                <td><?php echo (int) ($row['late_in_minutes'] ?? 0); ?></td>
-                                                            </tr><?php }
-                                                            } else { ?><tr>
-                                                            <td colspan="6" class="text-center text-muted">No daily attendance rows available for the selected report date.</td>
-                                                        </tr><?php } ?></tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-
-                                    <div class="panel panel-default mtop15">
-                                        <div class="panel-heading"><strong>Monthly Attendance Report</strong></div>
-                                        <div class="panel-body table-responsive">
-                                            <table class="table table-striped table-bordered">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Employee</th>
-                                                        <th>Department</th><?php foreach (($monthly_attendance['days'] ?? []) as $day_value) { ?><th><?php echo field_staff_hr_escape(date('d', strtotime($day_value))); ?></th><?php } ?>
-                                                    </tr>
-                                                </thead>
-                                                <tbody><?php if (!empty($monthly_attendance['rows'])) {
-                                                            foreach ($monthly_attendance['rows'] as $row) { ?><tr>
-                                                                <td><?php echo field_staff_hr_escape($row['worker_name'] ?? ''); ?></td>
-                                                                <td><?php echo field_staff_hr_escape($row['department_name'] ?? ''); ?></td><?php foreach (($monthly_attendance['days'] ?? []) as $day_value) { ?><td class="text-center"><?php echo field_staff_hr_escape($row['days'][$day_value] ?? 'A'); ?></td><?php } ?>
-                                                            </tr><?php }
-                                                            } else { ?><tr>
-                                                            <td colspan="<?php echo 2 + count($monthly_attendance['days'] ?? []); ?>" class="text-center text-muted">No monthly attendance matrix available for the selected month.</td>
-                                                        </tr><?php } ?></tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-
-                                    <div class="panel panel-default mtop15">
-                                        <div class="panel-heading"><strong>Department Wise Report</strong></div>
-                                        <div class="panel-body table-responsive">
-                                            <table class="table table-striped table-bordered">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Department</th>
-                                                        <th>Headcount</th>
-                                                        <th>Total Regular Hours</th>
-                                                        <th>Total Overtime Hours</th>
-                                                        <th>Total Hours Worked</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody><?php if (!empty($department_wise_rows)) {
-                                                            foreach ($department_wise_rows as $row) { ?><tr>
-                                                                <td><?php echo field_staff_hr_escape($row['department_name'] ?? ''); ?></td>
-                                                                <td><?php echo (int) ($row['headcount'] ?? 0); ?></td>
-                                                                <td><?php echo number_format((float) ($row['total_regular_hours'] ?? 0), 2); ?></td>
-                                                                <td><?php echo number_format((float) ($row['total_overtime_hours'] ?? 0), 2); ?></td>
-                                                                <td><?php echo number_format((float) ($row['total_hours_worked'] ?? 0), 2); ?></td>
-                                                            </tr><?php }
-                                                            } else { ?><tr>
-                                                            <td colspan="5" class="text-center text-muted">No department wise analytics available for the selected period.</td>
-                                                        </tr><?php } ?></tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-
-                                    <div id="payrun-results-panel" class="panel panel-default mtop20 hide">
-                                        <div class="panel-body">
-                                            <div class="clearfix">
-                                                <h5 class="pull-left no-margin">Immutable Payroll Breakdown Statement</h5><span id="payrun-generated-at" class="pull-right text-muted"></span>
-                                            </div>
-                                            <p id="payrun-period-label" class="text-muted mtop10 mbot15"></p>
-                                            <div id="payrun-results-table" class="table-responsive"></div>
-                                        </div>
-                                    </div>
-                                </div>
-                            <?php } ?>
-
-                            <?php if ($can_manage_project_assignment) { ?>
-                                <div role="tabpanel" class="tab-pane <?php echo $active_tab_id === 'tab-project-assignment' ? 'active' : ''; ?>" id="tab-project-assignment">
-                                    <div class="row">
-                                        <div class="col-md-12">
-                                            <h5 class="bold">Project Assignment Control</h5>
-                                            <p class="text-muted">Supervisor and manager assignment board for allocating projects to field staff.</p>
-                                        </div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-md-4 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="project_name" class="control-label">Project Name</label><input type="text" id="project_name" class="form-control" placeholder="Enter project or work package"></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="project_start_date" class="control-label">Start Date</label><input type="date" id="project_start_date" class="form-control" value="<?php echo $start_date; ?>"></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="project_end_date" class="control-label">End Date</label><input type="date" id="project_end_date" class="form-control" value="<?php echo $end_date; ?>"></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-6 col-xs-12">
-                                            <div class="form-group"><label for="project_status" class="control-label">Status</label><select id="project_status" class="form-control">
-                                                    <option value="Planned">Planned</option>
-                                                    <option value="Active">Active</option>
-                                                    <option value="Completed">Completed</option>
-                                                    <option value="On Hold">On Hold</option>
-                                                </select></div>
-                                        </div>
-                                        <div class="col-md-2 col-sm-12 col-xs-12">
-                                            <div class="form-group mtop25"><button type="button" id="save-project-assignment-btn" class="btn btn-primary btn-block">Assign Staff</button></div>
-                                        </div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-md-8 col-sm-12 col-xs-12">
-                                            <div class="form-group"><label for="project_staff_ids" class="control-label">Assign To Staff</label><select id="project_staff_ids" class="form-control selectpicker" data-live-search="true" data-width="100%" multiple><?php foreach ($staff_directory as $staff_row) { ?><option value="<?php echo (int) ($staff_row['staff_id'] ?? 0); ?>"><?php echo field_staff_hr_escape($staff_row['worker_name'] ?? ''); ?></option><?php } ?></select></div>
-                                        </div>
-                                        <div class="col-md-4 col-sm-12 col-xs-12">
-                                            <div class="form-group"><label for="project_notes" class="control-label">Assignment Notes</label><textarea id="project_notes" class="form-control" rows="3"></textarea></div>
-                                        </div>
-                                    </div>
-                                    <div class="table-responsive mtop15">
-                                        <table class="table table-striped table-bordered">
-                                            <thead>
-                                                <tr>
-                                                    <th>Project</th>
-                                                    <th>Staff</th>
-                                                    <th>Supervisor/Manager</th>
-                                                    <th>Start</th>
-                                                    <th>End</th>
-                                                    <th>Status</th>
-                                                    <th>Notes</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                <?php if (!empty($project_assignment_rows)) { ?>
-                                                    <?php foreach ($project_assignment_rows as $project_row) { ?>
-                                                        <tr>
-                                                            <td><?php echo field_staff_hr_escape($project_row['project_name'] ?? ''); ?></td>
-                                                            <td><?php echo field_staff_hr_escape($project_row['worker_name'] ?? ''); ?></td>
-                                                            <td><?php echo field_staff_hr_escape($project_row['supervisor_name'] ?? ''); ?></td>
-                                                            <td><?php echo field_staff_hr_escape($project_row['start_date'] ?? ''); ?></td>
-                                                            <td><?php echo field_staff_hr_escape($project_row['end_date'] ?? '-'); ?></td>
-                                                            <td><?php echo field_staff_hr_escape($project_row['status'] ?? ''); ?></td>
-                                                            <td><?php echo field_staff_hr_escape($project_row['notes'] ?? ''); ?></td>
-                                                        </tr>
-                                                    <?php } ?>
-                                                <?php } else { ?>
-                                                    <tr>
-                                                        <td colspan="7" class="text-center text-muted">No project assignments found for the selected filter period.</td>
-                                                    </tr>
-                                                <?php } ?>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            <?php } ?>
-                        </div>
-
-                        <?php if (isset($this->security) && method_exists($this->security, 'get_csrf_token_name') && method_exists($this->security, 'get_csrf_hash')) { ?>
-                            <input type="hidden" id="hr-csrf-name" value="<?php echo field_staff_hr_escape($this->security->get_csrf_token_name()); ?>">
-                            <input type="hidden" id="hr-csrf-hash" value="<?php echo field_staff_hr_escape($this->security->get_csrf_hash()); ?>">
-                        <?php } ?>
-                    </div>
+            <div class="col-lg-3 col-md-6 col-sm-6 col-xs-12">
+                <div class="stat-card">
+                    <div class="stat-label">Total Hours</div>
+                    <div class="stat-value"><?php echo number_format($summary_total_hours, 1); ?></div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6 col-sm-6 col-xs-12">
+                <div class="stat-card warning">
+                    <div class="stat-label">Regular Hours</div>
+                    <div class="stat-value"><?php echo number_format($summary_regular_hours, 1); ?></div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6 col-sm-6 col-xs-12">
+                <div class="stat-card success">
+                    <div class="stat-label">Overtime Hours</div>
+                    <div class="stat-value"><?php echo number_format($summary_overtime_hours, 1); ?></div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6 col-sm-6 col-xs-12">
+                <div class="stat-card danger">
+                    <div class="stat-label">Allowance Due</div>
+                    <div class="stat-value">$<?php echo number_format($summary_allowance_due, 2); ?></div>
                 </div>
             </div>
         </div>
+
+        <!-- Filter Panel -->
+        <div class="filter-panel mtop25">
+            <div class="filter-title">Workspace Filters</div>
+            <form method="get" action="<?php echo field_staff_hr_escape($current_url); ?>">
+                <div class="row">
+                    <div class="col-lg-2 col-md-3 col-sm-6 col-xs-12">
+                        <div class="form-group">
+                            <label>Start Date</label>
+                            <input type="date" id="filter_start_date" name="start_date" class="form-control" value="<?php echo $start_date; ?>">
+                        </div>
+                    </div>
+                    <div class="col-lg-2 col-md-3 col-sm-6 col-xs-12">
+                        <div class="form-group">
+                            <label>End Date</label>
+                            <input type="date" id="filter_end_date" name="end_date" class="form-control" value="<?php echo $end_date; ?>">
+                        </div>
+                    </div>
+                    <div class="col-lg-2 col-md-3 col-sm-6 col-xs-12">
+                        <div class="form-group">
+                            <label>Daily Report</label>
+                            <input type="date" id="filter_report_date" name="report_date" class="form-control" value="<?php echo $report_date; ?>">
+                        </div>
+                    </div>
+                    <div class="col-lg-2 col-md-3 col-sm-6 col-xs-12">
+                        <div class="form-group">
+                            <label>Monthly</label>
+                            <input type="month" id="filter_report_month" name="report_month" class="form-control" value="<?php echo $report_month; ?>">
+                        </div>
+                    </div>
+                    <div class="col-lg-2 col-md-3 col-sm-6 col-xs-12">
+                        <div class="form-group">
+                            <label>Department</label>
+                            <select id="filter_department_id" name="department_id" class="form-control selectpicker" data-width="100%" data-live-search="true">
+                                <option value="0" <?php echo $selected_department_id <= 0 ? 'selected' : ''; ?>>All</option>
+                                <?php foreach ($departments as $dept) { ?>
+                                    <option value="<?php echo (int) ($dept['id'] ?? 0); ?>" <?php echo $selected_department_id === (int) ($dept['id'] ?? 0) ? 'selected' : ''; ?>>
+                                        <?php echo field_staff_hr_escape($dept['name'] ?? ''); ?>
+                                    </option>
+                                <?php } ?>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-lg-2 col-md-3 col-sm-6 col-xs-12">
+                        <div class="form-group">
+                            <label>Staff</label>
+                            <select id="filter_staff_id" name="staff_id" class="form-control selectpicker" data-width="100%" data-live-search="true">
+                                <option value="0" <?php echo $selected_staff_id <= 0 ? 'selected' : ''; ?>>All</option>
+                                <?php foreach ($staff_directory as $staff) { ?>
+                                    <option value="<?php echo (int) ($staff['staff_id'] ?? 0); ?>" <?php echo $selected_staff_id === (int) ($staff['staff_id'] ?? 0) ? 'selected' : ''; ?>>
+                                        <?php echo field_staff_hr_escape($staff['worker_name'] ?? ''); ?>
+                                    </option>
+                                <?php } ?>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-default">Apply Filters</button>
+            </form>
+        </div>
+
+        <!-- Main Panel with Tabs -->
+        <div class="panel_s">
+            <div class="panel-body">
+                <!-- Tab Navigation -->
+                <ul class="nav nav-tabs" role="tablist">
+                    <?php if ($can_manage_hr_payroll_staff_allowlist) { ?>
+                        <li role="presentation" class="<?php echo $active_tab_id === 'tab-payroll-admin' ? 'active' : ''; ?>">
+                            <a href="#tab-payroll-admin" role="tab" data-toggle="tab"><i class="fa fa-lock"></i> Payroll Admin</a>
+                        </li>
+                    <?php } ?>
+                    <?php if ($can_manage_operations) { ?>
+                        <li role="presentation" class="<?php echo $active_tab_id === 'tab-shift-department' ? 'active' : ''; ?>">
+                            <a href="#tab-shift-department" role="tab" data-toggle="tab">Shifts & Depts</a>
+                        </li>
+                    <?php } ?>
+                    <?php if ($can_manage_pay_setup) { ?>
+                        <li role="presentation" class="<?php echo $active_tab_id === 'tab-employee-pay-setup' ? 'active' : ''; ?>">
+                            <a href="#tab-employee-pay-setup" role="tab" data-toggle="tab">Pay Setup</a>
+                        </li>
+                    <?php } ?>
+                    <?php if ($can_manage_operations) { ?>
+                        <li role="presentation" class="<?php echo $active_tab_id === 'tab-manual-attendance' ? 'active' : ''; ?>">
+                            <a href="#tab-manual-attendance" role="tab" data-toggle="tab">Attendance</a>
+                        </li>
+                        <li role="presentation" class="<?php echo $active_tab_id === 'tab-leave-tracking' ? 'active' : ''; ?>">
+                            <a href="#tab-leave-tracking" role="tab" data-toggle="tab">Leave</a>
+                        </li>
+                    <?php } ?>
+                    <?php if ($can_manage_reporting) { ?>
+                        <li role="presentation" class="<?php echo $active_tab_id === 'tab-reporting-payrun' ? 'active' : ''; ?>">
+                            <a href="#tab-reporting-payrun" role="tab" data-toggle="tab">Payrun</a>
+                        </li>
+                    <?php } ?>
+                    <?php if ($can_manage_project_assignment) { ?>
+                        <li role="presentation" class="<?php echo $active_tab_id === 'tab-project-assignment' ? 'active' : ''; ?>">
+                            <a href="#tab-project-assignment" role="tab" data-toggle="tab">Projects</a>
+                        </li>
+                    <?php } ?>
+                </ul>
+
+                <!-- Tab Content -->
+                <div class="tab-content mtop15">
+                    <!-- Payroll Admin Tab (NEW) -->
+                    <?php if ($can_manage_hr_payroll_staff_allowlist) { ?>
+                        <div role="tabpanel" class="tab-pane <?php echo $active_tab_id === 'tab-payroll-admin' ? 'active' : ''; ?>" id="tab-payroll-admin">
+                            <div class="row mtop10">
+                                <div class="col-md-12">
+                                    <h4><i class="fa fa-lock"></i> Payroll Administration Control</h4>
+                                    <p class="text-muted">Manage access permissions for HR payroll managers and workspace administrators</p>
+                                </div>
+                            </div>
+
+                            <div class="row mtop20">
+                                <div class="col-md-8">
+                                    <div class="admin-panel">
+                                        <div class="panel-heading">
+                                            <h5 class="panel-title no-margin"><i class="fa fa-users"></i> Allowed Staff Members for Payroll Admin</h5>
+                                        </div>
+                                        <div class="panel-body">
+                                            <p class="text-muted"><i class="fa fa-info-circle"></i> Select which staff members can access payroll management, reporting, and HR workspace. Leave empty to restrict access to super admin only.</p>
+                                            <p class="text-info mtop10"><strong><i class="fa fa-user-circle"></i> Your Staff ID:</strong> <?php echo $current_user_staff_id; ?></p>
+
+                                            <div class="form-group mtop15">
+                                                <label for="hr-payroll-staff-ids" class="control-label"><i class="fa fa-check-circle"></i> Payroll Admin Users</label>
+                                                <select id="hr-payroll-staff-ids" class="form-control selectpicker" data-live-search="true" data-width="100%" multiple data-actions-box="true">
+                                                    <?php foreach ($staff_directory as $staff) { ?>
+                                                        <?php $sid = (int) ($staff['staff_id'] ?? 0);
+                                                        if ($sid <= 0) continue; ?>
+                                                        <option value="<?php echo $sid; ?>" <?php echo isset($hr_payroll_staff_ids_lookup[$sid]) ? 'selected' : ''; ?>>
+                                                            <?php echo field_staff_hr_escape($staff['worker_name'] ?? ''); ?>
+                                                        </option>
+                                                    <?php } ?>
+                                                </select>
+                                            </div>
+
+                                            <div class="mtop25">
+                                                <button type="button" id="save-hr-payroll-staff-allowlist-btn" class="btn btn-primary btn-lg">
+                                                    <i class="fa fa-save"></i> Save Allowed Staff Members
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-4">
+                                    <div class="panel panel-default">
+                                        <div class="panel-heading">
+                                            <h5 class="panel-title"><i class="fa fa-shield"></i> Access Summary</h5>
+                                        </div>
+                                        <div class="panel-body">
+                                            <p>
+                                                <strong>Total Allowed Staff:</strong><br>
+                                                <span class="badge badge-primary" style="background-color: #667eea; color: white; display: inline-block;"><?php echo count($hr_payroll_staff_ids); ?> members</span>
+                                            </p>
+                                            <p class="mtop15">
+                                                <strong>Status:</strong><br>
+                                                <span class="label label-info">Active</span>
+                                            </p>
+                                            <hr>
+                                            <p class="text-muted text-sm">
+                                                <strong><i class="fa fa-key"></i> Payroll Admins Can Access:</strong><br>
+                                                <i class="fa fa-check text-success"></i> Employee Pay Setup<br>
+                                                <i class="fa fa-check text-success"></i> Payrun Operations<br>
+                                                <i class="fa fa-check text-success"></i> HR Reports & Analytics<br>
+                                                <i class="fa fa-check text-success"></i> Attendance Management<br>
+                                                <i class="fa fa-check text-success"></i> Leave Tracking<br>
+                                                <i class="fa fa-check text-success"></i> Department Setup
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    <?php } ?>
+                    <?php if ($can_manage_pay_setup) { ?>
+                        <div role="tabpanel" class="tab-pane <?php echo $active_tab_id === 'tab-employee-pay-setup' ? 'active' : ''; ?>" id="tab-employee-pay-setup">
+                            <div class="row">
+                                <div class="col-md-4 col-sm-6 col-xs-12">
+                                    <div class="form-group">
+                                        <label for="profile_staff_id" class="control-label">Employee Selector</label>
+                                        <select id="profile_staff_id" class="form-control selectpicker" data-live-search="true" data-width="100%" title="Select employee profile">
+                                            <option value=""></option>
+                                            <?php foreach ($staff_directory as $staff_row) { ?>
+                                                <?php $staff_id = isset($staff_row['staff_id']) ? (int) $staff_row['staff_id'] : 0; ?>
+                                                <option value="<?php echo $staff_id; ?>" <?php echo $selected_staff_id === $staff_id ? 'selected="selected"' : ''; ?>><?php echo field_staff_hr_escape(isset($staff_row['worker_name']) ? $staff_row['worker_name'] : ''); ?></option>
+                                            <?php } ?>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-sm-6 col-xs-12">
+                                    <div class="form-group">
+                                        <label for="department_id" class="control-label">Department Selector</label>
+                                        <div class="input-group">
+                                            <select id="department_id" class="form-control selectpicker" data-width="100%" data-live-search="true" title="Select department">
+                                                <option value="0">Unassigned</option>
+                                                <?php foreach ($departments as $department_row) { ?>
+                                                    <?php $department_id = isset($department_row['id']) ? (int) $department_row['id'] : 0; ?>
+                                                    <option value="<?php echo $department_id; ?>"><?php echo field_staff_hr_escape(isset($department_row['name']) ? $department_row['name'] : ''); ?></option>
+                                                <?php } ?>
+                                            </select>
+                                            <span class="input-group-btn">
+                                                <button type="button" id="save-department-btn" class="btn btn-default">Add Department</button>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-sm-12 col-xs-12">
+                                    <div class="form-group">
+                                        <label for="default_shift_id" class="control-label">Shift Assignment</label>
+                                        <select id="default_shift_id" class="form-control selectpicker" data-width="100%" data-live-search="true" title="Assign default shift">
+                                            <option value="0">No Default Shift</option>
+                                            <?php foreach ($shifts as $shift_row) { ?>
+                                                <?php $shift_id = isset($shift_row['id']) ? (int) $shift_row['id'] : 0; ?>
+                                                <option value="<?php echo $shift_id; ?>"><?php echo field_staff_hr_escape(isset($shift_row['shift_name']) ? $shift_row['shift_name'] : ''); ?></option>
+                                            <?php } ?>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="base_hourly_rate" class="control-label">Base Hourly Rate</label><input type="number" min="0" step="0.01" id="base_hourly_rate" class="form-control"></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="overtime_multiplier" class="control-label">Overtime Multiplier</label><input type="number" min="0" step="0.01" id="overtime_multiplier" class="form-control"></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="daily_field_allowance" class="control-label">Daily Field Allowance</label><input type="number" min="0" step="0.01" id="daily_field_allowance" class="form-control"></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="employee_nib_rate" class="control-label">Employee NIB %</label><input type="number" min="0" step="0.01" id="employee_nib_rate" class="form-control"></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="employer_nib_rate" class="control-label">Employer NIB %</label><input type="number" min="0" step="0.01" id="employer_nib_rate" class="form-control"></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="employee_nhip_rate" class="control-label">Employee NHIP %</label><input type="number" min="0" step="0.01" id="employee_nhip_rate" class="form-control"></div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="vacation_pay" class="control-label">Vacation Pay</label><input type="number" min="0" step="0.01" id="vacation_pay" class="form-control"></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="outstanding_loan" class="control-label">Outstanding Loan</label><input type="number" min="0" step="0.01" id="outstanding_loan" class="form-control"></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="loan_repayment" class="control-label">Loan Repayment</label><input type="number" min="0" step="0.01" id="loan_repayment" class="form-control"></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="payment_method" class="control-label">Payment Method</label><select id="payment_method" class="form-control">
+                                            <option value="online_transfer">Online Transfer</option>
+                                            <option value="cash">Cash</option>
+                                            <option value="check">Check</option>
+                                        </select></div>
+                                </div>
+                                <div class="col-md-4 col-sm-12 col-xs-12">
+                                    <div class="form-group"><label for="bank_account_info" class="control-label">Bank Account Info</label><textarea id="bank_account_info" class="form-control" rows="3"></textarea></div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-12"><button type="button" id="save-profile-btn" class="btn btn-primary btn-lg">Save Profile</button></div>
+                            </div>
+                        </div>
+                    <?php } ?>
+
+                    <?php if ($can_manage_operations) { ?>
+                        <div role="tabpanel" class="tab-pane <?php echo $active_tab_id === 'tab-shift-department' ? 'active' : ''; ?>" id="tab-shift-department">
+                            <div class="row">
+                                <div class="col-md-3 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="setup_department_name" class="control-label">Department Name</label><input type="text" id="setup_department_name" class="form-control" placeholder="Operations"></div>
+                                </div>
+                                <div class="col-md-3 col-sm-6 col-xs-12">
+                                    <div class="form-group mtop25"><button type="button" id="setup-save-department-btn" class="btn btn-default">Save Department</button></div>
+                                </div>
+                                <div class="col-md-3 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="shift_name" class="control-label">Shift Name</label><input type="text" id="shift_name" class="form-control" placeholder="Day Shift"></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="shift_start_time" class="control-label">Start Time</label><input type="time" id="shift_start_time" class="form-control"></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="shift_end_time" class="control-label">End Time</label><input type="time" id="shift_end_time" class="form-control"></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="grace_period_mins" class="control-label">Grace Minutes</label><input type="number" min="0" step="1" id="grace_period_mins" class="form-control" value="0"></div>
+                                </div>
+                                <div class="col-md-3 col-sm-12 col-xs-12">
+                                    <div class="form-group mtop25"><button type="button" id="save-shift-btn" class="btn btn-default">Save Shift Template</button></div>
+                                </div>
+                            </div>
+                            <div class="row mtop15">
+                                <div class="col-md-3 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="distribution_shift_id" class="control-label">Shift Template</label><select id="distribution_shift_id" class="form-control selectpicker" data-live-search="true" data-width="100%">
+                                            <option value="0">Select Shift</option><?php foreach ($shifts as $shift_row) { ?><option value="<?php echo (int) ($shift_row['id'] ?? 0); ?>"><?php echo field_staff_hr_escape($shift_row['shift_name'] ?? ''); ?></option><?php } ?>
+                                        </select></div>
+                                </div>
+                                <div class="col-md-3 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="distribution_department_id" class="control-label">Department Target</label><select id="distribution_department_id" class="form-control selectpicker" data-live-search="true" data-width="100%">
+                                            <option value="0">No Department Filter</option><?php foreach ($departments as $department_row) { ?><option value="<?php echo (int) ($department_row['id'] ?? 0); ?>"><?php echo field_staff_hr_escape($department_row['name'] ?? ''); ?></option><?php } ?>
+                                        </select></div>
+                                </div>
+                                <div class="col-md-3 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="distribution_start_date" class="control-label">Start Date</label><input type="date" id="distribution_start_date" class="form-control" value="<?php echo $start_date; ?>"></div>
+                                </div>
+                                <div class="col-md-3 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="distribution_end_date" class="control-label">End Date</label><input type="date" id="distribution_end_date" class="form-control" value="<?php echo $end_date; ?>"></div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-8 col-sm-12 col-xs-12">
+                                    <div class="form-group"><label for="distribution_staff_ids" class="control-label">Individual Workers</label><select id="distribution_staff_ids" class="form-control selectpicker" data-live-search="true" data-width="100%" multiple><?php foreach ($staff_directory as $staff_row) { ?><option value="<?php echo (int) ($staff_row['staff_id'] ?? 0); ?>"><?php echo field_staff_hr_escape($staff_row['worker_name'] ?? ''); ?></option><?php } ?></select></div>
+                                </div>
+                                <div class="col-md-4 col-sm-12 col-xs-12">
+                                    <div class="form-group mtop25"><button type="button" id="distribute-shift-btn" class="btn btn-primary">Distribute Shift</button></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div role="tabpanel" class="tab-pane <?php echo $active_tab_id === 'tab-manual-attendance' ? 'active' : ''; ?>" id="tab-manual-attendance">
+                            <div class="row">
+                                <div class="col-md-3 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="manual_staff_id" class="control-label">Employee</label><select id="manual_staff_id" class="form-control selectpicker" data-live-search="true" data-width="100%">
+                                            <option value="0">Select Employee</option><?php foreach ($staff_directory as $staff_row) { ?><option value="<?php echo (int) ($staff_row['staff_id'] ?? 0); ?>"><?php echo field_staff_hr_escape($staff_row['worker_name'] ?? ''); ?></option><?php } ?>
+                                        </select></div>
+                                </div>
+                                <div class="col-md-3 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="manual_date" class="control-label">Attendance Date</label><input type="date" id="manual_date" class="form-control" value="<?php echo $report_date; ?>"></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="manual_clock_in" class="control-label">Clock In</label><input type="time" id="manual_clock_in" class="form-control"></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="manual_clock_out" class="control-label">Clock Out</label><input type="time" id="manual_clock_out" class="form-control"></div>
+                                </div>
+                                <div class="col-md-2 col-sm-12 col-xs-12">
+                                    <div class="form-group mtop25"><button type="button" id="save-manual-attendance-btn" class="btn btn-primary">Post Manual Log</button></div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <div class="form-group"><label for="manual_notes" class="control-label">Adjustment Notes</label><textarea id="manual_notes" class="form-control" rows="3"></textarea></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div role="tabpanel" class="tab-pane <?php echo $active_tab_id === 'tab-leave-tracking' ? 'active' : ''; ?>" id="tab-leave-tracking">
+                            <div class="row">
+                                <div class="col-md-3 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="leave_staff_id" class="control-label">Employee</label><select id="leave_staff_id" class="form-control selectpicker" data-live-search="true" data-width="100%">
+                                            <option value="0">Select Employee</option><?php foreach ($staff_directory as $staff_row) { ?><option value="<?php echo (int) ($staff_row['staff_id'] ?? 0); ?>"><?php echo field_staff_hr_escape($staff_row['worker_name'] ?? ''); ?></option><?php } ?>
+                                        </select></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="leave_type" class="control-label">Leave Type</label><select id="leave_type" class="form-control">
+                                            <option value="Vacation">Vacation</option>
+                                            <option value="Sick">Sick</option>
+                                            <option value="Maternity">Maternity</option>
+                                            <option value="Unpaid">Unpaid</option>
+                                        </select></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="leave_start_date" class="control-label">Start Date</label><input type="date" id="leave_start_date" class="form-control" value="<?php echo $start_date; ?>"></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="leave_end_date" class="control-label">End Date</label><input type="date" id="leave_end_date" class="form-control" value="<?php echo $end_date; ?>"></div>
+                                </div>
+                                <div class="col-md-3 col-sm-12 col-xs-12">
+                                    <div class="form-group"><label for="leave_status" class="control-label">Status</label><select id="leave_status" class="form-control">
+                                            <option value="Pending">Pending</option>
+                                            <option value="Approved">Approved</option>
+                                            <option value="Rejected">Rejected</option>
+                                        </select></div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-9 col-sm-12 col-xs-12">
+                                    <div class="form-group"><label for="leave_reason" class="control-label">Reason</label><textarea id="leave_reason" class="form-control" rows="3"></textarea></div>
+                                </div>
+                                <div class="col-md-3 col-sm-12 col-xs-12">
+                                    <div class="form-group mtop25"><button type="button" id="save-leave-btn" class="btn btn-primary">Save Leave Request</button></div>
+                                </div>
+                            </div>
+                            <div class="table-responsive mtop15">
+                                <table class="table table-striped table-bordered">
+                                    <thead>
+                                        <tr>
+                                            <th>Employee</th>
+                                            <th>Type</th>
+                                            <th>Start</th>
+                                            <th>End</th>
+                                            <th>Status</th>
+                                            <th>Reason</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody><?php if (!empty($leave_rows)) {
+                                                foreach ($leave_rows as $leave_row) { ?><tr data-leave-id="<?php echo (int) ($leave_row['id'] ?? 0); ?>">
+                                                    <td><?php echo field_staff_hr_escape($leave_row['worker_name'] ?? ''); ?></td>
+                                                    <td><?php echo field_staff_hr_escape($leave_row['leave_type'] ?? ''); ?></td>
+                                                    <td><?php echo field_staff_hr_escape($leave_row['start_date'] ?? ''); ?></td>
+                                                    <td><?php echo field_staff_hr_escape($leave_row['end_date'] ?? ''); ?></td>
+                                                    <td class="js-leave-status"><?php echo field_staff_hr_escape($leave_row['status'] ?? ''); ?></td>
+                                                    <td><?php echo field_staff_hr_escape($leave_row['reason'] ?? ''); ?></td>
+                                                    <td><button type="button" class="btn btn-success btn-xs js-leave-status-btn" data-status="Approved">Approve</button> <button type="button" class="btn btn-danger btn-xs js-leave-status-btn" data-status="Rejected">Reject</button></td>
+                                                </tr><?php }
+                                                } else { ?><tr>
+                                                <td colspan="7" class="text-center text-muted">No leave records found for the selected filter period.</td>
+                                            </tr><?php } ?></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    <?php } ?>
+
+                    <?php if ($can_manage_reporting) { ?>
+                        <div role="tabpanel" class="tab-pane <?php echo $active_tab_id === 'tab-reporting-payrun' ? 'active' : ''; ?>" id="tab-reporting-payrun">
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <h5 class="bold">Reporting and Payrun Workspace</h5>
+                                    <p class="text-muted">Export each ledger instantly in CSV/Excel-compatible format and generate an immutable payrun statement from the active filter state.</p>
+                                </div>
+                            </div>
+
+                            <div class="row mtop10">
+                                <div class="col-md-12">
+                                    <a href="<?php echo field_staff_hr_escape($export_urls['attendance_record'] ?? '#'); ?>" class="btn btn-default">Export Attendance Record</a>
+                                    <a href="<?php echo field_staff_hr_escape($export_urls['attendance_summary'] ?? '#'); ?>" class="btn btn-default">Export Attendance Summary</a>
+                                    <a href="<?php echo field_staff_hr_escape($export_urls['daily_attendance'] ?? '#'); ?>" class="btn btn-default">Export Daily Attendance</a>
+                                    <a href="<?php echo field_staff_hr_escape($export_urls['monthly_attendance'] ?? '#'); ?>" class="btn btn-default">Export Monthly Attendance</a>
+                                    <a href="<?php echo field_staff_hr_escape($export_urls['department_wise'] ?? '#'); ?>" class="btn btn-default">Export Department Wise</a>
+                                    <button type="button" id="generate-payrun-btn" class="btn btn-primary">Generate Payrun Ledger</button>
+                                </div>
+                            </div>
+
+                            <div class="panel panel-default mtop20">
+                                <div class="panel-heading"><strong>Attendance Record</strong></div>
+                                <div class="panel-body table-responsive">
+                                    <table class="table table-striped table-bordered">
+                                        <thead>
+                                            <tr>
+                                                <th>Employee</th>
+                                                <th>Department</th>
+                                                <th>Date</th>
+                                                <th>Clock In</th>
+                                                <th>Clock Out</th>
+                                                <th>Total Hours</th>
+                                                <th>Late In</th>
+                                                <th>Early Out</th>
+                                                <th>Over Work</th>
+                                                <th>GPS</th>
+                                                <th>Notes</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody><?php if (!empty($attendance_record_rows)) {
+                                                    foreach ($attendance_record_rows as $row) {
+                                                        $inCoords = trim(($row['in_latitude'] ?? '') . ', ' . ($row['in_longitude'] ?? ''));
+                                                        $outCoords = trim(($row['out_latitude'] ?? '') . ', ' . ($row['out_longitude'] ?? '')); ?><tr>
+                                                        <td><?php echo field_staff_hr_escape($row['worker_name'] ?? ''); ?></td>
+                                                        <td><?php echo field_staff_hr_escape($row['department_name'] ?? ''); ?></td>
+                                                        <td><?php echo field_staff_hr_escape($row['date'] ?? ''); ?></td>
+                                                        <td><?php echo field_staff_hr_escape($row['clock_in'] ?? ''); ?></td>
+                                                        <td><?php echo field_staff_hr_escape($row['clock_out'] ?? ''); ?></td>
+                                                        <td><?php echo number_format((float) ($row['total_hours'] ?? 0), 2); ?></td>
+                                                        <td><?php echo (int) ($row['late_in_minutes'] ?? 0); ?> mins</td>
+                                                        <td><?php echo (int) ($row['early_out_minutes'] ?? 0); ?> mins</td>
+                                                        <td><?php echo (int) ($row['over_work_minutes'] ?? 0); ?> mins</td>
+                                                        <td>
+                                                            <div><?php echo field_staff_hr_escape($inCoords); ?></div>
+                                                            <div><?php echo field_staff_hr_escape($outCoords); ?></div>
+                                                        </td>
+                                                        <td><?php echo field_staff_hr_escape($row['notes'] ?? ''); ?></td>
+                                                    </tr><?php }
+                                                    } else { ?><tr>
+                                                    <td colspan="11" class="text-center text-muted">No attendance record rows available for the selected period.</td>
+                                                </tr><?php } ?></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div class="panel panel-default mtop15">
+                                <div class="panel-heading"><strong>Attendance Summary</strong></div>
+                                <div class="panel-body table-responsive">
+                                    <table class="table table-striped table-bordered">
+                                        <thead>
+                                            <tr>
+                                                <th>Employee</th>
+                                                <th>Department</th>
+                                                <th>Total Days Worked</th>
+                                                <th>Total Late Ins</th>
+                                                <th>Total Early Outs</th>
+                                                <th>Total Hours Worked</th>
+                                                <th>Regular Hours</th>
+                                                <th>Overtime Hours</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody><?php if (!empty($attendance_summary_rows)) {
+                                                    foreach ($attendance_summary_rows as $row) { ?><tr>
+                                                        <td><?php echo field_staff_hr_escape($row['worker_name'] ?? ''); ?></td>
+                                                        <td><?php echo field_staff_hr_escape($row['department_name'] ?? ''); ?></td>
+                                                        <td><?php echo (int) ($row['total_days_worked'] ?? 0); ?></td>
+                                                        <td><?php echo (int) ($row['total_late_ins'] ?? 0); ?></td>
+                                                        <td><?php echo (int) ($row['total_early_outs'] ?? 0); ?></td>
+                                                        <td><?php echo number_format((float) ($row['total_hours_worked'] ?? 0), 2); ?></td>
+                                                        <td><?php echo number_format((float) ($row['regular_hours'] ?? 0), 2); ?></td>
+                                                        <td><?php echo number_format((float) ($row['overtime_hours'] ?? 0), 2); ?></td>
+                                                    </tr><?php }
+                                                    } else { ?><tr>
+                                                    <td colspan="8" class="text-center text-muted">No attendance summary rows available for the selected period.</td>
+                                                </tr><?php } ?></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div class="panel panel-default mtop15">
+                                <div class="panel-heading"><strong>Daily Attendance Report</strong></div>
+                                <div class="panel-body table-responsive">
+                                    <table class="table table-striped table-bordered">
+                                        <thead>
+                                            <tr>
+                                                <th>Employee</th>
+                                                <th>Department</th>
+                                                <th>Status</th>
+                                                <th>Clock In</th>
+                                                <th>Clock Out</th>
+                                                <th>Late In Minutes</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody><?php if (!empty($daily_attendance_rows)) {
+                                                    foreach ($daily_attendance_rows as $row) { ?><tr>
+                                                        <td><?php echo field_staff_hr_escape($row['worker_name'] ?? ''); ?></td>
+                                                        <td><?php echo field_staff_hr_escape($row['department_name'] ?? ''); ?></td>
+                                                        <td><?php echo field_staff_hr_escape($row['status'] ?? ''); ?></td>
+                                                        <td><?php echo field_staff_hr_escape($row['clock_in'] ?? ''); ?></td>
+                                                        <td><?php echo field_staff_hr_escape($row['clock_out'] ?? ''); ?></td>
+                                                        <td><?php echo (int) ($row['late_in_minutes'] ?? 0); ?></td>
+                                                    </tr><?php }
+                                                    } else { ?><tr>
+                                                    <td colspan="6" class="text-center text-muted">No daily attendance rows available for the selected report date.</td>
+                                                </tr><?php } ?></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div class="panel panel-default mtop15">
+                                <div class="panel-heading"><strong>Monthly Attendance Report</strong></div>
+                                <div class="panel-body table-responsive">
+                                    <table class="table table-striped table-bordered">
+                                        <thead>
+                                            <tr>
+                                                <th>Employee</th>
+                                                <th>Department</th><?php foreach (($monthly_attendance['days'] ?? []) as $day_value) { ?><th><?php echo field_staff_hr_escape(date('d', strtotime($day_value))); ?></th><?php } ?>
+                                            </tr>
+                                        </thead>
+                                        <tbody><?php if (!empty($monthly_attendance['rows'])) {
+                                                    foreach ($monthly_attendance['rows'] as $row) { ?><tr>
+                                                        <td><?php echo field_staff_hr_escape($row['worker_name'] ?? ''); ?></td>
+                                                        <td><?php echo field_staff_hr_escape($row['department_name'] ?? ''); ?></td><?php foreach (($monthly_attendance['days'] ?? []) as $day_value) { ?><td class="text-center"><?php echo field_staff_hr_escape($row['days'][$day_value] ?? 'A'); ?></td><?php } ?>
+                                                    </tr><?php }
+                                                    } else { ?><tr>
+                                                    <td colspan="<?php echo 2 + count($monthly_attendance['days'] ?? []); ?>" class="text-center text-muted">No monthly attendance matrix available for the selected month.</td>
+                                                </tr><?php } ?></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div class="panel panel-default mtop15">
+                                <div class="panel-heading"><strong>Department Wise Report</strong></div>
+                                <div class="panel-body table-responsive">
+                                    <table class="table table-striped table-bordered">
+                                        <thead>
+                                            <tr>
+                                                <th>Department</th>
+                                                <th>Headcount</th>
+                                                <th>Total Regular Hours</th>
+                                                <th>Total Overtime Hours</th>
+                                                <th>Total Hours Worked</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody><?php if (!empty($department_wise_rows)) {
+                                                    foreach ($department_wise_rows as $row) { ?><tr>
+                                                        <td><?php echo field_staff_hr_escape($row['department_name'] ?? ''); ?></td>
+                                                        <td><?php echo (int) ($row['headcount'] ?? 0); ?></td>
+                                                        <td><?php echo number_format((float) ($row['total_regular_hours'] ?? 0), 2); ?></td>
+                                                        <td><?php echo number_format((float) ($row['total_overtime_hours'] ?? 0), 2); ?></td>
+                                                        <td><?php echo number_format((float) ($row['total_hours_worked'] ?? 0), 2); ?></td>
+                                                    </tr><?php }
+                                                    } else { ?><tr>
+                                                    <td colspan="5" class="text-center text-muted">No department wise analytics available for the selected period.</td>
+                                                </tr><?php } ?></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div id="payrun-results-panel" class="panel panel-default mtop20 hide">
+                                <div class="panel-body">
+                                    <div class="clearfix">
+                                        <h5 class="pull-left no-margin">Immutable Payroll Breakdown Statement</h5><span id="payrun-generated-at" class="pull-right text-muted"></span>
+                                    </div>
+                                    <p id="payrun-period-label" class="text-muted mtop10 mbot15"></p>
+                                    <div id="payrun-results-table" class="table-responsive"></div>
+                                </div>
+                                <div class="panel-footer">
+                                    <button type="button" id="apply-payrun-btn" class="btn btn-success">Apply & Issue Payslips</button>
+                                    <span id="payrun-action-status" class="text-muted mleft15"></span>
+                                </div>
+                            </div>
+                        </div>
+                    <?php } ?>
+
+                    <?php if ($can_manage_project_assignment) { ?>
+                        <div role="tabpanel" class="tab-pane <?php echo $active_tab_id === 'tab-project-assignment' ? 'active' : ''; ?>" id="tab-project-assignment">
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <h5 class="bold">Project Assignment Control</h5>
+                                    <p class="text-muted">Supervisor panel for site job and task resource mapping.</p>
+                                </div>
+                            </div>
+                            <div class="row mtop15">
+                                <div class="col-md-4 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="project_name" class="control-label">Project Name</label><input type="text" id="project_name" class="form-control" placeholder="Enter project or work package"></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="project_start_date" class="control-label">Start Date</label><input type="date" id="project_start_date" class="form-control" value="<?php echo $start_date; ?>"></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="project_end_date" class="control-label">End Date</label><input type="date" id="project_end_date" class="form-control" value="<?php echo $end_date; ?>"></div>
+                                </div>
+                                <div class="col-md-2 col-sm-6 col-xs-12">
+                                    <div class="form-group"><label for="project_status" class="control-label">Status</label><select id="project_status" class="form-control">
+                                            <option value="Planned">Planned</option>
+                                            <option value="Active">Active</option>
+                                            <option value="Completed">Completed</option>
+                                            <option value="On Hold">On Hold</option>
+                                        </select></div>
+                                </div>
+                                <div class="col-md-2 col-sm-12 col-xs-12">
+                                    <div class="form-group mtop25"><button type="button" id="save-project-assignment-btn" class="btn btn-primary btn-block">Assign Staff</button></div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-8 col-sm-12 col-xs-12">
+                                    <div class="form-group"><label for="project_staff_ids" class="control-label">Assign To Staff</label><select id="project_staff_ids" class="form-control selectpicker" data-live-search="true" data-width="100%" multiple><?php foreach ($staff_directory as $staff_row) { ?><option value="<?php echo (int) ($staff_row['staff_id'] ?? 0); ?>"><?php echo field_staff_hr_escape($staff_row['worker_name'] ?? ''); ?></option><?php } ?></select></div>
+                                </div>
+                                <div class="col-md-4 col-sm-12 col-xs-12">
+                                    <div class="form-group"><label for="project_notes" class="control-label">Assignment Notes</label><textarea id="project_notes" class="form-control" rows="3"></textarea></div>
+                                </div>
+                            </div>
+                            <div class="table-responsive mtop15">
+                                <table class="table table-striped table-bordered">
+                                    <thead>
+                                        <tr>
+                                            <th>Project</th>
+                                            <th>Staff</th>
+                                            <th>Supervisor/Manager</th>
+                                            <th>Start</th>
+                                            <th>End</th>
+                                            <th>Status</th>
+                                            <th>Notes</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php if (!empty($project_assignment_rows)) { ?>
+                                            <?php foreach ($project_assignment_rows as $project_row) { ?>
+                                                <tr>
+                                                    <td><?php echo field_staff_hr_escape($project_row['project_name'] ?? ''); ?></td>
+                                                    <td><?php echo field_staff_hr_escape($project_row['worker_name'] ?? ''); ?></td>
+                                                    <td><?php echo field_staff_hr_escape($project_row['supervisor_name'] ?? ''); ?></td>
+                                                    <td><?php echo field_staff_hr_escape($project_row['start_date'] ?? ''); ?></td>
+                                                    <td><?php echo field_staff_hr_escape($project_row['end_date'] ?? '-'); ?></td>
+                                                    <td><?php echo field_staff_hr_escape($project_row['status'] ?? ''); ?></td>
+                                                    <td><?php echo field_staff_hr_escape($project_row['notes'] ?? ''); ?></td>
+                                                </tr>
+                                            <?php } ?>
+                                        <?php } else { ?>
+                                            <tr>
+                                                <td colspan="7" class="text-center text-muted">No project assignments found for the selected filter period.</td>
+                                            </tr>
+                                        <?php } ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    <?php } ?>
+                </div>
+
+                <?php if (isset($this->security) && method_exists($this->security, 'get_csrf_token_name') && method_exists($this->security, 'get_csrf_hash')) { ?>
+                    <input type="hidden" id="hr-csrf-name" value="<?php echo field_staff_hr_escape($this->security->get_csrf_token_name()); ?>">
+                    <input type="hidden" id="hr-csrf-hash" value="<?php echo field_staff_hr_escape($this->security->get_csrf_hash()); ?>">
+                <?php } ?>
+            </div>
+        </div>
     </div>
+</div>
+</div>
 </div>
 <?php init_tail(); ?>
 <script>
@@ -765,8 +1059,10 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
             var saveLeaveUrl = <?php echo json_encode($save_leave_url); ?>;
             var updateLeaveStatusUrl = <?php echo json_encode($update_leave_status_url); ?>;
             var generatePayrunUrl = <?php echo json_encode($generate_payrun_url); ?>;
+            var applyPayrunUrl = <?php echo json_encode($apply_payrun_url); ?>;
             var saveProjectAssignmentUrl = <?php echo json_encode($save_project_assignment_url); ?>;
             var saveHrPayrollStaffAllowlistUrl = <?php echo json_encode($save_hr_payroll_staff_allowlist_url); ?>;
+            var currentPayrunStatement = null;;
 
             function notify(type, message) {
                 if (typeof alert_float === 'function') {
@@ -840,6 +1136,8 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                     $('#payrun-results-panel').addClass('hide');
                     return;
                 }
+
+                currentPayrunStatement = statement;
 
                 var rowsHtml = '';
                 for (var index = 0; index < statement.rows.length; index++) {
@@ -1080,6 +1378,44 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                     }
                 }, 'json').fail(function() {
                     notify('danger', 'Payrun generation failed.');
+                });
+            });
+
+            $('#apply-payrun-btn').click(function() {
+                if (!currentPayrunStatement || !currentPayrunStatement.rows || !currentPayrunStatement.rows.length) {
+                    notify('danger', 'No payrun data available. Generate a payrun first.');
+                    return;
+                }
+
+                if (!confirm('Apply payrun and issue ' + currentPayrunStatement.rows.length + ' payslips? This action cannot be undone.')) {
+                    return;
+                }
+
+                $('#payrun-action-status').text('Processing...');
+                $('#apply-payrun-btn').prop('disabled', true);
+
+                var payload = appendCsrf({
+                    start_date: currentPayrunStatement.start_date,
+                    end_date: currentPayrunStatement.end_date,
+                    rows: currentPayrunStatement.rows
+                });
+
+                $.post(applyPayrunUrl, payload, function(response) {
+                    $('#apply-payrun-btn').prop('disabled', false);
+                    if (response && response.success) {
+                        $('#payrun-action-status').text('✓ Applied');
+                        notify('success', response.message || 'Payrun applied successfully.');
+                        setTimeout(function() {
+                            window.location.reload();
+                        }, 2000);
+                    } else {
+                        $('#payrun-action-status').text('');
+                        notify('danger', response && response.message ? response.message : 'Payrun apply failed.');
+                    }
+                }, 'json').fail(function() {
+                    $('#apply-payrun-btn').prop('disabled', false);
+                    $('#payrun-action-status').text('');
+                    notify('danger', 'Payrun apply failed.');
                 });
             });
 

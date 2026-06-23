@@ -19,22 +19,33 @@ class Field_staff extends AdminController
     public function attendance()
     {
         $staff_id = $this->resolve_session_staff_id();
-        $is_admin_user = function_exists('is_admin') ? (bool) is_admin() : false;
-
-        if ($is_admin_user) {
-            $attendance_records = $this->field_staff_model->get_recent_attendance(20);
-        } else {
-            if ($staff_id <= 0) {
-                access_denied('field_staff');
-            }
-
-            // Enforce own-data boundary for all non-admin staff users.
-            $attendance_records = $this->field_staff_model->get_recent_attendance_by_staff($staff_id, 20);
+        if ($staff_id <= 0) {
+            access_denied('field_staff');
         }
 
-        $data['title'] = 'Field Attendance Tracker';
-        $data['is_clocked_in'] = $staff_id > 0 ? $this->field_staff_model->has_open_clock($staff_id) : false;
+        $start_date = trim((string) $this->input->get('start_date', true));
+        $end_date = trim((string) $this->input->get('end_date', true));
+
+        if ($start_date !== '' || $end_date !== '') {
+            $attendance_records = $this->field_staff_model->get_attendance_history_by_staff($staff_id, $start_date, $end_date, 100);
+        } else {
+            $attendance_records = $this->field_staff_model->get_recent_attendance_by_staff($staff_id, 20);
+        }
+        $leave_rows = $this->field_staff_model->get_leave_records([
+            'staff_id' => $staff_id,
+        ]);
+        $payslip_rows = $this->field_staff_model->get_employee_payslips($staff_id, 12);
+
+        $data['title'] = 'Employee Workforce Portal';
+        $data['start_date'] = $start_date !== '' ? $start_date : date('Y-m-d', strtotime('-14 days'));
+        $data['end_date'] = $end_date !== '' ? $end_date : date('Y-m-d');
+        $data['is_clocked_in'] = $this->field_staff_model->has_open_clock($staff_id);
         $data['attendance_records'] = $attendance_records;
+        $data['leave_rows'] = $leave_rows;
+        $data['payslip_rows'] = $payslip_rows;
+        $data['save_leave_request_url'] = field_staff_admin_url('field_staff/save_leave_request');
+        $data['get_payslip_statement_url'] = field_staff_admin_url('field_staff/get_employee_payslip_statement');
+        $data['clock_action_url'] = field_staff_admin_url('field_staff/clock_action');
 
         $this->load->view('attendance_dashboard', $data);
     }
@@ -131,8 +142,10 @@ class Field_staff extends AdminController
         $data['save_leave_url'] = field_staff_admin_url('field_staff/save_leave_record');
         $data['update_leave_status_url'] = field_staff_admin_url('field_staff/update_leave_status');
         $data['generate_payrun_url'] = field_staff_admin_url('field_staff/generate_payrun');
+        $data['apply_payrun_url'] = field_staff_admin_url('field_staff/apply_payrun');
         $data['save_project_assignment_url'] = field_staff_admin_url('field_staff/save_project_assignment');
         $data['save_hr_payroll_staff_allowlist_url'] = field_staff_admin_url('field_staff/save_hr_payroll_staff_ids');
+        $data['can_access_hr_workspace'] = $this->can_access_hr_workspace();
 
         $this->load->view('hr_management', $data);
     }
@@ -230,7 +243,7 @@ class Field_staff extends AdminController
      */
     public function save_payroll_profile()
     {
-        $this->enforce_pay_setup_access();
+        $this->require_pay_setup_json();
 
         if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
             $this->respond_json([
@@ -282,7 +295,7 @@ class Field_staff extends AdminController
      */
     public function save_department()
     {
-        $this->enforce_operations_access();
+        $this->require_operations_json();
 
         if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
             $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
@@ -301,7 +314,7 @@ class Field_staff extends AdminController
      */
     public function save_shift()
     {
-        $this->enforce_operations_access();
+        $this->require_operations_json();
 
         if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
             $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
@@ -327,7 +340,7 @@ class Field_staff extends AdminController
      */
     public function distribute_shift()
     {
-        $this->enforce_operations_access();
+        $this->require_operations_json();
 
         if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
             $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
@@ -373,7 +386,7 @@ class Field_staff extends AdminController
      */
     public function save_manual_attendance()
     {
-        $this->enforce_operations_access();
+        $this->require_operations_json();
 
         if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
             $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
@@ -398,7 +411,7 @@ class Field_staff extends AdminController
      */
     public function save_leave_record()
     {
-        $this->enforce_operations_access();
+        $this->require_operations_json();
 
         if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
             $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
@@ -425,7 +438,7 @@ class Field_staff extends AdminController
      */
     public function update_leave_status()
     {
-        $this->enforce_operations_access();
+        $this->require_operations_json();
 
         if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
             $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
@@ -443,11 +456,66 @@ class Field_staff extends AdminController
     }
 
     /**
+     * Submit a self-service leave request from the employee portal.
+     */
+    public function save_leave_request()
+    {
+        $staff_id = $this->resolve_session_staff_id();
+        if ($staff_id <= 0) {
+            $this->respond_unauthorized_json();
+        }
+
+        if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
+            $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
+        }
+
+        $saved = $this->field_staff_model->save_leave_record([
+            'staff_id' => $staff_id,
+            'leave_type' => $this->input->post('leave_type', true),
+            'start_date' => $this->input->post('start_date', true),
+            'end_date' => $this->input->post('end_date', true),
+            'status' => 'Pending',
+            'reason' => $this->input->post('reason', true),
+        ]);
+
+        $this->respond_json([
+            'success' => $saved,
+            'message' => $saved ? 'Leave request submitted for approval.' : 'Leave request could not be submitted.',
+        ]);
+    }
+
+    /**
+     * Return a secure compiled payslip statement for the current staff member.
+     */
+    public function get_employee_payslip_statement()
+    {
+        $payroll_id = (int) $this->input->get_post('payroll_id', true);
+        if ($payroll_id <= 0) {
+            $this->respond_json(['success' => false, 'message' => 'A valid payslip selection is required.']);
+        }
+
+        $viewer_staff_id = $this->resolve_session_staff_id();
+        if ($viewer_staff_id <= 0) {
+            $this->respond_unauthorized_json();
+        }
+
+        $statement = $this->field_staff_model->get_employee_payslip_statement($payroll_id, true, $viewer_staff_id);
+        if (empty($statement)) {
+            $this->respond_json(['success' => false, 'message' => 'The selected payslip could not be loaded.']);
+        }
+
+        $this->respond_json([
+            'success' => true,
+            'statement' => $statement,
+        ]);
+    }
+
+    /**
      * Export the filtered attendance analytics dataset as a CSV file.
      */
     public function export_operations_report()
     {
-        $this->enforce_reporting_access();
+        $this->require_reporting_json();
 
         list($start_date, $end_date) = $this->resolve_filter_dates();
         $report_type = strtolower(trim((string) $this->input->get('type', true)));
@@ -572,7 +640,7 @@ class Field_staff extends AdminController
      */
     public function generate_payrun()
     {
-        $this->enforce_reporting_access();
+        $this->require_reporting_json();
 
         if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
             $this->respond_json([
@@ -606,11 +674,148 @@ class Field_staff extends AdminController
     }
 
     /**
+     * Apply (save/issue) payrun to create individual payslip records in the database.
+     */
+    public function apply_payrun()
+    {
+        $this->require_reporting_json();
+
+        if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
+            $this->respond_json([
+                'success' => false,
+                'message' => 'Request validation failed.',
+            ]);
+        }
+
+        $start_date = $this->normalize_date(trim((string) $this->input->post('start_date', true)));
+        $end_date = $this->normalize_date(trim((string) $this->input->post('end_date', true)));
+
+        if ($start_date === null || $end_date === null) {
+            $this->respond_json([
+                'success' => false,
+                'message' => 'Start and end dates are required.',
+            ]);
+        }
+
+        $payrun_rows = $this->input->post('rows', true);
+        if (!is_array($payrun_rows)) {
+            $this->respond_json([
+                'success' => false,
+                'message' => 'Payrun data is required.',
+            ]);
+        }
+
+        $saved_count = 0;
+        $failed_count = 0;
+        $master_table = db_prefix() . 'fs_payroll_master';
+
+        $this->db->trans_begin();
+
+        foreach ($payrun_rows as $row) {
+            $staff_id = isset($row['staff_id']) ? (int) $row['staff_id'] : 0;
+            if ($staff_id <= 0) {
+                $failed_count++;
+                continue;
+            }
+
+            $regular_hours = isset($row['regular_hours']) ? (float) $row['regular_hours'] : 0.00;
+            $ot_hours = isset($row['overtime_hours']) ? (float) $row['overtime_hours'] : 0.00;
+            $base_rate = isset($row['base_hourly_rate']) ? (float) $row['base_hourly_rate'] : 0.00;
+            $gross_salary = isset($row['gross_pay']) ? (float) $row['gross_pay'] : 0.00;
+
+            $nib_ee = $gross_salary * 0.055;
+            $nib_er = $gross_salary * 0.065;
+            $nhip_base_gross = min($gross_salary, 7800.00);
+            $nhip_ee = $nhip_base_gross * 0.03;
+            $nhip_er = $nhip_base_gross * 0.03;
+
+            $allowance_due = isset($row['allowance_due']) ? (float) $row['allowance_due'] : 0.00;
+            $vacation_pay = isset($row['vacation_pay']) ? (float) $row['vacation_pay'] : 0.00;
+            $net_salary = $gross_salary - ($nib_ee + $nhip_ee);
+
+            $payroll_profile = $this->field_staff_model->get_payroll_profile($staff_id);
+            $payment_method = isset($payroll_profile['payment_method']) ? $payroll_profile['payment_method'] : 'online_transfer';
+
+            $payload = [
+                'staff_id'      => $staff_id,
+                'start_date'    => $start_date,
+                'end_date'      => $end_date,
+                'regular_hours' => round($regular_hours, 2),
+                'ot_hours'      => round($ot_hours, 2),
+                'hourly_rate'   => round($base_rate, 2),
+                'gross_salary'  => round($gross_salary, 2),
+                'nib_ee'        => round($nib_ee, 2),
+                'nib_er'        => round($nib_er, 2),
+                'nhip_ee'       => round($nhip_ee, 2),
+                'nhip_er'       => round($nhip_er, 2),
+                'net_salary'    => round($net_salary, 2),
+                'status'        => 'issued',
+                'payment_method' => $payment_method,
+                'created_at'    => date('Y-m-d H:i:s'),
+            ];
+
+            $existing = $this->db
+                ->select('id')
+                ->from($master_table)
+                ->where('staff_id', $staff_id)
+                ->where('start_date', $start_date)
+                ->where('end_date', $end_date)
+                ->order_by('id', 'DESC')
+                ->limit(1)
+                ->get()
+                ->row_array();
+
+            if (!empty($existing) && isset($existing['id'])) {
+                $payroll_id = (int) $existing['id'];
+                unset($payload['created_at']);
+                $this->db->where('id', $payroll_id);
+                $saved = (bool) $this->db->update($master_table, $payload);
+            } else {
+                $saved = (bool) $this->db->insert($master_table, $payload);
+                $payroll_id = $saved ? (int) $this->db->insert_id() : 0;
+            }
+
+            if ($saved && $payroll_id > 0) {
+                if (isset($row['commission']) && $row['commission'] > 0) {
+                    $this->field_staff_model->add_eav_payroll_value($payroll_id, 'commission', (float) $row['commission']);
+                }
+                if (isset($row['vacation_pay']) && $row['vacation_pay'] > 0) {
+                    $this->field_staff_model->add_eav_payroll_value($payroll_id, 'vacation_pay', (float) $row['vacation_pay']);
+                }
+                $saved_count++;
+            } else {
+                $failed_count++;
+            }
+        }
+
+        if ($this->db->trans_status() === false) {
+            $this->db->trans_rollback();
+            $this->respond_json([
+                'success' => false,
+                'message' => 'Payrun processing failed during database transaction.',
+            ]);
+        }
+
+        $this->db->trans_commit();
+
+        $this->respond_json([
+            'success' => true,
+            'message' => sprintf(
+                'Payrun applied successfully. %d payslips issued, %d failed.',
+                $saved_count,
+                $failed_count
+            ),
+            'saved_count' => $saved_count,
+            'failed_count' => $failed_count,
+        ]);
+    }
+
+    /**
      * Save project assignment rows for one or multiple staff members.
      */
     public function save_project_assignment()
     {
-        $this->enforce_project_assignment_access();
+        $this->require_project_assignment_json();
 
         if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
             $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
@@ -659,32 +864,32 @@ class Field_staff extends AdminController
     public function save_manager_supervisor_roles()
     {
         if (!$this->is_admin_user()) {
-            access_denied('field_staff');
+            $this->respond_unauthorized_json();
         }
 
         if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
             $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
         }
 
-        $raw_value = trim((string) $this->input->post('role_ids', true));
-        $role_ids = [];
+        $raw_value = trim((string) $this->input->post('staff_ids', true));
+        $staff_ids = [];
         if ($raw_value !== '') {
             foreach (preg_split('/[^0-9]+/', $raw_value) as $value) {
                 if ($value !== '') {
-                    $role_ids[] = (int) $value;
+                    $staff_ids[] = (int) $value;
                 }
             }
         }
 
-        $saved = $this->field_staff_model->save_manager_supervisor_role_ids($role_ids);
+        $saved = $this->field_staff_model->save_hr_payroll_staff_ids($staff_ids);
         if (!$saved) {
-            $this->respond_json(['success' => false, 'message' => 'Role allowlist could not be saved.']);
+            $this->respond_json(['success' => false, 'message' => 'Staff allowlist could not be saved.']);
         }
 
         $this->respond_json([
             'success' => true,
-            'message' => 'Manager/supervisor role allowlist updated successfully.',
-            'role_ids' => $this->field_staff_model->get_manager_supervisor_role_ids(),
+            'message' => 'Staff allowlist updated successfully.',
+            'staff_ids' => $this->field_staff_model->get_hr_payroll_staff_ids(),
         ]);
     }
 
@@ -694,7 +899,7 @@ class Field_staff extends AdminController
     public function save_hr_payroll_staff_ids()
     {
         if (!$this->is_admin_user()) {
-            access_denied('field_staff');
+            $this->respond_unauthorized_json();
         }
 
         if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
@@ -739,6 +944,8 @@ class Field_staff extends AdminController
      */
     public function save_payroll()
     {
+        $this->require_reporting_json();
+
         $is_post = strtoupper((string) $this->input->server('REQUEST_METHOD')) === 'POST';
 
         if (!$is_post) {
@@ -776,6 +983,7 @@ class Field_staff extends AdminController
         }
 
         $staff_row = $this->get_staff_row_by_id($staff_id);
+        $payroll_profile = $this->field_staff_model->get_payroll_profile($staff_id);
         $hourly_rate = $this->resolve_hourly_rate($staff_row);
 
         $baseline = $this->field_staff_model->calculate_weekly_payroll(
@@ -816,13 +1024,14 @@ class Field_staff extends AdminController
         $employee_deductions = $adjustment_map['loan_adjustment'] + $adjustment_map['advance'];
 
         if (!empty($provided_adjustments)) {
-            $gross_salary += $taxable_additions;
+            $gross_salary = round($gross_salary + $taxable_additions, 2);
         }
 
         $nib_ee = $gross_salary * 0.055;
         $nib_er = $gross_salary * 0.065;
-        $nhip_ee = $gross_salary * 0.03;
-        $nhip_er = $gross_salary * 0.03;
+        $nhip_base_gross = min($gross_salary, 7800.00);
+        $nhip_ee = $nhip_base_gross * 0.03;
+        $nhip_er = $nhip_base_gross * 0.03;
         $net_salary = $gross_salary - ($nib_ee + $nhip_ee) - $employee_deductions;
 
         $master_table = db_prefix() . 'fs_payroll_master';
@@ -840,6 +1049,7 @@ class Field_staff extends AdminController
             'nhip_er'       => round($nhip_er, 2),
             'net_salary'    => round($net_salary, 2),
             'status'        => $status,
+            'payment_method' => isset($payroll_profile['payment_method']) ? $payroll_profile['payment_method'] : 'online_transfer',
         ];
 
         $this->db->trans_begin();
@@ -1133,6 +1343,41 @@ class Field_staff extends AdminController
         }
     }
 
+    private function require_hr_workspace_json()
+    {
+        if (!$this->can_access_hr_workspace()) {
+            $this->respond_unauthorized_json();
+        }
+    }
+
+    private function require_pay_setup_json()
+    {
+        if (!$this->can_access_pay_setup_tab()) {
+            $this->respond_unauthorized_json();
+        }
+    }
+
+    private function require_operations_json()
+    {
+        if (!$this->can_access_operations_tab()) {
+            $this->respond_unauthorized_json();
+        }
+    }
+
+    private function require_reporting_json()
+    {
+        if (!$this->can_access_reporting_tab()) {
+            $this->respond_unauthorized_json();
+        }
+    }
+
+    private function require_project_assignment_json()
+    {
+        if (!$this->can_access_project_assignment_tab()) {
+            $this->respond_unauthorized_json();
+        }
+    }
+
     private function can_access_hr_workspace()
     {
         return $this->can_access_hr_payroll_workspace();
@@ -1170,6 +1415,15 @@ class Field_staff extends AdminController
         return $this->can_access_hr_payroll_workspace();
     }
 
+    private function respond_unauthorized_json($message = 'Authorization denied.')
+    {
+        http_response_code(403);
+        $this->respond_json([
+            'success' => false,
+            'message' => $message,
+        ]);
+    }
+
     private function is_admin_user()
     {
         return function_exists('is_admin') ? (bool) is_admin() : false;
@@ -1196,34 +1450,7 @@ class Field_staff extends AdminController
 
     private function is_manager_or_supervisor()
     {
-        $staff_id = $this->resolve_session_staff_id();
-        if ($staff_id <= 0) {
-            return false;
-        }
-
-        $staff_table = db_prefix() . 'staff';
-        if (!$this->db->table_exists($staff_table)) {
-            return false;
-        }
-
-        $staff_key = $this->db->field_exists('staffid', $staff_table) ? 'staffid' : 'id';
-        $staff_row = $this->db
-            ->from($staff_table)
-            ->where($staff_key, $staff_id)
-            ->limit(1)
-            ->get()
-            ->row_array();
-
-        if (!is_array($staff_row)) {
-            return false;
-        }
-
-        $allowed_role_ids = $this->field_staff_model->get_manager_supervisor_role_ids();
-        if (empty($allowed_role_ids) || !isset($staff_row['roleid'])) {
-            return false;
-        }
-
-        return in_array((int) $staff_row['roleid'], $allowed_role_ids, true);
+        return $this->is_hr_payroll_allowed_staff();
     }
 
     private function resolve_default_hr_tab($can_manage_pay_setup, $can_manage_operations, $can_manage_reporting, $can_manage_project_assignment)
@@ -1232,7 +1459,9 @@ class Field_staff extends AdminController
         $allowed_tabs = [];
 
         if ($can_manage_operations) {
-            $allowed_tabs[] = 'operations';
+            $allowed_tabs[] = 'shift_setup';
+            $allowed_tabs[] = 'manual_attendance';
+            $allowed_tabs[] = 'leave_tracking';
         }
 
         if ($can_manage_pay_setup) {
@@ -1240,11 +1469,17 @@ class Field_staff extends AdminController
         }
 
         if ($can_manage_reporting) {
-            $allowed_tabs[] = 'reporting';
+            $allowed_tabs[] = 'reporting_payrun';
         }
 
         if ($can_manage_project_assignment) {
             $allowed_tabs[] = 'project_assignment';
+        }
+
+        if ($requested_tab === 'operations') {
+            $requested_tab = 'shift_setup';
+        } elseif ($requested_tab === 'reporting') {
+            $requested_tab = 'reporting_payrun';
         }
 
         if ($requested_tab !== '' && in_array($requested_tab, $allowed_tabs, true)) {
@@ -1258,47 +1493,12 @@ class Field_staff extends AdminController
     {
         $staff_id = $this->resolve_session_staff_id();
         if ($staff_id <= 0) {
-            return ['staff_id' => 0, 'role_id' => 0, 'role_name' => ''];
-        }
-
-        $staff_table = db_prefix() . 'staff';
-        if (!$this->db->table_exists($staff_table)) {
-            return ['staff_id' => $staff_id, 'role_id' => 0, 'role_name' => ''];
-        }
-
-        $staff_key = $this->db->field_exists('staffid', $staff_table) ? 'staffid' : 'id';
-        $staff_row = $this->db
-            ->from($staff_table)
-            ->where($staff_key, $staff_id)
-            ->limit(1)
-            ->get()
-            ->row_array();
-
-        if (!is_array($staff_row) || !isset($staff_row['roleid'])) {
-            return ['staff_id' => $staff_id, 'role_id' => 0, 'role_name' => ''];
-        }
-
-        $role_id = (int) $staff_row['roleid'];
-        $role_name = '';
-        $roles_table = db_prefix() . 'roles';
-
-        if ($role_id > 0 && $this->db->table_exists($roles_table)) {
-            $role_row = $this->db
-                ->from($roles_table)
-                ->where('roleid', $role_id)
-                ->limit(1)
-                ->get()
-                ->row_array();
-
-            if (is_array($role_row) && isset($role_row['name'])) {
-                $role_name = trim((string) $role_row['name']);
-            }
+            return ['staff_id' => 0, 'allowlisted' => false];
         }
 
         return [
             'staff_id' => $staff_id,
-            'role_id' => $role_id,
-            'role_name' => $role_name,
+            'allowlisted' => $this->is_hr_payroll_allowed_staff(),
         ];
     }
 

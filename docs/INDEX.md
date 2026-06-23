@@ -2,10 +2,13 @@
 
 Use this index as the starting point for module operations and maintenance.
 
+Current release: 1.1.0
+
 ## Core Documents
 
 - Setup and Operations: ./SETUP_AND_OPERATIONS.md
 - Permissions Matrix: ./PERMISSIONS_MATRIX.md
+- Payslips Management: ./PAYSLIPS_MANAGEMENT.md
 - API Endpoints: ./API_ENDPOINTS.md
 - Business Workflow Runbook: ./WORKFLOWS.md
 
@@ -20,7 +23,7 @@ Use this index as the starting point for module operations and maintenance.
 ## Quick Start Path
 
 1. Complete installation and post-install checks from Setup and Operations.
-2. Configure module capabilities and HR/payroll staff allowlist from Permissions Matrix.
+2. Configure module capabilities and HR/payroll staff allowlist (Payroll Admin tab) from Permissions Matrix.
 3. Validate endpoint behavior and payload formats from API Endpoints.
 4. Train operations and HR users with the workflow sequences in the runbook.
 

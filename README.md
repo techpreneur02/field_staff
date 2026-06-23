@@ -1,11 +1,14 @@
-# Field Staff Module
+# Field Staff module by Sherwin Armas
 
-Author: Sherwin Armas (scaenterprise.com)
+Author: Sherwin Armas
 
 Field Staff is a white-labeled workforce management module for modern ERP environments.
 
 It provides:
 - Geolocation-backed attendance logging
+- Live attendance map beside check in/check out controls
+- Native-style mobile tab UX for employee portal screens
+- Auto-refresh attendance status for immediate check in/check out feedback
 - HR management workspace with tab-level access controls
 - Payroll profile management and payrun generation
 - Shift scheduling and distribution

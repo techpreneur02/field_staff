@@ -1,9 +1,10 @@
 <?php
 
 /*
-Module Name: Field Staff Module
-Description: White-labeled workforce module with geolocation-verified attendance, employee self-service, and payroll support with statutory deductions (NIB, NHIP).
-Version: 1.0.0
+Module Name: Field Staff module by Sherwin Armas
+Description: White-labeled workforce module with geolocation-verified attendance, employee self-service, payroll support with statutory deductions (NIB, NHIP), and HR operations workspace controls.
+Version: 1.1.0
+Author: Sherwin Armas
 Requires at least: 2.3.0
 */
 
