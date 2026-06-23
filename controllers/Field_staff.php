@@ -1111,6 +1111,89 @@ class Field_staff extends AdminController
     }
 
     /**
+     * Save a holiday date to fs_settings.
+     */
+    public function save_holiday()
+    {
+        if (!$this->can_access_pay_setup_tab()) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Access denied.']);
+            exit;
+        }
+
+        $this->require_payroll_json();
+
+        $holiday_date = trim((string) $this->input->post('date', true));
+        $holiday_name = trim((string) $this->input->post('name', true));
+
+        if (!$holiday_date || !$holiday_name) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Holiday date and name are required.']);
+            exit;
+        }
+
+        if (!$this->field_staff_model->save_holiday($holiday_date, $holiday_name)) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Failed to save holiday.']);
+            exit;
+        }
+
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'message' => 'Holiday saved successfully.']);
+        exit;
+    }
+
+    /**
+     * Delete a holiday from fs_settings.
+     */
+    public function delete_holiday()
+    {
+        if (!$this->can_access_pay_setup_tab()) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Access denied.']);
+            exit;
+        }
+
+        $this->require_payroll_json();
+
+        $holiday_date = trim((string) $this->input->post('date', true));
+
+        if (!$holiday_date) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Holiday date is required.']);
+            exit;
+        }
+
+        if (!$this->field_staff_model->delete_holiday($holiday_date)) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Failed to delete holiday.']);
+            exit;
+        }
+
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'message' => 'Holiday deleted successfully.']);
+        exit;
+    }
+
+    /**
+     * Get all registered holidays.
+     */
+    public function get_holidays()
+    {
+        if (!$this->can_access_pay_setup_tab()) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'holidays' => []]);
+            exit;
+        }
+
+        $holidays = $this->field_staff_model->get_holidays();
+
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'holidays' => $holidays]);
+        exit;
+    }
+
+    /**
      * Normalize incoming date strings to Y-m-d.
      *
      * @param string $value

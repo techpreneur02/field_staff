@@ -1535,10 +1535,13 @@ class Field_staff_model extends App_Model
     public function generate_payrun_statement($start_date, $end_date, $staff_id = 0, $department_id = 0)
     {
         $analytics = $this->get_attendance_analytics($start_date, $end_date, $staff_id, $department_id);
+        $holidays = $this->get_holidays();
+        $holiday_dates = array_column($holidays, 'date');
         $statement_rows = [];
         $totals = [
             'regular_pay' => 0.0,
             'overtime_pay' => 0.0,
+            'holiday_pay' => 0.0,
             'allowance_pay' => 0.0,
             'gross_pay' => 0.0,
             'nib_ee' => 0.0,
@@ -1555,15 +1558,36 @@ class Field_staff_model extends App_Model
                 $overtime_multiplier = $this->get_default_overtime_multiplier();
             }
 
-            $regular_pay = round((float) $row['regular_hours'] * $rate, 2);
+            $staff_id_current = (int) $row['staff_id'];
+            $holiday_hours = 0.0;
+            $non_holiday_regular_hours = (float) $row['regular_hours'];
+
+            // Calculate holiday hours from actual attendance records
+            if (!empty($holiday_dates)) {
+                $attendance_records = $this->get_attendance_record_report($start_date, $end_date, $staff_id_current, 0);
+                foreach ($attendance_records as $record) {
+                    $record_date = isset($record['date']) ? (string) $record['date'] : '';
+                    if ($record_date && in_array($record_date, $holiday_dates, true)) {
+                        $holiday_hours += (float) $record['total_hours'] ?? 0;
+                    }
+                }
+
+                // Subtract holiday hours from regular hours
+                if ($holiday_hours > 0) {
+                    $non_holiday_regular_hours = max((float) $row['regular_hours'] - $holiday_hours, 0);
+                }
+            }
+
+            $regular_pay = round($non_holiday_regular_hours * $rate, 2);
             $overtime_pay = round((float) $row['overtime_hours'] * $rate * $overtime_multiplier, 2);
+            $holiday_pay = round($holiday_hours * $rate * 2.0, 2); // 2x pay for holidays
             $allowance_pay = round((float) $row['total_allowance_due'], 2);
             $vacation_pay = round((float) ($row['vacation_pay'] ?? 0), 2);
             $commission_pay = round((float) ($row['commission_pay'] ?? 0), 2);
             $loan_repayment = round((float) ($row['loan_repayment'] ?? 0), 2);
             $advance_repayment = round((float) ($row['advance_repayment'] ?? 0), 2);
             $other_misc_deductions = round((float) ($row['other_misc_deductions'] ?? 0), 2);
-            $gross_pay = round($regular_pay + $overtime_pay + $allowance_pay + $vacation_pay + $commission_pay, 2);
+            $gross_pay = round($regular_pay + $overtime_pay + $holiday_pay + $allowance_pay + $vacation_pay + $commission_pay, 2);
             $nib_ee = round($gross_pay * $this->get_nib_employee_rate(), 2);
             $nib_er = round($gross_pay * $this->get_nib_employer_rate(), 2);
             $nhip_base = min($gross_pay, $this->get_nhip_ceiling());
@@ -1579,6 +1603,7 @@ class Field_staff_model extends App_Model
                 'days_worked' => (int) $row['days_worked'],
                 'regular_hours' => (float) $row['regular_hours'],
                 'overtime_hours' => (float) $row['overtime_hours'],
+                'holiday_hours' => $holiday_hours,
                 'base_hourly_rate' => $rate,
                 'overtime_multiplier' => round($overtime_multiplier, 2),
                 'daily_field_allowance' => round((float) $row['daily_field_allowance'], 2),
@@ -1587,6 +1612,7 @@ class Field_staff_model extends App_Model
                 'commission_pay' => $commission_pay,
                 'regular_pay' => $regular_pay,
                 'overtime_pay' => $overtime_pay,
+                'holiday_pay' => $holiday_pay,
                 'gross_pay' => $gross_pay,
                 'nib_ee' => $nib_ee,
                 'nib_er' => $nib_er,
@@ -1603,6 +1629,7 @@ class Field_staff_model extends App_Model
 
             $totals['regular_pay'] += $regular_pay;
             $totals['overtime_pay'] += $overtime_pay;
+            $totals['holiday_pay'] += $holiday_pay;
             $totals['allowance_pay'] += $allowance_pay;
             $totals['gross_pay'] += $gross_pay;
             $totals['nib_ee'] += $nib_ee;
@@ -2052,6 +2079,79 @@ class Field_staff_model extends App_Model
     private function get_nhip_ceiling()
     {
         return defined('FS_NHIP_MONTHLY_CEILING') ? (float) FS_NHIP_MONTHLY_CEILING : 7800.0;
+    }
+
+    public function save_holiday($holiday_date, $holiday_name)
+    {
+        $holiday_date = trim((string) $holiday_date);
+        $holiday_name = trim((string) $holiday_name);
+
+        if (!$holiday_date || !$holiday_name) {
+            return false;
+        }
+
+        $holidays = $this->get_holidays();
+        $exists = false;
+        foreach ($holidays as $holiday) {
+            if ($holiday['date'] === $holiday_date) {
+                $exists = true;
+                $holiday['name'] = $holiday_name;
+                break;
+            }
+        }
+
+        if (!$exists) {
+            $holidays[] = ['date' => $holiday_date, 'name' => $holiday_name];
+        }
+
+        usort($holidays, function ($a, $b) {
+            return strcmp($a['date'], $b['date']);
+        });
+
+        return $this->update_field_staff_setting('holidays', json_encode($holidays));
+    }
+
+    public function delete_holiday($holiday_date)
+    {
+        $holiday_date = trim((string) $holiday_date);
+        if (!$holiday_date) {
+            return false;
+        }
+
+        $holidays = $this->get_holidays();
+        $updated = array_filter($holidays, function ($holiday) use ($holiday_date) {
+            return $holiday['date'] !== $holiday_date;
+        });
+
+        return $this->update_field_staff_setting('holidays', json_encode(array_values($updated)));
+    }
+
+    public function get_holidays()
+    {
+        $json_holidays = $this->get_field_staff_setting('holidays', '[]');
+        $holidays = json_decode($json_holidays, true);
+
+        if (!is_array($holidays)) {
+            $holidays = [];
+        }
+
+        usort($holidays, function ($a, $b) {
+            return strcmp($a['date'], $b['date']);
+        });
+
+        return $holidays;
+    }
+
+    public function is_holiday($work_date)
+    {
+        $work_date = trim((string) $work_date);
+        $holidays = $this->get_holidays();
+        foreach ($holidays as $holiday) {
+            if ($holiday['date'] === $work_date) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function get_department_name($department_id)

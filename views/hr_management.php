@@ -422,6 +422,11 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                             <a href="#tab-reporting-payrun" role="tab" data-toggle="tab">Payrun</a>
                         </li>
                     <?php } ?>
+                    <?php if ($can_manage_pay_setup) { ?>
+                        <li role="presentation" class="<?php echo $active_tab_id === 'tab-holidays' ? 'active' : ''; ?>">
+                            <a href="#tab-holidays" role="tab" data-toggle="tab">Holidays</a>
+                        </li>
+                    <?php } ?>
                     <?php if ($can_manage_project_assignment) { ?>
                         <li role="presentation" class="<?php echo $active_tab_id === 'tab-project-assignment' ? 'active' : ''; ?>">
                             <a href="#tab-project-assignment" role="tab" data-toggle="tab">Projects</a>
@@ -940,6 +945,43 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                         </div>
                     <?php } ?>
 
+                    <?php if ($can_manage_pay_setup) { ?>
+                        <div role="tabpanel" class="tab-pane <?php echo $active_tab_id === 'tab-holidays' ? 'active' : ''; ?>" id="tab-holidays">
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <h5 class="bold">Holiday Management</h5>
+                                    <p class="text-muted">Configure public holidays and special dates. Employees working on holidays receive 2x base pay.</p>
+                                </div>
+                            </div>
+                            <div class="row mtop20">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="holiday_date">Holiday Date</label>
+                                        <input type="date" id="holiday_date" class="form-control" />
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="holiday_name">Holiday Name</label>
+                                        <input type="text" id="holiday_name" class="form-control" placeholder="e.g., New Year's Day" />
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <button type="button" id="add-holiday-btn" class="btn btn-primary">Add Holiday</button>
+                                    <span id="holiday-action-status" class="text-muted mleft15"></span>
+                                </div>
+                            </div>
+                            <div class="row mtop25">
+                                <div class="col-md-12">
+                                    <h5 class="bold">Registered Holidays</h5>
+                                    <div id="holidays-list" class="table-responsive mtop15"></div>
+                                </div>
+                            </div>
+                        </div>
+                    <?php } ?>
+
                     <?php if ($can_manage_project_assignment) { ?>
                         <div role="tabpanel" class="tab-pane <?php echo $active_tab_id === 'tab-project-assignment' ? 'active' : ''; ?>" id="tab-project-assignment">
                             <div class="row">
@@ -1029,511 +1071,540 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
 <?php init_tail(); ?>
 <script>
     (function() {
-        'use strict';
+            'use strict';
 
-        function getJq() {
-            if (window.jQuery && window.jQuery.fn) {
-                return window.jQuery;
-            }
-
-            if (window.$ && window.$.fn) {
-                return window.$;
-            }
-
-            return null;
-        }
-
-        function bootHrManagement() {
-            var jq = getJq();
-            if (!jq) {
-                return;
-            }
-
-            var $ = jq;
-            var profileMap = <?php echo json_encode($profile_map); ?>;
-            var departments = <?php echo json_encode($departments); ?>;
-            var shifts = <?php echo json_encode($shifts); ?>;
-            var saveProfileUrl = <?php echo json_encode($save_profile_url); ?>;
-            var saveDepartmentUrl = <?php echo json_encode($save_department_url); ?>;
-            var saveShiftUrl = <?php echo json_encode($save_shift_url); ?>;
-            var distributeShiftUrl = <?php echo json_encode($distribute_shift_url); ?>;
-            var saveManualAttendanceUrl = <?php echo json_encode($save_manual_attendance_url); ?>;
-            var saveLeaveUrl = <?php echo json_encode($save_leave_url); ?>;
-            var updateLeaveStatusUrl = <?php echo json_encode($update_leave_status_url); ?>;
-            var generatePayrunUrl = <?php echo json_encode($generate_payrun_url); ?>;
-            var applyPayrunUrl = <?php echo json_encode($apply_payrun_url); ?>;
-            var saveProjectAssignmentUrl = <?php echo json_encode($save_project_assignment_url); ?>;
-            var saveHrPayrollStaffAllowlistUrl = <?php echo json_encode($save_hr_payroll_staff_allowlist_url); ?>;
-            var currentPayrunStatement = null;;
-
-            function notify(type, message) {
-                if (typeof alert_float === 'function') {
-                    alert_float(type, message);
-                } else {
-                    window.alert(message);
+            function getJq() {
+                if (window.jQuery && window.jQuery.fn) {
+                    return window.jQuery;
                 }
-            }
 
-            function appendCsrf(payload) {
-                var csrfName = ($('#hr-csrf-name').val() || '').trim();
-                var csrfHash = ($('#hr-csrf-hash').val() || '').trim();
-                if (csrfName && csrfHash) {
-                    payload[csrfName] = csrfHash;
+                if (window.$ && window.$.fn) {
+                    return window.$;
                 }
-                return payload;
+
+                return null;
             }
 
-            function escapeHtml(value) {
-                return $('<div>').text(value === null || typeof value === 'undefined' ? '' : value).html();
-            }
-
-            function refreshPickers() {
-                if ($.fn.selectpicker) {
-                    $('.selectpicker').selectpicker('refresh');
-                }
-            }
-
-            function getSelectedProfile() {
-                var staffId = $('#profile_staff_id').val();
-                if (!staffId || !profileMap[staffId]) {
-                    return {
-                        department_id: 0,
-                        default_shift_id: 0,
-                        base_hourly_rate: '0.00',
-                        overtime_multiplier: '1.50',
-                        daily_field_allowance: '0.00',
-                        employee_nib_rate: '5.50',
-                        employer_nib_rate: '6.50',
-                        employee_nhip_rate: '3.00',
-                        vacation_pay: '0.00',
-                        outstanding_loan: '0.00',
-                        loan_repayment: '0.00',
-                        payment_method: 'online_transfer',
-                        bank_account_info: ''
-                    };
-                }
-                return profileMap[staffId];
-            }
-
-            function populateProfileForm() {
-                var profile = getSelectedProfile();
-                $('#department_id').val(String(profile.department_id || 0));
-                $('#default_shift_id').val(String(profile.default_shift_id || 0));
-                $('#base_hourly_rate').val(profile.base_hourly_rate || '0.00');
-                $('#overtime_multiplier').val(profile.overtime_multiplier || '1.50');
-                $('#daily_field_allowance').val(profile.daily_field_allowance || '0.00');
-                $('#employee_nib_rate').val(profile.employee_nib_rate || '5.50');
-                $('#employer_nib_rate').val(profile.employer_nib_rate || '6.50');
-                $('#employee_nhip_rate').val(profile.employee_nhip_rate || '3.00');
-                $('#vacation_pay').val(profile.vacation_pay || '0.00');
-                $('#outstanding_loan').val(profile.outstanding_loan || '0.00');
-                $('#loan_repayment').val(profile.loan_repayment || '0.00');
-                $('#payment_method').val(profile.payment_method || 'online_transfer');
-                $('#bank_account_info').val(profile.bank_account_info || '');
-                refreshPickers();
-            }
-
-            function renderPayrunStatement(statement) {
-                if (!statement || !statement.rows || !statement.rows.length) {
-                    $('#payrun-results-panel').addClass('hide');
+            function bootHrManagement() {
+                var jq = getJq();
+                if (!jq) {
                     return;
                 }
 
-                currentPayrunStatement = statement;
+                var $ = jq;
+                var profileMap = <?php echo json_encode($profile_map); ?>;
+                var departments = <?php echo json_encode($departments); ?>;
+                var shifts = <?php echo json_encode($shifts); ?>;
+                var saveProfileUrl = <?php echo json_encode($save_profile_url); ?>;
+                var saveDepartmentUrl = <?php echo json_encode($save_department_url); ?>;
+                var saveShiftUrl = <?php echo json_encode($save_shift_url); ?>;
+                var distributeShiftUrl = <?php echo json_encode($distribute_shift_url); ?>;
+                var saveManualAttendanceUrl = <?php echo json_encode($save_manual_attendance_url); ?>;
+                var saveLeaveUrl = <?php echo json_encode($save_leave_url); ?>;
+                var updateLeaveStatusUrl = <?php echo json_encode($update_leave_status_url); ?>;
+                var generatePayrunUrl = <?php echo json_encode($generate_payrun_url); ?>;
+                var applyPayrunUrl = <?php echo json_encode($apply_payrun_url); ?>;
+                var saveProjectAssignmentUrl = <?php echo json_encode($save_project_assignment_url); ?>;
+                var saveHrPayrollStaffAllowlistUrl = <?php echo json_encode($save_hr_payroll_staff_allowlist_url); ?>;
+                var saveHolidayUrl = <?php echo json_encode(field_staff_admin_url('field_staff/save_holiday')); ?>;
+                var deleteHolidayUrl = <?php echo json_encode(field_staff_admin_url('field_staff/delete_holiday')); ?>;
+                var getHolidaysUrl = <?php echo json_encode(field_staff_admin_url('field_staff/get_holidays')); ?>;
+                var currentPayrunStatement = null;;
 
-                var rowsHtml = '';
-                for (var index = 0; index < statement.rows.length; index++) {
-                    var row = statement.rows[index];
-                    rowsHtml += '<tr data-staff-index="' + index + '">' +
-                        '<td><input type="checkbox" class="payrun-row-select" data-index="' + index + '" checked></td>' +
-                        '<td>' + escapeHtml(row.worker_name) + '</td>' +
-                        '<td>' + escapeHtml(row.department_name || '') + '</td>' +
-                        '<td class="text-right">' + escapeHtml(row.regular_hours) + '</td>' +
-                        '<td class="text-right">' + escapeHtml(row.overtime_hours) + '</td>' +
-                        '<td class="text-right">$' + escapeHtml(row.base_hourly_rate) + '</td>' +
-                        '<td class="text-right">$' + escapeHtml(row.allowance_due) + '</td>' +
-                        '<td class="text-right">$' + escapeHtml(row.vacation_pay || 0) + '</td>' +
-                        '<td class="text-right">$' + escapeHtml(row.gross_pay) + '</td>' +
-                        '<td class="text-right">$' + escapeHtml(row.total_deductions || 0) + '</td>' +
-                        '<td class="text-right">$' + escapeHtml(row.net_pay) + '</td>' +
-                        '</tr>';
+                function notify(type, message) {
+                    if (typeof alert_float === 'function') {
+                        alert_float(type, message);
+                    } else {
+                        window.alert(message);
+                    }
                 }
 
-                rowsHtml += '<tr class="bold">' +
-                    '<td colspan="2">Totals</td><td></td><td></td><td></td><td></td><td class="text-right">$' + escapeHtml(statement.totals.allowance_pay || 0) + '</td><td></td>' +
-                    '<td class="text-right">$' + escapeHtml(statement.totals.gross_pay || 0) + '</td>' +
-                    '<td class="text-right">$' + escapeHtml((statement.totals.nib_ee || 0) + (statement.totals.nhip_ee || 0)) + '</td>' +
-                    '<td class="text-right">$' + escapeHtml(statement.totals.net_pay || 0) + '</td>' +
-                    '</tr>';
+                function appendCsrf(payload) {
+                    var csrfName = ($('#hr-csrf-name').val() || '').trim();
+                    var csrfHash = ($('#hr-csrf-hash').val() || '').trim();
+                    if (csrfName && csrfHash) {
+                        payload[csrfName] = csrfHash;
+                    }
+                    return payload;
+                }
 
-                $('#payrun-results-table').html(
-                    '<table class="table table-striped table-bordered">' +
-                    '<thead><tr><th style="width: 30px;"><input type="checkbox" id="payrun-select-all" title="Select/deselect all"></th><th>Staff Name</th><th>Department</th><th class="text-right">Regular Hours</th><th class="text-right">Overtime Hours</th><th class="text-right">Base Rate</th><th class="text-right">Allowance</th><th class="text-right">Vacation Pay</th><th class="text-right">Gross Pay</th><th class="text-right">Deductions</th><th class="text-right">Net Pay</th></tr></thead>' +
-                    '<tbody>' + rowsHtml + '</tbody>' +
-                    '</table>'
-                );
+                function escapeHtml(value) {
+                    return $('<div>').text(value === null || typeof value === 'undefined' ? '' : value).html();
+                }
 
-                $('#payrun-generated-at').text(statement.generated_at || '');
-                $('#payrun-period-label').text('Period: ' + (statement.start_date || '') + ' to ' + (statement.end_date || ''));
-                $('#payrun-results-panel').removeClass('hide');
+                function refreshPickers() {
+                    if ($.fn.selectpicker) {
+                        $('.selectpicker').selectpicker('refresh');
+                    }
+                }
 
-                // Setup select all/none checkbox
-                $('#payrun-select-all').on('change', function() {
-                    var isChecked = $(this).is(':checked');
-                    $('.payrun-row-select').prop('checked', isChecked);
+                function getSelectedProfile() {
+                    var staffId = $('#profile_staff_id').val();
+                    if (!staffId || !profileMap[staffId]) {
+                        return {
+                            department_id: 0,
+                            default_shift_id: 0,
+                            base_hourly_rate: '0.00',
+                            overtime_multiplier: '1.50',
+                            daily_field_allowance: '0.00',
+                            employee_nib_rate: '5.50',
+                            employer_nib_rate: '6.50',
+                            employee_nhip_rate: '3.00',
+                            vacation_pay: '0.00',
+                            outstanding_loan: '0.00',
+                            loan_repayment: '0.00',
+                            payment_method: 'online_transfer',
+                            bank_account_info: ''
+                        };
+                    }
+                    return profileMap[staffId];
+                }
+
+                function populateProfileForm() {
+                    var profile = getSelectedProfile();
+                    $('#department_id').val(String(profile.department_id || 0));
+                    $('#default_shift_id').val(String(profile.default_shift_id || 0));
+                    $('#base_hourly_rate').val(profile.base_hourly_rate || '0.00');
+                    $('#overtime_multiplier').val(profile.overtime_multiplier || '1.50');
+                    $('#daily_field_allowance').val(profile.daily_field_allowance || '0.00');
+                    $('#employee_nib_rate').val(profile.employee_nib_rate || '5.50');
+                    $('#employer_nib_rate').val(profile.employer_nib_rate || '6.50');
+                    $('#employee_nhip_rate').val(profile.employee_nhip_rate || '3.00');
+                    $('#vacation_pay').val(profile.vacation_pay || '0.00');
+                    $('#outstanding_loan').val(profile.outstanding_loan || '0.00');
+                    $('#loan_repayment').val(profile.loan_repayment || '0.00');
+                    $('#payment_method').val(profile.payment_method || 'online_transfer');
+                    $('#bank_account_info').val(profile.bank_account_info || '');
+                    refreshPickers();
+                }
+
+                function renderPayrunStatement(statement) {
+                    if (!statement || !statement.rows || !statement.rows.length) {
+                        $('#payrun-results-panel').addClass('hide');
+                        return;
+                    }
+
+                    currentPayrunStatement = statement;
+
+                    var rowsHtml = '';
+                    for (var index = 0; index < statement.rows.length; index++) {
+                        var row = statement.rows[index];
+                        rowsHtml += '<tr data-staff-index="' + index + '">' +
+                            '<td><input type="checkbox" class="payrun-row-select" data-index="' + index + '" checked></td>' +
+                            '<td>' + escapeHtml(row.worker_name) + '</td>' +
+                            '<td>' + escapeHtml(row.department_name || '') + '</td>' +
+                            '<td class="text-right">' + escapeHtml(row.regular_hours) + '</td>' +
+                            '<td class="text-right">' + escapeHtml(row.overtime_hours) + '</td>' +
+                            '<td class="text-right">' + escapeHtml(row.holiday_hours || 0) + '</td>' +
+                            '<td class="text-right">$' + escapeHtml(row.base_hourly_rate) + '</td>' +
+                            '<td class="text-right">$' + escapeHtml(row.allowance_due) + '</td>' +
+                            '<td class="text-right">$' + escapeHtml(row.vacation_pay || 0) + '</td>' +
+                            '<td class="text-right">$' + escapeHtml(row.regular_pay || 0) + '</td>' +
+                            '<td class="text-right">$' + escapeHtml(row.overtime_pay || 0) + '</td>' +
+                            '<td class="text-right">$' + escapeHtml(row.holiday_pay || 0) + '</td>' +
+                            '<td class="text-right">$' + escapeHtml(row.gross_pay) + '</td>' +
+                            '<td class="text-right">$' + escapeHtml(row.total_deductions || 0) + '</td>' +
+                            '<td class="text-right">$' + escapeHtml(row.net_pay) + '</td>' +
+                            '</tr>';
+                    }
+
+                    rowsHtml += '<tr class="bold">' +
+                        '<td colspan="2">Totals</td><td></td><td></td><td></td><td></td><td></td><td class="text-right">$' + escapeHtml(statement.totals.allowance_pay || 0) + '</td><td></td>' +
+                        '<td class="text-right">$' + escapeHtml(statement.totals.regular_pay || 0) + '</td>' +
+                        '<td class="text-right">$' + escapeHtml(statement.totals.overtime_pay || 0) + '</td>' +
+                        '<td class="text-right">$' + escapeHtml(statement.totals.holiday_pay || 0) + '</td>' +
+                        '<td class="text-right">$' + escapeHtml(statement.totals.gross_pay || 0) + '</td>' +
+                        '<td class="text-right">$' + escapeHtml((statement.totals.nib_ee || 0) + (statement.totals.nhip_ee || 0)) + '</td>' +
+                        '<td class="text-right">$' + escapeHtml(statement.totals.net_pay || 0) + '</td>' +
+                        '</tr>';
+
+                    $('#payrun-results-table').html(
+                        '<table class="table table-striped table-bordered">' +
+                        '<thead><tr><th style="width: 30px;"><input type="checkbox" id="payrun-select-all" title="Select/deselect all"></th><th>Staff Name</th><th>Department</th><th class="text-right">Regular Hours</th><th class="text-right">Overtime Hours</th><th class="text-right">Holiday Hours</th><th class="text-right">Base Rate</th><th class="text-right">Allowance</th><th class="text-right">Vacation Pay</th><th class="text-right">Regular Pay</th><th class="text-right">Overtime Pay</th><th class="text-right">Holiday Pay (2x)</th><th class="text-right">Gross Pay</th><th class="text-right">Deductions</th><th class="text-right">Net Pay</th></tr></thead>' +
+                        '<tbody>' + rowsHtml + '</tbody>' +
+                        '</table>'
+                    );
+
+                    $('#payrun-generated-at').text(statement.generated_at || '');
+                    $('#payrun-period-label').text('Period: ' + (statement.start_date || '') + ' to ' + (statement.end_date || ''));
+                    $('#payrun-results-panel').removeClass('hide');
+
+                    // Setup select all/none checkbox
+                    $('#payrun-select-all').on('change', function() {
+                        var isChecked = $(this).is(':checked');
+                        $('.payrun-row-select').prop('checked', isChecked);
+                        updatePayrunSelectionStatus();
+                    });
+
+                    // Setup individual row checkboxes
+                    $('.payrun-row-select').on('change', function() {
+                        var totalChecks = $('.payrun-row-select').length;
+                        var checkedCount = $('.payrun-row-select:checked').length;
+                        $('#payrun-select-all').prop('indeterminate', checkedCount > 0 && checkedCount < totalChecks);
+                        updatePayrunSelectionStatus();
+                    });
+
                     updatePayrunSelectionStatus();
-                });
+                }
 
-                // Setup individual row checkboxes
-                $('.payrun-row-select').on('change', function() {
-                    var totalChecks = $('.payrun-row-select').length;
+                function updatePayrunSelectionStatus() {
                     var checkedCount = $('.payrun-row-select:checked').length;
-                    $('#payrun-select-all').prop('indeterminate', checkedCount > 0 && checkedCount < totalChecks);
-                    updatePayrunSelectionStatus();
-                });
+                    var totalCount = $('.payrun-row-select').length;
+                    $('#payrun-selection-status').text('Selected: ' + checkedCount + ' of ' + totalCount);
+                }
 
-                updatePayrunSelectionStatus();
-            }
-
-            function updatePayrunSelectionStatus() {
-                var checkedCount = $('.payrun-row-select:checked').length;
-                var totalCount = $('.payrun-row-select').length;
-                $('#payrun-selection-status').text('Selected: ' + checkedCount + ' of ' + totalCount);
-            }
-
-            function getSelectedPayrunRows() {
-                var selected = [];
-                if (!currentPayrunStatement || !currentPayrunStatement.rows) {
+                function getSelectedPayrunRows() {
+                    var selected = [];
+                    if (!currentPayrunStatement || !currentPayrunStatement.rows) {
+                        return selected;
+                    }
+                    $('.payrun-row-select:checked').each(function() {
+                        var index = parseInt($(this).data('index'), 10);
+                        if (!isNaN(index) && currentPayrunStatement.rows[index]) {
+                            selected.push(currentPayrunStatement.rows[index]);
+                        }
+                    });
                     return selected;
                 }
-                $('.payrun-row-select:checked').each(function() {
-                    var index = parseInt($(this).data('index'), 10);
-                    if (!isNaN(index) && currentPayrunStatement.rows[index]) {
-                        selected.push(currentPayrunStatement.rows[index]);
+
+                $('#profile_staff_id').change(function() {
+                    populateProfileForm();
+                });
+
+                $('#save-profile-btn').click(function() {
+                    var staffId = $('#profile_staff_id').val();
+                    if (!staffId) {
+                        notify('danger', 'Select an employee before saving the payroll profile.');
+                        return;
                     }
-                });
-                return selected;
-            }
 
-            $('#profile_staff_id').change(function() {
-                populateProfileForm();
-            });
+                    var payload = appendCsrf({
+                        staff_id: staffId,
+                        department_id: $('#department_id').val(),
+                        default_shift_id: $('#default_shift_id').val(),
+                        base_hourly_rate: $('#base_hourly_rate').val(),
+                        overtime_multiplier: $('#overtime_multiplier').val(),
+                        daily_field_allowance: $('#daily_field_allowance').val(),
+                        employee_nib_rate: $('#employee_nib_rate').val(),
+                        employer_nib_rate: $('#employer_nib_rate').val(),
+                        employee_nhip_rate: $('#employee_nhip_rate').val(),
+                        vacation_pay: $('#vacation_pay').val(),
+                        outstanding_loan: $('#outstanding_loan').val(),
+                        loan_repayment: $('#loan_repayment').val(),
+                        payment_method: $('#payment_method').val(),
+                        bank_account_info: $('#bank_account_info').val()
+                    });
 
-            $('#save-profile-btn').click(function() {
-                var staffId = $('#profile_staff_id').val();
-                if (!staffId) {
-                    notify('danger', 'Select an employee before saving the payroll profile.');
-                    return;
-                }
-
-                var payload = appendCsrf({
-                    staff_id: staffId,
-                    department_id: $('#department_id').val(),
-                    default_shift_id: $('#default_shift_id').val(),
-                    base_hourly_rate: $('#base_hourly_rate').val(),
-                    overtime_multiplier: $('#overtime_multiplier').val(),
-                    daily_field_allowance: $('#daily_field_allowance').val(),
-                    employee_nib_rate: $('#employee_nib_rate').val(),
-                    employer_nib_rate: $('#employer_nib_rate').val(),
-                    employee_nhip_rate: $('#employee_nhip_rate').val(),
-                    vacation_pay: $('#vacation_pay').val(),
-                    outstanding_loan: $('#outstanding_loan').val(),
-                    loan_repayment: $('#loan_repayment').val(),
-                    payment_method: $('#payment_method').val(),
-                    bank_account_info: $('#bank_account_info').val()
-                });
-
-                $.post(saveProfileUrl, payload, function(response) {
-                    if (response && response.success) {
-                        profileMap[String(staffId)] = response.profile || {};
-                        populateProfileForm();
-                        notify('success', response.message || 'Payroll profile saved successfully.');
-                    } else {
-                        notify('danger', response && response.message ? response.message : 'Payroll profile save failed.');
-                    }
-                }, 'json').fail(function() {
-                    notify('danger', 'Payroll profile save failed.');
-                });
-            });
-
-            $('#save-department-btn').click(function() {
-                var departmentName = window.prompt('Enter department name');
-                if (!departmentName) {
-                    return;
-                }
-
-                $.post(saveDepartmentUrl, appendCsrf({
-                    name: departmentName
-                }), function(response) {
-                    if (response && response.success) {
-                        notify('success', response.message || 'Department saved successfully.');
-                        window.location.reload();
-                    } else {
-                        notify('danger', response && response.message ? response.message : 'Department save failed.');
-                    }
-                }, 'json').fail(function() {
-                    notify('danger', 'Department save failed.');
-                });
-            });
-
-            $('#setup-save-department-btn').click(function() {
-                var departmentName = ($('#setup_department_name').val() || '').trim();
-                if (!departmentName) {
-                    notify('danger', 'Department name is required.');
-                    return;
-                }
-
-                $.post(saveDepartmentUrl, appendCsrf({
-                    name: departmentName
-                }), function(response) {
-                    if (response && response.success) {
-                        notify('success', response.message || 'Department saved successfully.');
-                        $('#setup_department_name').val('');
-                        window.location.reload();
-                    } else {
-                        notify('danger', response && response.message ? response.message : 'Department save failed.');
-                    }
-                }, 'json').fail(function() {
-                    notify('danger', 'Department save failed.');
-                });
-            });
-
-            $('#save-shift-btn').click(function() {
-                var payload = appendCsrf({
-                    shift_name: $('#shift_name').val(),
-                    start_time: $('#shift_start_time').val(),
-                    end_time: $('#shift_end_time').val(),
-                    grace_period_mins: $('#grace_period_mins').val()
-                });
-
-                $.post(saveShiftUrl, payload, function(response) {
-                    if (response && response.success) {
-                        notify('success', response.message || 'Shift template saved successfully.');
-                        window.location.reload();
-                    } else {
-                        notify('danger', response && response.message ? response.message : 'Shift template save failed.');
-                    }
-                }, 'json').fail(function() {
-                    notify('danger', 'Shift template save failed.');
-                });
-            });
-
-            $('#distribute-shift-btn').click(function() {
-                var selectedStaff = $('#distribution_staff_ids').val() || [];
-                var payload = appendCsrf({
-                    shift_id: $('#distribution_shift_id').val(),
-                    department_id: $('#distribution_department_id').val(),
-                    start_date: $('#distribution_start_date').val(),
-                    end_date: $('#distribution_end_date').val(),
-                    staff_ids: selectedStaff
-                });
-
-                $.post(distributeShiftUrl, payload, function(response) {
-                    if (response && response.success) {
-                        notify('success', response.message || 'Shift distribution completed successfully.');
-                    } else {
-                        notify('danger', response && response.message ? response.message : 'Shift distribution failed.');
-                    }
-                }, 'json').fail(function() {
-                    notify('danger', 'Shift distribution failed.');
-                });
-            });
-
-            $('#save-manual-attendance-btn').click(function() {
-                var payload = appendCsrf({
-                    staff_id: $('#manual_staff_id').val(),
-                    date: $('#manual_date').val(),
-                    clock_in: $('#manual_clock_in').val(),
-                    clock_out: $('#manual_clock_out').val(),
-                    notes: $('#manual_notes').val()
-                });
-
-                $.post(saveManualAttendanceUrl, payload, function(response) {
-                    if (response && response.success) {
-                        notify('success', response.message || 'Manual attendance saved successfully.');
-                        window.location.reload();
-                    } else {
-                        notify('danger', response && response.message ? response.message : 'Manual attendance save failed.');
-                    }
-                }, 'json').fail(function() {
-                    notify('danger', 'Manual attendance save failed.');
-                });
-            });
-
-            $('#save-leave-btn').click(function() {
-                var payload = appendCsrf({
-                    staff_id: $('#leave_staff_id').val(),
-                    leave_type: $('#leave_type').val(),
-                    start_date: $('#leave_start_date').val(),
-                    end_date: $('#leave_end_date').val(),
-                    status: $('#leave_status').val(),
-                    reason: $('#leave_reason').val()
-                });
-
-                $.post(saveLeaveUrl, payload, function(response) {
-                    if (response && response.success) {
-                        notify('success', response.message || 'Leave record saved successfully.');
-                        window.location.reload();
-                    } else {
-                        notify('danger', response && response.message ? response.message : 'Leave record save failed.');
-                    }
-                }, 'json').fail(function() {
-                    notify('danger', 'Leave record save failed.');
-                });
-            });
-
-            $('.js-leave-status-btn').click(function() {
-                var leaveId = $(this).closest('tr').attr('data-leave-id');
-                var status = $(this).attr('data-status');
-                var $row = $(this).closest('tr');
-                $.post(updateLeaveStatusUrl, appendCsrf({
-                    leave_id: leaveId,
-                    status: status
-                }), function(response) {
-                    if (response && response.success) {
-                        $row.find('.js-leave-status').text(status);
-                        notify('success', response.message || 'Leave status updated successfully.');
-                    } else {
-                        notify('danger', response && response.message ? response.message : 'Leave status update failed.');
-                    }
-                }, 'json').fail(function() {
-                    notify('danger', 'Leave status update failed.');
-                });
-            });
-
-            $('#generate-payrun-btn').click(function() {
-                var payload = appendCsrf({
-                    start_date: $('#filter_start_date').val(),
-                    end_date: $('#filter_end_date').val(),
-                    staff_id: $('#filter_staff_id').val(),
-                    department_id: $('#filter_department_id').val()
-                });
-
-                $.post(generatePayrunUrl, payload, function(response) {
-                    if (response && response.success && response.statement) {
-                        renderPayrunStatement(response.statement);
-                        notify('success', response.message || 'Payrun ledger generated successfully.');
-                    } else {
-                        notify('danger', response && response.message ? response.message : 'Payrun generation failed.');
-                    }
-                }, 'json').fail(function() {
-                    notify('danger', 'Payrun generation failed.');
-                });
-            });
-
-            $('#apply-payrun-btn').click(function() {
-                if (!currentPayrunStatement || !currentPayrunStatement.rows || !currentPayrunStatement.rows.length) {
-                    notify('danger', 'No payrun data available. Generate a payrun first.');
-                    return;
-                }
-
-                var selectedRows = getSelectedPayrunRows();
-                if (!selectedRows || !selectedRows.length) {
-                    notify('danger', 'Select at least one employee to issue payslips for.');
-                    return;
-                }
-
-                var msgContent = 'Issue ' + selectedRows.length + ' payslip(s)?';
-                if (selectedRows.length < currentPayrunStatement.rows.length) {
-                    msgContent = 'Issue payslips for ' + selectedRows.length + ' selected of ' + currentPayrunStatement.rows.length + ' employees? Unselected staff will not receive payslips.';
-                }
-                msgContent += '\n\nThis action cannot be undone.';
-
-                if (!confirm(msgContent)) {
-                    return;
-                }
-
-                $('#payrun-action-status').text('Processing...');
-                $('#apply-payrun-btn').prop('disabled', true);
-
-                var payload = appendCsrf({
-                    start_date: currentPayrunStatement.start_date,
-                    end_date: currentPayrunStatement.end_date,
-                    rows: selectedRows
-                });
-
-                $.post(applyPayrunUrl, payload, function(response) {
-                    $('#apply-payrun-btn').prop('disabled', false);
-                    if (response && response.success) {
-                        $('#payrun-action-status').text('✓ Applied');
-                        notify('success', response.message || 'Payrun applied successfully.');
-                        setTimeout(function() {
-                            window.location.reload();
-                        }, 2000);
-                    } else {
-                        $('#payrun-action-status').text('');
-                        notify('danger', response && response.message ? response.message : 'Payrun apply failed.');
-                    }
-                }, 'json').fail(function() {
-                    $('#apply-payrun-btn').prop('disabled', false);
-                    $('#payrun-action-status').text('');
-                    notify('danger', 'Payrun apply failed.');
-                });
-            });
-
-            $('#save-project-assignment-btn').click(function() {
-                var staffIds = $('#project_staff_ids').val() || [];
-                if (!staffIds.length) {
-                    notify('danger', 'Select at least one staff member for assignment.');
-                    return;
-                }
-
-                var payload = appendCsrf({
-                    project_name: $('#project_name').val(),
-                    start_date: $('#project_start_date').val(),
-                    end_date: $('#project_end_date').val(),
-                    status: $('#project_status').val(),
-                    notes: $('#project_notes').val(),
-                    staff_ids: staffIds
-                });
-
-                $.post(saveProjectAssignmentUrl, payload, function(response) {
-                    if (response && response.success) {
-                        notify('success', response.message || 'Project assignment saved successfully.');
-                        window.location.reload();
-                    } else {
-                        notify('danger', response && response.message ? response.message : 'Project assignment save failed.');
-                    }
-                }, 'json').fail(function() {
-                    notify('danger', 'Project assignment save failed.');
-                });
-            });
-
-            $('#save-hr-payroll-staff-allowlist-btn').click(function() {
-                var staffIds = $('#hr-payroll-staff-ids').val() || [];
-
-                $.post(saveHrPayrollStaffAllowlistUrl, appendCsrf({
-                    staff_ids: staffIds
-                }), function(response) {
-                    if (response && response.success) {
-                        var savedIds = (response.staff_ids || []).map(function(item) {
-                            return String(item);
-                        });
-                        $('#hr-payroll-staff-ids').val(savedIds);
-                        if ($.fn.selectpicker) {
-                            $('#hr-payroll-staff-ids').selectpicker('refresh');
+                    $.post(saveProfileUrl, payload, function(response) {
+                        if (response && response.success) {
+                            profileMap[String(staffId)] = response.profile || {};
+                            populateProfileForm();
+                            notify('success', response.message || 'Payroll profile saved successfully.');
+                        } else {
+                            notify('danger', response && response.message ? response.message : 'Payroll profile save failed.');
                         }
-                        notify('success', response.message || 'HR/payroll staff allowlist updated successfully.');
-                    } else {
-                        notify('danger', response && response.message ? response.message : 'HR/payroll staff allowlist update failed.');
-                    }
-                }, 'json').fail(function() {
-                    notify('danger', 'HR/payroll staff allowlist update failed.');
+                    }, 'json').fail(function() {
+                        notify('danger', 'Payroll profile save failed.');
+                    });
                 });
-            });
 
-            if ($.fn.selectpicker) {
-                $('.selectpicker').selectpicker();
-                $('.selectpicker').selectpicker('refresh');
-            }
+                $('#save-department-btn').click(function() {
+                    var departmentName = window.prompt('Enter department name');
+                    if (!departmentName) {
+                        return;
+                    }
 
-            populateProfileForm();
-        }
+                    $.post(saveDepartmentUrl, appendCsrf({
+                        name: departmentName
+                    }), function(response) {
+                        if (response && response.success) {
+                            notify('success', response.message || 'Department saved successfully.');
+                            window.location.reload();
+                        } else {
+                            notify('danger', response && response.message ? response.message : 'Department save failed.');
+                        }
+                    }, 'json').fail(function() {
+                        notify('danger', 'Department save failed.');
+                    });
+                });
 
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', bootHrManagement);
-        } else {
-            bootHrManagement();
-        }
-    })();
+                $('#setup-save-department-btn').click(function() {
+                    var departmentName = ($('#setup_department_name').val() || '').trim();
+                    if (!departmentName) {
+                        notify('danger', 'Department name is required.');
+                        return;
+                    }
+
+                    $.post(saveDepartmentUrl, appendCsrf({
+                        name: departmentName
+                    }), function(response) {
+                        if (response && response.success) {
+                            notify('success', response.message || 'Department saved successfully.');
+                            $('#setup_department_name').val('');
+                            window.location.reload();
+                        } else {
+                            notify('danger', response && response.message ? response.message : 'Department save failed.');
+                        }
+                    }, 'json').fail(function() {
+                        notify('danger', 'Department save failed.');
+                    });
+                });
+
+                $('#save-shift-btn').click(function() {
+                    var payload = appendCsrf({
+                        shift_name: $('#shift_name').val(),
+                        start_time: $('#shift_start_time').val(),
+                        end_time: $('#shift_end_time').val(),
+                        grace_period_mins: $('#grace_period_mins').val()
+                    });
+
+                    $.post(saveShiftUrl, payload, function(response) {
+                        if (response && response.success) {
+                            notify('success', response.message || 'Shift template saved successfully.');
+                            window.location.reload();
+                        } else {
+                            notify('danger', response && response.message ? response.message : 'Shift template save failed.');
+                        }
+                    }, 'json').fail(function() {
+                        notify('danger', 'Shift template save failed.');
+                    });
+                });
+
+                $('#distribute-shift-btn').click(function() {
+                    var selectedStaff = $('#distribution_staff_ids').val() || [];
+                    var payload = appendCsrf({
+                        shift_id: $('#distribution_shift_id').val(),
+                        department_id: $('#distribution_department_id').val(),
+                        start_date: $('#distribution_start_date').val(),
+                        end_date: $('#distribution_end_date').val(),
+                        staff_ids: selectedStaff
+                    });
+
+                    $.post(distributeShiftUrl, payload, function(response) {
+                        if (response && response.success) {
+                            notify('success', response.message || 'Shift distribution completed successfully.');
+                        } else {
+                            notify('danger', response && response.message ? response.message : 'Shift distribution failed.');
+                        }
+                    }, 'json').fail(function() {
+                        notify('danger', 'Shift distribution failed.');
+                    });
+                });
+
+                $('#save-manual-attendance-btn').click(function() {
+                    var payload = appendCsrf({
+                        staff_id: $('#manual_staff_id').val(),
+                        date: $('#manual_date').val(),
+                        clock_in: $('#manual_clock_in').val(),
+                        clock_out: $('#manual_clock_out').val(),
+                        notes: $('#manual_notes').val()
+                    });
+
+                    $.post(saveManualAttendanceUrl, payload, function(response) {
+                        if (response && response.success) {
+                            notify('success', response.message || 'Manual attendance saved successfully.');
+                            window.location.reload();
+                        } else {
+                            notify('danger', response && response.message ? response.message : 'Manual attendance save failed.');
+                        }
+                    }, 'json').fail(function() {
+                        notify('danger', 'Manual attendance save failed.');
+                    });
+                });
+
+                $('#save-leave-btn').click(function() {
+                    var payload = appendCsrf({
+                        staff_id: $('#leave_staff_id').val(),
+                        leave_type: $('#leave_type').val(),
+                        start_date: $('#leave_start_date').val(),
+                        end_date: $('#leave_end_date').val(),
+                        status: $('#leave_status').val(),
+                        reason: $('#leave_reason').val()
+                    });
+
+                    $.post(saveLeaveUrl, payload, function(response) {
+                        if (response && response.success) {
+                            notify('success', response.message || 'Leave record saved successfully.');
+                            window.location.reload();
+                        } else {
+                            notify('danger', response && response.message ? response.message : 'Leave record save failed.');
+                        }
+                    }, 'json').fail(function() {
+                        notify('danger', 'Leave record save failed.');
+                    });
+                });
+
+                $('.js-leave-status-btn').click(function() {
+                    var leaveId = $(this).closest('tr').attr('data-leave-id');
+                    var status = $(this).attr('data-status');
+                    var $row = $(this).closest('tr');
+                    $.post(updateLeaveStatusUrl, appendCsrf({
+                        leave_id: leaveId,
+                        status: status
+                    }), function(response) {
+                        if (response && response.success) {
+                            $row.find('.js-leave-status').text(status);
+                            notify('success', response.message || 'Leave status updated successfully.');
+                        } else {
+                            notify('danger', response && response.message ? response.message : 'Leave status update failed.');
+                        }
+                    }, 'json').fail(function() {
+                        notify('danger', 'Leave status update failed.');
+                    });
+                });
+
+                $('#generate-payrun-btn').click(function() {
+                    var payload = appendCsrf({
+                        start_date: $('#filter_start_date').val(),
+                        end_date: $('#filter_end_date').val(),
+                        staff_id: $('#filter_staff_id').val(),
+                        department_id: $('#filter_department_id').val()
+                    });
+
+                    $.post(generatePayrunUrl, payload, function(response) {
+                        if (response && response.success && response.statement) {
+                            renderPayrunStatement(response.statement);
+                            notify('success', response.message || 'Payrun ledger generated successfully.');
+                        } else {
+                            notify('danger', response && response.message ? response.message : 'Payrun generation failed.');
+                        }
+                    }, 'json').fail(function() {
+                        notify('danger', 'Payrun generation failed.');
+                    });
+                });
+
+                $('#apply-payrun-btn').click(function() {
+                    if (!currentPayrunStatement || !currentPayrunStatement.rows || !currentPayrunStatement.rows.length) {
+                        notify('danger', 'No payrun data available. Generate a payrun first.');
+                        return;
+                    }
+
+                    var selectedRows = getSelectedPayrunRows();
+                    if (!selectedRows || !selectedRows.length) {
+                        notify('danger', 'Select at least one employee to issue payslips for.');
+                        return;
+                    }
+
+                    var msgContent = 'Issue ' + selectedRows.length + ' payslip(s)?';
+                    if (selectedRows.length < currentPayrunStatement.rows.length) {
+                        msgContent = 'Issue payslips for ' + selectedRows.length + ' selected of ' + currentPayrunStatement.rows.length + ' employees? Unselected staff will not receive payslips.';
+                    }
+                    msgContent += '\n\nThis action cannot be undone.';
+
+                    if (!confirm(msgContent)) {
+                        return;
+                    }
+
+                    $('#payrun-action-status').text('Processing...');
+                    $('#apply-payrun-btn').prop('disabled', true);
+
+                    var payload = appendCsrf({
+                        start_date: currentPayrunStatement.start_date,
+                        end_date: currentPayrunStatement.end_date,
+                        rows: selectedRows
+                    });
+
+                    $.post(applyPayrunUrl, payload, function(response) {
+                        $('#apply-payrun-btn').prop('disabled', false);
+                        if (response && response.success) {
+                            $('#payrun-action-status').text('✓ Applied');
+                            notify('success', response.message || 'Payrun applied successfully.');
+                            setTimeout(function() {
+                                window.location.reload();
+                            }, 2000);
+                        } else {
+                            $('#payrun-action-status').text('');
+                            notify('danger', response && response.message ? response.message : 'Payrun apply failed.');
+                        }
+                    }, 'json').fail(function() {
+                        $('#apply-payrun-btn').prop('disabled', false);
+                        $('#payrun-action-status').text('');
+                        notify('danger', 'Payrun apply failed.');
+                    });
+                });
+
+                $('#save-project-assignment-btn').click(function() {
+                    var staffIds = $('#project_staff_ids').val() || [];
+                    if (!staffIds.length) {
+                        notify('danger', 'Select at least one staff member for assignment.');
+                        return;
+                    }
+
+                    var payload = appendCsrf({
+                        project_name: $('#project_name').val(),
+                        start_date: $('#project_start_date').val(),
+                        end_date: $('#project_end_date').val(),
+                        status: $('#project_status').val(),
+                        notes: $('#project_notes').val(),
+                        staff_ids: staffIds
+                    });
+
+                    $.post(saveProjectAssignmentUrl, payload, function(response) {
+                        if (response && response.success) {
+                            notify('success', response.message || 'Project assignment saved successfully.');
+                            window.location.reload();
+                        } else {
+                            notify('danger', response && response.message ? response.message : 'Project assignment save failed.');
+                        }
+                    }, 'json').fail(function() {
+                        notify('danger', 'Project assignment save failed.');
+                    });
+                });
+
+                $('#save-hr-payroll-staff-allowlist-btn').click(function() {
+                    var staffIds = $('#hr-payroll-staff-ids').val() || [];
+
+                    $.post(saveHrPayrollStaffAllowlistUrl, appendCsrf({
+                        staff_ids: staffIds
+                    }), function(response) {
+                        if (response && response.success) {
+                            var savedIds = (response.staff_ids || []).map(function(item) {
+                                return String(item);
+                            });
+                            $('#hr-payroll-staff-ids').val(savedIds);
+                            if ($.fn.selectpicker) {
+                                $('#hr-payroll-staff-ids').selectpicker('refresh');
+                            }
+                            notify('success', response.message || 'HR/payroll staff allowlist updated successfully.');
+                        } else {
+                            notify('danger', response && response.message ? response.message : 'HR/payroll staff allowlist update failed.');
+                        }
+                    }, 'json').fail(function() {
+                        notify('danger', 'HR/payroll staff allowlist update failed.');
+                    });
+                });
+
+                // Load and display holidays on initialization
+                function loadAndDisplayHolidays() {
+                    $.getJSON(getHolidaysUrl, function(response) {
+                        if (response && response.holidays && Array.isArray(response.holidays)) {
+                            var holidaysHtml = '';
+                            if (response.holidays.length === 0) {
+                                holidaysHtml = '<p class="text-muted">No holidays configured yet.</p>';
+                            } else {
+                                holidaysHtml = '<table class="table table-striped table-bordered"><thead><tr><th>Date</th><th>Name</th><th>Action</th></tr></thead><tbody>';
+                                response.holidays.forEach(function(holiday) {
+                                    holidaysHtml += '<tr><td>' + escapeHtml(holiday.date) + '</td><td>' + escapeHtml(holiday.name) + '</td><td><button type=\"button\" class=\"btn btn-xs btn-danger delete-holiday-btn\" data-holiday-date=\"' + escapeHtml(holiday.date) + '\">Delete</button></td></tr>';\
+                                    n
+                                });\
+                                n holidaysHtml += '</tbody></table>';\
+                                n
+                            }\
+                            n $('#holidays-list').html(holidaysHtml);\
+                            n\ n // Attach delete handlers\n                        $('.delete-holiday-btn').click(function() {\n                            var holidayDate = $(this).data('holiday-date');\n                            if (!confirm('Delete holiday on ' + holidayDate + '?')) {\n                                return;\n                            }\n                            $.post(deleteHolidayUrl, appendCsrf({ date: holidayDate }), function(response) {\n                                if (response && response.success) {\n                                    notify('success', response.message || 'Holiday deleted.');\n                                    loadAndDisplayHolidays();\n                                } else {\n                                    notify('danger', response && response.message ? response.message : 'Delete failed.');\n                                }\n                            }, 'json').fail(function() {\n                                notify('danger', 'Delete failed.');\n                            });\n                        });\n                    }\n                }).fail(function() {\n                    $('#holidays-list').html('<p class=\"text-danger\">Failed to load holidays.</p>');\n                });\n            }\n\n            $('#add-holiday-btn').click(function() {\n                var holidayDate = $('#holiday_date').val();\n                var holidayName = $('#holiday_name').val();\n\n                if (!holidayDate) {\n                    notify('danger', 'Please select a holiday date.');\n                    return;\n                }\n                if (!holidayName) {\n                    notify('danger', 'Please enter a holiday name.');\n                    return;\n                }\n\n                $.post(saveHolidayUrl, appendCsrf({\n                    date: holidayDate,\n                    name: holidayName\n                }), function(response) {\n                    if (response && response.success) {\n                        notify('success', response.message || 'Holiday added successfully.');\n                        $('#holiday_date').val('');\n                        $('#holiday_name').val('');\n                        loadAndDisplayHolidays();\n                    } else {\n                        notify('danger', response && response.message ? response.message : 'Add holiday failed.');\n                    }\n                }, 'json').fail(function() {\n                    notify('danger', 'Add holiday failed.');\n                });\n            });\n\n            // Initialize holidays on tab shown\n            $('a[href=\"#tab-holidays\"]').on('shown.bs.tab', function() {\n                loadAndDisplayHolidays();\n            });\n\n            // Load holidays once on init if on that tab\n            if ($('#tab-holidays').length && $('#tab-holidays').hasClass('active')) {\n                loadAndDisplayHolidays();\n            }
+
+                            if ($.fn.selectpicker) {
+                                $('.selectpicker').selectpicker();
+                                $('.selectpicker').selectpicker('refresh');
+                            }
+
+                            populateProfileForm();
+                        }
+
+                        if (document.readyState === 'loading') {
+                            document.addEventListener('DOMContentLoaded', bootHrManagement);
+                        } else {
+                            bootHrManagement();
+                        }
+                    })();
 </script>
