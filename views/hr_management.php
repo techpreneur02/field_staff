@@ -928,10 +928,12 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                                         <h5 class="pull-left no-margin">Immutable Payroll Breakdown Statement</h5><span id="payrun-generated-at" class="pull-right text-muted"></span>
                                     </div>
                                     <p id="payrun-period-label" class="text-muted mtop10 mbot15"></p>
+                                    <p class="text-muted mtop5 mbot15"><small><i class="fa fa-info-circle"></i> Check or uncheck rows to select employees for payslip issuance. Use header checkbox to select/deselect all.</small></p>
                                     <div id="payrun-results-table" class="table-responsive"></div>
                                 </div>
                                 <div class="panel-footer">
                                     <button type="button" id="apply-payrun-btn" class="btn btn-success">Apply & Issue Payslips</button>
+                                    <span id="payrun-selection-status" class="text-muted mleft15"></span>
                                     <span id="payrun-action-status" class="text-muted mleft15"></span>
                                 </div>
                             </div>
@@ -1142,7 +1144,8 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                 var rowsHtml = '';
                 for (var index = 0; index < statement.rows.length; index++) {
                     var row = statement.rows[index];
-                    rowsHtml += '<tr>' +
+                    rowsHtml += '<tr data-staff-index="' + index + '">' +
+                        '<td><input type="checkbox" class="payrun-row-select" data-index="' + index + '" checked></td>' +
                         '<td>' + escapeHtml(row.worker_name) + '</td>' +
                         '<td>' + escapeHtml(row.department_name || '') + '</td>' +
                         '<td class="text-right">' + escapeHtml(row.regular_hours) + '</td>' +
@@ -1157,7 +1160,7 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                 }
 
                 rowsHtml += '<tr class="bold">' +
-                    '<td>Totals</td><td></td><td></td><td></td><td></td><td class="text-right">$' + escapeHtml(statement.totals.allowance_pay || 0) + '</td><td></td>' +
+                    '<td colspan="2">Totals</td><td></td><td></td><td></td><td></td><td class="text-right">$' + escapeHtml(statement.totals.allowance_pay || 0) + '</td><td></td>' +
                     '<td class="text-right">$' + escapeHtml(statement.totals.gross_pay || 0) + '</td>' +
                     '<td class="text-right">$' + escapeHtml((statement.totals.nib_ee || 0) + (statement.totals.nhip_ee || 0)) + '</td>' +
                     '<td class="text-right">$' + escapeHtml(statement.totals.net_pay || 0) + '</td>' +
@@ -1165,7 +1168,7 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
 
                 $('#payrun-results-table').html(
                     '<table class="table table-striped table-bordered">' +
-                    '<thead><tr><th>Staff Name</th><th>Department</th><th class="text-right">Regular Hours</th><th class="text-right">Overtime Hours</th><th class="text-right">Base Rate</th><th class="text-right">Allowance</th><th class="text-right">Vacation Pay</th><th class="text-right">Gross Pay</th><th class="text-right">Deductions</th><th class="text-right">Net Pay</th></tr></thead>' +
+                    '<thead><tr><th style="width: 30px;"><input type="checkbox" id="payrun-select-all" title="Select/deselect all"></th><th>Staff Name</th><th>Department</th><th class="text-right">Regular Hours</th><th class="text-right">Overtime Hours</th><th class="text-right">Base Rate</th><th class="text-right">Allowance</th><th class="text-right">Vacation Pay</th><th class="text-right">Gross Pay</th><th class="text-right">Deductions</th><th class="text-right">Net Pay</th></tr></thead>' +
                     '<tbody>' + rowsHtml + '</tbody>' +
                     '</table>'
                 );
@@ -1173,6 +1176,43 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                 $('#payrun-generated-at').text(statement.generated_at || '');
                 $('#payrun-period-label').text('Period: ' + (statement.start_date || '') + ' to ' + (statement.end_date || ''));
                 $('#payrun-results-panel').removeClass('hide');
+
+                // Setup select all/none checkbox
+                $('#payrun-select-all').on('change', function() {
+                    var isChecked = $(this).is(':checked');
+                    $('.payrun-row-select').prop('checked', isChecked);
+                    updatePayrunSelectionStatus();
+                });
+
+                // Setup individual row checkboxes
+                $('.payrun-row-select').on('change', function() {
+                    var totalChecks = $('.payrun-row-select').length;
+                    var checkedCount = $('.payrun-row-select:checked').length;
+                    $('#payrun-select-all').prop('indeterminate', checkedCount > 0 && checkedCount < totalChecks);
+                    updatePayrunSelectionStatus();
+                });
+
+                updatePayrunSelectionStatus();
+            }
+
+            function updatePayrunSelectionStatus() {
+                var checkedCount = $('.payrun-row-select:checked').length;
+                var totalCount = $('.payrun-row-select').length;
+                $('#payrun-selection-status').text('Selected: ' + checkedCount + ' of ' + totalCount);
+            }
+
+            function getSelectedPayrunRows() {
+                var selected = [];
+                if (!currentPayrunStatement || !currentPayrunStatement.rows) {
+                    return selected;
+                }
+                $('.payrun-row-select:checked').each(function() {
+                    var index = parseInt($(this).data('index'), 10);
+                    if (!isNaN(index) && currentPayrunStatement.rows[index]) {
+                        selected.push(currentPayrunStatement.rows[index]);
+                    }
+                });
+                return selected;
             }
 
             $('#profile_staff_id').change(function() {
@@ -1387,7 +1427,19 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                     return;
                 }
 
-                if (!confirm('Apply payrun and issue ' + currentPayrunStatement.rows.length + ' payslips? This action cannot be undone.')) {
+                var selectedRows = getSelectedPayrunRows();
+                if (!selectedRows || !selectedRows.length) {
+                    notify('danger', 'Select at least one employee to issue payslips for.');
+                    return;
+                }
+
+                var msgContent = 'Issue ' + selectedRows.length + ' payslip(s)?';
+                if (selectedRows.length < currentPayrunStatement.rows.length) {
+                    msgContent = 'Issue payslips for ' + selectedRows.length + ' selected of ' + currentPayrunStatement.rows.length + ' employees? Unselected staff will not receive payslips.';
+                }
+                msgContent += '\n\nThis action cannot be undone.';
+
+                if (!confirm(msgContent)) {
                     return;
                 }
 
@@ -1397,7 +1449,7 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                 var payload = appendCsrf({
                     start_date: currentPayrunStatement.start_date,
                     end_date: currentPayrunStatement.end_date,
-                    rows: currentPayrunStatement.rows
+                    rows: selectedRows
                 });
 
                 $.post(applyPayrunUrl, payload, function(response) {
