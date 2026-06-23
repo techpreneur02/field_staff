@@ -1537,6 +1537,20 @@ class Field_staff_model extends App_Model
         $analytics = $this->get_attendance_analytics($start_date, $end_date, $staff_id, $department_id);
         $holidays = $this->get_holidays();
         $holiday_dates = array_column($holidays, 'date');
+
+        // Pre-fetch all attendance records once for efficiency
+        $all_attendance_records = $this->get_attendance_record_report($start_date, $end_date, $staff_id, $department_id);
+        $attendance_by_staff = [];
+        foreach ($all_attendance_records as $record) {
+            $record_staff_id = (int) ($record['staff_id'] ?? 0);
+            if ($record_staff_id > 0) {
+                if (!isset($attendance_by_staff[$record_staff_id])) {
+                    $attendance_by_staff[$record_staff_id] = [];
+                }
+                $attendance_by_staff[$record_staff_id][] = $record;
+            }
+        }
+
         $statement_rows = [];
         $totals = [
             'regular_pay' => 0.0,
@@ -1562,13 +1576,12 @@ class Field_staff_model extends App_Model
             $holiday_hours = 0.0;
             $non_holiday_regular_hours = (float) $row['regular_hours'];
 
-            // Calculate holiday hours from actual attendance records
-            if (!empty($holiday_dates)) {
-                $attendance_records = $this->get_attendance_record_report($start_date, $end_date, $staff_id_current, 0);
-                foreach ($attendance_records as $record) {
+            // Calculate holiday hours from pre-fetched attendance records
+            if (!empty($holiday_dates) && isset($attendance_by_staff[$staff_id_current])) {
+                foreach ($attendance_by_staff[$staff_id_current] as $record) {
                     $record_date = isset($record['date']) ? (string) $record['date'] : '';
                     if ($record_date && in_array($record_date, $holiday_dates, true)) {
-                        $holiday_hours += (float) $record['total_hours'] ?? 0;
+                        $holiday_hours += (float) ($record['total_hours'] ?? 0);
                     }
                 }
 
@@ -2092,13 +2105,14 @@ class Field_staff_model extends App_Model
 
         $holidays = $this->get_holidays();
         $exists = false;
-        foreach ($holidays as $holiday) {
+        foreach ($holidays as &$holiday) {
             if ($holiday['date'] === $holiday_date) {
                 $exists = true;
                 $holiday['name'] = $holiday_name;
                 break;
             }
         }
+        unset($holiday);
 
         if (!$exists) {
             $holidays[] = ['date' => $holiday_date, 'name' => $holiday_name];
@@ -2108,7 +2122,7 @@ class Field_staff_model extends App_Model
             return strcmp($a['date'], $b['date']);
         });
 
-        return $this->update_field_staff_setting('holidays', json_encode($holidays));
+        return (bool) $this->save_module_setting('field_staff_holidays', json_encode($holidays));
     }
 
     public function delete_holiday($holiday_date)
@@ -2123,12 +2137,12 @@ class Field_staff_model extends App_Model
             return $holiday['date'] !== $holiday_date;
         });
 
-        return $this->update_field_staff_setting('holidays', json_encode(array_values($updated)));
+        return (bool) $this->save_module_setting('field_staff_holidays', json_encode(array_values($updated)));
     }
 
     public function get_holidays()
     {
-        $json_holidays = $this->get_field_staff_setting('holidays', '[]');
+        $json_holidays = $this->get_module_setting('field_staff_holidays', '[]');
         $holidays = json_decode($json_holidays, true);
 
         if (!is_array($holidays)) {
