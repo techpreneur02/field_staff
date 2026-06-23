@@ -17,6 +17,7 @@ $end_date     = isset($end_date) ? fs_portal_escape($end_date) : date('Y-m-d');
 $is_clocked_in = isset($is_clocked_in) ? (bool) $is_clocked_in : false;
 $save_leave_request_url    = isset($save_leave_request_url) ? (string) $save_leave_request_url : field_staff_admin_url('field_staff/save_leave_request');
 $get_payslip_statement_url = isset($get_payslip_statement_url) ? (string) $get_payslip_statement_url : field_staff_admin_url('field_staff/get_employee_payslip_statement');
+$download_payslip_url = isset($download_payslip_url) ? (string) $download_payslip_url : field_staff_admin_url('field_staff/download_payslip_statement');
 $clock_action_url = isset($clock_action_url) ? (string) $clock_action_url : field_staff_admin_url('field_staff/clock_action');
 ?>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
@@ -460,6 +461,7 @@ $clock_action_url = isset($clock_action_url) ? (string) $clock_action_url : fiel
                                                                 <td><?php echo fs_portal_escape($row['status'] ?? 'draft'); ?></td>
                                                                 <td class="text-center">
                                                                     <button type="button" class="btn btn-primary btn-sm js-view-payslip" data-payroll-id="<?php echo (int) ($row['id'] ?? 0); ?>">View Statement</button>
+                                                                    <a class="btn btn-default btn-sm" href="<?php echo fs_portal_escape($download_payslip_url); ?>?payroll_id=<?php echo (int) ($row['id'] ?? 0); ?>" target="_blank" rel="noopener">Download</a>
                                                                 </td>
                                                             </tr>
                                                         <?php } ?>

@@ -575,6 +575,74 @@ class Field_staff_model extends App_Model
     }
 
     /**
+     * Retrieve issued payslips for admin reporting workspace filters.
+     *
+     * @param string $start_date
+     * @param string $end_date
+     * @param int    $staff_id
+     * @param int    $department_id
+     * @param int    $limit
+     *
+     * @return array
+     */
+    public function get_issued_payslips($start_date, $end_date, $staff_id = 0, $department_id = 0, $limit = 100)
+    {
+        $table = db_prefix() . 'fs_payroll_master';
+        if (!$this->db->table_exists($table)) {
+            return [];
+        }
+
+        $staff_id = (int) $staff_id;
+        $department_id = (int) $department_id;
+        $limit = (int) $limit;
+        if ($limit <= 0) {
+            $limit = 100;
+        }
+
+        $query = $this->db
+            ->select('id, staff_id, start_date, end_date, gross_salary, net_salary, payment_method, status, created_at')
+            ->from($table)
+            ->where('status', 'issued')
+            ->where('start_date >=', $start_date)
+            ->where('end_date <=', $end_date)
+            ->order_by('end_date', 'DESC')
+            ->order_by('id', 'DESC')
+            ->limit($limit);
+
+        if ($staff_id > 0) {
+            $query->where('staff_id', $staff_id);
+        }
+
+        $rows = $query->get()->result_array();
+        if (empty($rows)) {
+            return [];
+        }
+
+        if ($department_id > 0) {
+            $allowed_staff = $this->get_staff_directory($department_id);
+            $allowed_ids = [];
+            foreach ($allowed_staff as $staff_row) {
+                $allowed_ids[] = (int) ($staff_row['staff_id'] ?? 0);
+            }
+            $allowed_lookup = array_flip(array_filter($allowed_ids));
+            $rows = array_values(array_filter($rows, function ($row) use ($allowed_lookup) {
+                return isset($allowed_lookup[(int) ($row['staff_id'] ?? 0)]);
+            }));
+        }
+
+        foreach ($rows as &$row) {
+            $current_staff_id = (int) ($row['staff_id'] ?? 0);
+            $staff_row = $this->get_staff_row($current_staff_id);
+            $profile = $this->get_payroll_profile($current_staff_id);
+            $row['worker_name'] = $this->resolve_staff_name($staff_row, $current_staff_id);
+            $row['department_name'] = $this->get_department_name((int) ($profile['department_id'] ?? 0));
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    /**
      * Retrieve a compiled payroll statement for one master row.
      *
      * @param int  $payroll_id

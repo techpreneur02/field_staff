@@ -45,6 +45,7 @@ class Field_staff extends AdminController
         $data['payslip_rows'] = $payslip_rows;
         $data['save_leave_request_url'] = field_staff_admin_url('field_staff/save_leave_request');
         $data['get_payslip_statement_url'] = field_staff_admin_url('field_staff/get_employee_payslip_statement');
+        $data['download_payslip_url'] = field_staff_admin_url('field_staff/download_payslip_statement');
         $data['clock_action_url'] = field_staff_admin_url('field_staff/clock_action');
 
         $this->load->view('attendance_dashboard', $data);
@@ -86,6 +87,9 @@ class Field_staff extends AdminController
         $daily_attendance_rows = $can_manage_reporting ? $this->field_staff_model->get_daily_attendance_report($report_date, $selected_department_id) : [];
         $monthly_attendance = $can_manage_reporting ? $this->field_staff_model->get_monthly_attendance_report($report_month, $selected_department_id) : ['days' => [], 'rows' => []];
         $department_wise_rows = $can_manage_reporting ? $this->field_staff_model->get_department_wise_report($start_date, $end_date, $selected_department_id) : [];
+        $issued_payslip_rows = $can_manage_reporting
+            ? $this->field_staff_model->get_issued_payslips($start_date, $end_date, $selected_staff_id, $selected_department_id, 150)
+            : [];
         $leave_rows = $can_manage_operations ? $this->field_staff_model->get_leave_records([
             'start_date' => $start_date,
             'end_date' => $end_date,
@@ -117,6 +121,7 @@ class Field_staff extends AdminController
         $data['daily_attendance_rows'] = $daily_attendance_rows;
         $data['monthly_attendance'] = $monthly_attendance;
         $data['department_wise_rows'] = $department_wise_rows;
+        $data['issued_payslip_rows'] = $issued_payslip_rows;
         $data['leave_rows'] = $leave_rows;
         $data['project_assignment_rows'] = $project_assignment_rows;
         $data['can_manage_pay_setup'] = $can_manage_pay_setup;
@@ -145,6 +150,7 @@ class Field_staff extends AdminController
         $data['apply_payrun_url'] = field_staff_admin_url('field_staff/apply_payrun');
         $data['save_project_assignment_url'] = field_staff_admin_url('field_staff/save_project_assignment');
         $data['save_hr_payroll_staff_allowlist_url'] = field_staff_admin_url('field_staff/save_hr_payroll_staff_ids');
+        $data['download_payslip_url'] = field_staff_admin_url('field_staff/download_payslip_statement');
         $data['can_access_hr_workspace'] = $this->can_access_hr_workspace();
 
         $this->load->view('hr_management', $data);
@@ -508,6 +514,62 @@ class Field_staff extends AdminController
             'success' => true,
             'statement' => $statement,
         ]);
+    }
+
+    /**
+     * Download one payslip statement as an HTML file.
+     */
+    public function download_payslip_statement()
+    {
+        $payroll_id = (int) $this->input->get('payroll_id', true);
+        if ($payroll_id <= 0) {
+            show_404();
+        }
+
+        $viewer_staff_id = $this->resolve_session_staff_id();
+        if ($viewer_staff_id <= 0) {
+            access_denied('field_staff');
+        }
+
+        $can_admin_download = $this->can_access_reporting_tab();
+        $statement = $this->field_staff_model->get_employee_payslip_statement(
+            $payroll_id,
+            !$can_admin_download,
+            $viewer_staff_id
+        );
+
+        if (empty($statement)) {
+            show_404();
+        }
+
+        $adjustments = isset($statement['adjustments']) && is_array($statement['adjustments']) ? $statement['adjustments'] : [];
+        $filename = 'payslip_' . (int) ($statement['staff_id'] ?? 0) . '_' . preg_replace('/[^0-9\-]/', '', (string) ($statement['end_date'] ?? date('Y-m-d'))) . '.html';
+
+        header('Content-Type: text/html; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+
+        echo '<!doctype html><html><head><meta charset="utf-8"><title>Payslip Statement</title>';
+        echo '<style>body{font-family:Arial,sans-serif;margin:24px;color:#111}h2{margin:0 0 8px 0}.muted{color:#555}.card{border:1px solid #ddd;border-radius:8px;padding:12px;margin:10px 0}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f4f4f4}</style>';
+        echo '</head><body>';
+        echo '<h2>Payslip Statement</h2>';
+        echo '<p class="muted">Field Staff module by Sherwin Armas</p>';
+        echo '<div class="card"><strong>Employee:</strong> ' . htmlspecialchars((string) ($statement['worker_name'] ?? ''), ENT_QUOTES, 'UTF-8') . '<br>';
+        echo '<strong>Staff ID:</strong> ' . (int) ($statement['staff_id'] ?? 0) . '<br>';
+        echo '<strong>Period:</strong> ' . htmlspecialchars((string) ($statement['start_date'] ?? ''), ENT_QUOTES, 'UTF-8') . ' to ' . htmlspecialchars((string) ($statement['end_date'] ?? ''), ENT_QUOTES, 'UTF-8') . '<br>';
+        echo '<strong>Status:</strong> ' . htmlspecialchars((string) ($statement['status'] ?? ''), ENT_QUOTES, 'UTF-8') . '<br>';
+        echo '<strong>Payment Method:</strong> ' . htmlspecialchars((string) ($statement['payment_method'] ?? ''), ENT_QUOTES, 'UTF-8') . '</div>';
+        echo '<table><thead><tr><th>Item</th><th>Amount (USD)</th></tr></thead><tbody>';
+        echo '<tr><td>Gross Salary</td><td>$' . number_format((float) ($statement['gross_salary'] ?? 0), 2) . '</td></tr>';
+        echo '<tr><td>Employee NIB</td><td>$' . number_format((float) ($statement['nib_ee'] ?? 0), 2) . '</td></tr>';
+        echo '<tr><td>Employee NHIP</td><td>$' . number_format((float) ($statement['nhip_ee'] ?? 0), 2) . '</td></tr>';
+        echo '<tr><td>Commission</td><td>$' . number_format((float) ($adjustments['commission'] ?? 0), 2) . '</td></tr>';
+        echo '<tr><td>Loan Adjustment</td><td>$' . number_format((float) ($adjustments['loan_adjustment'] ?? 0), 2) . '</td></tr>';
+        echo '<tr><td>Advance</td><td>$' . number_format((float) ($adjustments['advance'] ?? 0), 2) . '</td></tr>';
+        echo '<tr><td>Vacation Pay</td><td>$' . number_format((float) ($adjustments['vacation_pay'] ?? 0), 2) . '</td></tr>';
+        echo '<tr><td><strong>Net Salary</strong></td><td><strong>$' . number_format((float) ($statement['net_salary'] ?? 0), 2) . '</strong></td></tr>';
+        echo '</tbody></table>';
+        echo '</body></html>';
+        exit;
     }
 
     /**
@@ -906,6 +968,11 @@ class Field_staff extends AdminController
             $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
         }
 
+        $master_pin = trim((string) $this->input->post('master_pin', true));
+        if ($master_pin !== '0212') {
+            $this->respond_json(['success' => false, 'message' => 'Master PIN is invalid.']);
+        }
+
         $staff_ids = [];
         $raw_value = $this->input->post('staff_ids', true);
 
@@ -1121,7 +1188,7 @@ class Field_staff extends AdminController
             exit;
         }
 
-        $this->require_payroll_json();
+        $this->require_pay_setup_json();
 
         $holiday_date = trim((string) $this->input->post('date', true));
         $holiday_name = trim((string) $this->input->post('name', true));
@@ -1154,7 +1221,7 @@ class Field_staff extends AdminController
             exit;
         }
 
-        $this->require_payroll_json();
+        $this->require_pay_setup_json();
 
         $holiday_date = trim((string) $this->input->post('date', true));
 
