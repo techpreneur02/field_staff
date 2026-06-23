@@ -10,7 +10,7 @@
 ## 1.1 Release Identity
 
 - Module display name: Field Staff module by Sherwin Armas
-- Current release baseline: 1.1.0
+- Current release baseline: 1.1.1
 
 ## 2. Installation
 
@@ -41,6 +41,13 @@ Employee portal rollout checks (v1.1):
 - Verify live attendance map is visible beside Record Attendance panel.
 - Verify mobile tabs are swipeable/touch-friendly and preserve active tab state.
 - Verify check in/out status refreshes immediately after attendance submission.
+
+Payroll/payslip rollout checks (v1.1.1):
+- Verify Payroll Admin allowlist controls remain locked until master PIN `0212` is entered.
+- Verify staff-scoped payslip download from Employee Portal → My Payslips.
+- Verify HR-issued payslip list and download actions in Reporting and Payrun tab.
+- Verify selective payrun issuance can apply to selected employees only.
+- Verify holiday dates are saved and holiday hours are calculated at 2x pay.
 
 ## 5. Data Objects Created
 
@@ -74,10 +81,12 @@ Weekly:
 - Review attendance summaries and late/early metrics.
 - Verify leave and manual attendance corrections.
 - Run payrun statement after attendance lock.
+- Validate selective issuance list before applying payrun.
 
 Monthly:
 - Revalidate HR/payroll staff allowlist against active staffing.
 - Verify statutory rates and payroll profile drift.
+- Validate configured holiday calendar for upcoming payroll periods.
 
 ## 8. QA and Validation
 
@@ -86,6 +95,7 @@ Monthly:
 - Allowlisted staff IDs gain HR/payroll workspace access.
 - CSV report exports generate expected columns.
 - Payrun returns rows for completed attendance periods.
+- Payslip download endpoint returns downloadable statement files for authorized users.
 
 ## 9. Troubleshooting
 

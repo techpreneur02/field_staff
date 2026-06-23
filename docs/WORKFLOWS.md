@@ -56,7 +56,9 @@ Outcome:
 2. Review summary cards and report tables.
 3. Export CSV report when needed.
 4. Generate payrun statement.
-5. Validate rows before payroll settlement updates.
+5. Select all employees or only selected employees for payslip issuance.
+6. Apply payrun to issue payslips.
+7. Download issued payslips as needed from HR payrun workspace.
 
 Outcome:
 - Auditable reports and payrun statement for payroll cycle.
@@ -75,15 +77,37 @@ Outcome:
 ## 7. HR/Payroll Staff Allowlist Admin Workflow
 
 1. Open Payroll Admin tab as admin.
-2. Locate HR/Payroll Staff Allowlist panel.
-3. Use staff name picker to select allowed users.
-4. Save allowlist.
-5. Validate access behavior with test users.
+2. Enter master PIN `0212` and unlock edit mode.
+3. Locate HR/Payroll Staff Allowlist panel.
+4. Use staff name picker to select allowed users.
+5. Save allowlist.
+6. Validate access behavior with test users.
 
 Outcome:
 - Strict staff-ID controlled access for all HR/payroll workspace tabs.
 
-## 8. Weekly Operating Rhythm (Recommended)
+## 8. Holiday Management Workflow
+
+1. Open Holidays tab in HR management.
+2. Add holiday date and holiday name.
+3. Verify holiday appears in registered holiday list.
+4. Generate payrun for a period that includes holiday attendance.
+5. Validate holiday hours and holiday pay (2x) are reflected in statement.
+
+Outcome:
+- Holiday calendar is centrally managed and payroll applies 2x holiday pay automatically.
+
+## 9. Employee Payslip Download Workflow
+
+1. Open Employee Portal.
+2. Go to My Payslips tab.
+3. Click Download on a payslip row.
+4. Store statement in employee records.
+
+Outcome:
+- Staff can securely retrieve their own statement files without HR intervention.
+
+## 10. Weekly Operating Rhythm (Recommended)
 
 - Monday: validate shift distributions and profile changes.
 - Daily: monitor attendance completion and exceptions.

@@ -4,6 +4,28 @@ All notable changes to this module are documented in this file.
 
 The format follows Keep a Changelog principles and semantic versioning intent.
 
+## [1.1.1] - 2026-06-22
+
+### Added
+- Payslip download support for employee self-service portal (My Payslips tab).
+- Payslip download support for HR admin in Reporting and Payrun workspace.
+- Admin-issued payslip listing panel in HR Reporting and Payrun workspace.
+- Download payslip endpoint with access-scoped authorization:
+  - Staff can download only their own payslips.
+  - Reporting-authorized HR users can download all eligible payslips.
+- Master PIN lock in Payroll Admin tab for allowlist edit/save workflow.
+
+### Changed
+- Payroll Admin allowlist save flow now requires master PIN verification (hardcoded code `0212`).
+- Shift setup form layout reorganized to remove control drift and improve responsive alignment.
+- Documentation set updated to reflect selective payrun issuance and holiday double-pay operations.
+
+### Fixed
+- Resolved broken HR management JavaScript tail that prevented payrun and holiday actions from executing.
+- Resolved holiday settings persistence issues caused by incorrect settings helper usage.
+- Resolved holiday save/delete guard mismatch in controller permission checks.
+- Stabilized payrun generation flow after holiday logic rollout and restored button action behavior.
+
 ## [1.1.0] - 2026-06-22
 
 ### Added

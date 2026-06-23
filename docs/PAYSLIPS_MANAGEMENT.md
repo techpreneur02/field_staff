@@ -56,7 +56,7 @@ Payslips are automatically created from processed payroll runs:
 ## 13.5.2 Payslip Features
 
 - **Secure Generation** — Generated directly from validated payroll master records
-- **PDF Download** — Generate professional PDF payslips on demand
+- **Statement Download** — Download payslip statement files on demand
 - **Employee Self-Service** — Employees can download and view their own payslips (staff-scoped access only)
 - **Payslip History** — Maintain complete payslip archive across all payroll runs
 - **Access Control** — Staff members cannot view other employees' payslips; HR can view all
@@ -70,8 +70,8 @@ Payslips are automatically created from processed payroll runs:
 
 - Go to **HR Management → Tab 5: Payrun & Reporting**
 - Select or execute a payroll run
-- Click **"Generate Payslips"** button after payroll completion
-- System generates payslips for all employees in that payroll run
+- Click **"Apply & Issue Payslips"** after payrun generation
+- System can issue payslips for all employees or only selected employees
 - Generated payslips automatically appear with status `issued`
 - Payslips stored in `field_staff_payroll_master` table with `start_date`, `end_date`, `created_at`, `status`, and statutory/adjustment columns
 
@@ -101,6 +101,7 @@ Payslips are automatically created from processed payroll runs:
   - Payment details (payment method, staff ID)
 
 - No download capability at employee level (payslips are view-only in self-service portal)
+- Employee can download their own payslip statements using the **Download** action.
 
 ### 4. Bulk Payslip Operations (HR)
 
@@ -167,19 +168,22 @@ Payslips are automatically created from processed payroll runs:
 - Response: JSON with statement details (earnings, deductions, adjustments, payment method)
 - Access: Current staff member only
 
+**GET `/admin/field_staff/download_payslip_statement`**
+- Download one payslip statement file
+- Parameters: `payroll_id` (integer)
+- Access: Current staff member for own record, or reporting-authorized HR user
+
 ### HR Management (Admin-Only)
 
-**POST `/admin/field_staff/generate_payslips`**
-- Generate all payslips for a completed payroll run
-- Parameters: `payroll_run_id` (integer)
-- Response: JSON success/failure with count of generated payslips
-- Access: HR admin only
+**POST `/admin/field_staff/apply_payrun`**
+- Issue payslips from generated payrun rows
+- Parameters: `start_date`, `end_date`, `rows[]`
+- Response: JSON success/failure with issued and failed counts
+- Access: HR reporting-authorized users
 
-**GET `/admin/field_staff/get_payslip_list`**
-- Retrieve paginated list of all payslips with optional filters
-- Parameters: `staff_id`, `start_date`, `end_date`, `status`, `limit`, `offset`
-- Response: JSON array of payslip records
-- Access: HR admin only
+**GET `/admin/field_staff/download_payslip_statement`**
+- Download one issued payslip statement by `payroll_id`
+- Access: HR reporting-authorized users
 
 ---
 

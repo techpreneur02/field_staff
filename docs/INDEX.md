@@ -2,7 +2,7 @@
 
 Use this index as the starting point for module operations and maintenance.
 
-Current release: 1.1.0
+Current release: 1.1.1
 
 ## Core Documents
 

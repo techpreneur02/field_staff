@@ -11,6 +11,10 @@ It provides:
 - Auto-refresh attendance status for immediate check in/check out feedback
 - HR management workspace with tab-level access controls
 - Payroll profile management and payrun generation
+- Selective payrun issuance (issue all or selected employees only)
+- Holiday management with automatic 2x holiday pay calculation
+- Payslip statement download for both employees and HR administrators
+- Payroll Admin master PIN lock for allowlist edit/save controls
 - Shift scheduling and distribution
 - Leave management
 - Project assignment controls with strict role-ID allowlist gating
@@ -43,6 +47,9 @@ Primary business rules implemented:
 - NHIP split: 3.0% employee, 3.0% employer
 - NHIP monthly ceiling: 7800.00
 - Payroll additions/deductions via EAV attributes
+
+Release notes:
+- 1.1.1 introduces payslip download actions, payroll admin PIN lock (`0212`), shift form alignment fixes, and holiday/payrun stabilization.
 
 ## 2. Architecture Overview
 

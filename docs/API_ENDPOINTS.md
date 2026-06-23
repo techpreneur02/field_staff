@@ -88,6 +88,37 @@ Purpose:
 Purpose:
 - Update leave approval status.
 
+### POST save_holiday
+
+Purpose:
+- Save holiday date/name for payroll holiday double-pay computation.
+
+Access:
+- Pay setup authorized users.
+
+Key fields:
+- date: Y-m-d
+- name: string
+
+### POST delete_holiday
+
+Purpose:
+- Remove a configured holiday date.
+
+Access:
+- Pay setup authorized users.
+
+Key fields:
+- date: Y-m-d
+
+### GET get_holidays
+
+Purpose:
+- Return configured holiday dates and names.
+
+Access:
+- Pay setup authorized users.
+
 ## 4. Reporting
 
 ### GET export_operations_report
@@ -112,6 +143,46 @@ Response:
 - message: string
 - statement: object with rows and aggregates
 
+### POST apply_payrun
+
+Purpose:
+- Save and issue payslips from generated payrun rows.
+
+Key fields:
+- start_date
+- end_date
+- rows[] (supports selective subset issuance)
+
+Response:
+- success: boolean
+- message: string
+- saved_count: int
+- failed_count: int
+
+### GET get_employee_payslip_statement
+
+Purpose:
+- Return compiled payslip statement payload for one payroll entry.
+
+Key fields:
+- payroll_id
+
+Access:
+- Employee: own payslip only
+- HR/reporting users: as permitted by route scope
+
+### GET download_payslip_statement
+
+Purpose:
+- Download one payslip statement file.
+
+Key fields:
+- payroll_id
+
+Access:
+- Employee: own payslip only
+- HR/reporting users: broader payroll reporting access
+
 ## 5. Project Assignment and Access Settings
 
 ### POST save_project_assignment
@@ -135,6 +206,7 @@ Access:
 - Admin only
 
 Key fields:
+- master_pin: required, hardcoded `0212`
 - staff_ids: array of integer IDs from multi-select, or legacy comma-separated integer string
 
 Response:
