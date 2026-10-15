@@ -455,30 +455,12 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                                             <h5 class="panel-title no-margin"><i class="fa fa-users"></i> Allowed Staff Members for Payroll Admin</h5>
                                         </div>
                                         <div class="panel-body">
-                                            <div class="alert alert-warning">
-                                                <strong><i class="fa fa-lock"></i> Master PIN Required:</strong> Enter the master code to unlock editing for Payroll Admin users.
-                                            </div>
-                                            <div class="row">
-                                                <div class="col-md-6 col-sm-8 col-xs-12">
-                                                    <div class="input-group">
-                                                        <input type="password" id="payroll-admin-master-pin" class="form-control" placeholder="Enter master PIN">
-                                                        <span class="input-group-btn">
-                                                            <button type="button" id="unlock-payroll-admin-btn" class="btn btn-warning">Unlock Edit</button>
-                                                        </span>
-                                                    </div>
-                                                    <p class="text-muted mtop5 mbot0">Editing is locked until valid PIN is entered.</p>
-                                                </div>
-                                                <div class="col-md-6 col-sm-4 col-xs-12 text-right">
-                                                    <span id="payroll-admin-pin-status" class="label label-default">Locked</span>
-                                                </div>
-                                            </div>
-
                                             <p class="text-muted"><i class="fa fa-info-circle"></i> Select which staff members can access payroll management, reporting, and HR workspace. Leave empty to restrict access to super admin only.</p>
                                             <p class="text-info mtop10"><strong><i class="fa fa-user-circle"></i> Your Staff ID:</strong> <?php echo $current_user_staff_id; ?></p>
 
                                             <div class="form-group mtop15">
                                                 <label for="hr-payroll-staff-ids" class="control-label"><i class="fa fa-check-circle"></i> Payroll Admin Users</label>
-                                                <select id="hr-payroll-staff-ids" class="form-control selectpicker" data-live-search="true" data-width="100%" multiple data-actions-box="true" disabled>
+                                                <select id="hr-payroll-staff-ids" class="form-control selectpicker" data-live-search="true" data-width="100%" multiple data-actions-box="true">
                                                     <?php foreach ($staff_directory as $staff) { ?>
                                                         <?php $sid = (int) ($staff['staff_id'] ?? 0);
                                                         if ($sid <= 0) continue; ?>
@@ -490,7 +472,7 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                                             </div>
 
                                             <div class="mtop25">
-                                                <button type="button" id="save-hr-payroll-staff-allowlist-btn" class="btn btn-primary btn-lg" disabled>
+                                                <button type="button" id="save-hr-payroll-staff-allowlist-btn" class="btn btn-primary btn-lg">
                                                     <i class="fa fa-save"></i> Save Allowed Staff Members
                                                 </button>
                                             </div>
@@ -786,6 +768,21 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                                     <a href="<?php echo field_staff_hr_escape($export_urls['daily_attendance'] ?? '#'); ?>" class="btn btn-default">Export Daily Attendance</a>
                                     <a href="<?php echo field_staff_hr_escape($export_urls['monthly_attendance'] ?? '#'); ?>" class="btn btn-default">Export Monthly Attendance</a>
                                     <a href="<?php echo field_staff_hr_escape($export_urls['department_wise'] ?? '#'); ?>" class="btn btn-default">Export Department Wise</a>
+                                    <div class="inline-block mleft5" style="min-width: 220px; vertical-align: middle;">
+                                        <select id="payrun_cutoff_id" class="form-control" required>
+                                            <option value="" <?php echo (int) ($selected_payrun_cutoff_id ?? 0) <= 0 ? 'selected' : ''; ?>>Select payroll cutoff</option>
+                                            <?php foreach (($payroll_cutoffs ?? []) as $cutoff_option) {
+                                                $cutoff_id_value = (int) ($cutoff_option['id'] ?? 0);
+                                                if ($cutoff_id_value <= 0) {
+                                                    continue;
+                                                }
+                                                $cutoff_code = (string) ($cutoff_option['cutoff_code'] ?? '');
+                                                $cutoff_label = trim($cutoff_code) !== '' ? $cutoff_code : 'Cutoff #' . $cutoff_id_value;
+                                                ?>
+                                                <option value="<?php echo $cutoff_id_value; ?>" <?php echo (int) ($selected_payrun_cutoff_id ?? 0) === $cutoff_id_value ? 'selected' : ''; ?>><?php echo field_staff_hr_escape($cutoff_label); ?></option>
+                                            <?php } ?>
+                                        </select>
+                                    </div>
                                     <button type="button" id="generate-payrun-btn" class="btn btn-primary">Generate Payrun Ledger</button>
                                 </div>
                             </div>
@@ -1171,9 +1168,24 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
             var saveHolidayUrl = <?php echo json_encode(field_staff_admin_url('field_staff/save_holiday')); ?>;
             var deleteHolidayUrl = <?php echo json_encode(field_staff_admin_url('field_staff/delete_holiday')); ?>;
             var getHolidaysUrl = <?php echo json_encode(field_staff_admin_url('field_staff/get_holidays')); ?>;
-            var payrollAdminMasterPin = '0212';
-            var payrollAdminUnlocked = false;
-            var currentPayrunStatement = null;;
+            var currentPayrunStatement = null;
+            var currentPayrunCutoffId = null;
+            var currentPayrunRequestToken = 0;
+            var currentApplyInFlight = false;
+            var currentApplyCutoffId = null;
+            resetPayrunPreview();
+
+            function resetPayrunPreview() {
+                currentPayrunRequestToken += 1;
+                currentPayrunStatement = null;
+                currentPayrunCutoffId = null;
+                currentApplyInFlight = false;
+                currentApplyCutoffId = null;
+                $('#payrun-results-panel').addClass('hide');
+                $('#payrun-selection-status').text('');
+                $('#payrun-action-status').text('');
+                $('#apply-payrun-btn').prop('disabled', true);
+            }
 
             function notify(type, message) {
                 if (typeof alert_float === 'function') {
@@ -1292,6 +1304,7 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                 $('#payrun-generated-at').text(statement.generated_at || '');
                 $('#payrun-period-label').text('Period: ' + (statement.start_date || '') + ' to ' + (statement.end_date || ''));
                 $('#payrun-results-panel').removeClass('hide');
+                $('#apply-payrun-btn').prop('disabled', false);
 
                 // Setup select all/none checkbox
                 $('#payrun-select-all').on('change', function() {
@@ -1517,29 +1530,75 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                 });
             });
 
+            $('#payrun_cutoff_id').on('change', function() {
+                var selectedCutoffId = $('#payrun_cutoff_id').val();
+                if (!selectedCutoffId) {
+                    resetPayrunPreview();
+                    return;
+                }
+                resetPayrunPreview();
+                $('#payrun-action-status').text('Select a cutoff to generate a preview.');
+            });
+
             $('#generate-payrun-btn').click(function() {
+                var cutoffId = $('#payrun_cutoff_id').val();
+                if (!cutoffId) {
+                    notify('danger', 'Select a payroll cutoff before generating a payrun.');
+                    return;
+                }
+
                 var payload = appendCsrf({
+                    cutoff_id: cutoffId,
                     start_date: $('#filter_start_date').val(),
                     end_date: $('#filter_end_date').val(),
                     staff_id: $('#filter_staff_id').val(),
                     department_id: $('#filter_department_id').val()
                 });
 
+                var requestToken = ++currentPayrunRequestToken;
+                currentPayrunCutoffId = parseInt(cutoffId, 10);
+
                 $.post(generatePayrunUrl, payload, function(response) {
+                    if (requestToken !== currentPayrunRequestToken) {
+                        return;
+                    }
+
                     if (response && response.success && response.statement) {
+                        var responseCutoffId = parseInt(response.statement.cutoff_id, 10);
+                        var selectedCutoffId = parseInt($('#payrun_cutoff_id').val(), 10);
+                        if (!responseCutoffId || responseCutoffId !== currentPayrunCutoffId || responseCutoffId !== selectedCutoffId) {
+                            notify('danger', 'The payrun response does not match the currently selected cutoff.');
+                            resetPayrunPreview();
+                            return;
+                        }
                         renderPayrunStatement(response.statement);
                         notify('success', response.message || 'Payrun ledger generated successfully.');
                     } else {
+                        resetPayrunPreview();
                         notify('danger', response && response.message ? response.message : 'Payrun generation failed.');
                     }
                 }, 'json').fail(function() {
+                    if (requestToken !== currentPayrunRequestToken) {
+                        return;
+                    }
+                    resetPayrunPreview();
                     notify('danger', 'Payrun generation failed.');
                 });
             });
 
             $('#apply-payrun-btn').click(function() {
+                if (currentApplyInFlight) {
+                    return;
+                }
+
                 if (!currentPayrunStatement || !currentPayrunStatement.rows || !currentPayrunStatement.rows.length) {
                     notify('danger', 'No payrun data available. Generate a payrun first.');
+                    return;
+                }
+
+                var cutoffId = parseInt(currentPayrunStatement.cutoff_id, 10);
+                if (!cutoffId || cutoffId !== parseInt($('#payrun_cutoff_id').val(), 10)) {
+                    notify('danger', 'The selected payrun preview no longer matches the active cutoff.');
                     return;
                 }
 
@@ -1559,28 +1618,43 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                     return;
                 }
 
+                currentApplyInFlight = true;
+                currentApplyCutoffId = cutoffId;
                 $('#payrun-action-status').text('Processing...');
                 $('#apply-payrun-btn').prop('disabled', true);
 
                 var payload = appendCsrf({
+                    cutoff_id: cutoffId,
+                    employee_ids: selectedRows.map(function(row) { return row.staff_id; }),
                     start_date: currentPayrunStatement.start_date,
                     end_date: currentPayrunStatement.end_date,
                     rows: selectedRows
                 });
 
                 $.post(applyPayrunUrl, payload, function(response) {
+                    if (currentApplyCutoffId !== cutoffId || currentPayrunCutoffId !== cutoffId) {
+                        return;
+                    }
+
+                    currentApplyInFlight = false;
                     $('#apply-payrun-btn').prop('disabled', false);
                     if (response && response.success) {
                         $('#payrun-action-status').text('✓ Applied');
                         notify('success', response.message || 'Payrun applied successfully.');
                         setTimeout(function() {
-                            window.location.reload();
+                            if (currentApplyCutoffId === cutoffId && currentPayrunCutoffId === cutoffId) {
+                                window.location.reload();
+                            }
                         }, 2000);
                     } else {
                         $('#payrun-action-status').text('');
                         notify('danger', response && response.message ? response.message : 'Payrun apply failed.');
                     }
                 }, 'json').fail(function() {
+                    if (currentApplyCutoffId !== cutoffId || currentPayrunCutoffId !== cutoffId) {
+                        return;
+                    }
+                    currentApplyInFlight = false;
                     $('#apply-payrun-btn').prop('disabled', false);
                     $('#payrun-action-status').text('');
                     notify('danger', 'Payrun apply failed.');
@@ -1615,35 +1689,10 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                 });
             });
 
-            $('#unlock-payroll-admin-btn').click(function() {
-                var enteredPin = ($('#payroll-admin-master-pin').val() || '').trim();
-                if (enteredPin !== payrollAdminMasterPin) {
-                    payrollAdminUnlocked = false;
-                    $('#payroll-admin-pin-status').removeClass('label-success').addClass('label-danger').text('Invalid PIN');
-                    notify('danger', 'Invalid master PIN.');
-                    return;
-                }
-
-                payrollAdminUnlocked = true;
-                $('#payroll-admin-pin-status').removeClass('label-default label-danger').addClass('label-success').text('Unlocked');
-                $('#hr-payroll-staff-ids').prop('disabled', false);
-                $('#save-hr-payroll-staff-allowlist-btn').prop('disabled', false);
-                if ($.fn.selectpicker) {
-                    $('#hr-payroll-staff-ids').selectpicker('refresh');
-                }
-                notify('success', 'Payroll Admin editing unlocked.');
-            });
-
             $('#save-hr-payroll-staff-allowlist-btn').click(function() {
-                if (!payrollAdminUnlocked) {
-                    notify('danger', 'Enter the master PIN to unlock Payroll Admin editing.');
-                    return;
-                }
-
                 var staffIds = $('#hr-payroll-staff-ids').val() || [];
 
                 $.post(saveHrPayrollStaffAllowlistUrl, appendCsrf({
-                    master_pin: ($('#payroll-admin-master-pin').val() || '').trim(),
                     staff_ids: staffIds
                 }), function(response) {
                     if (response && response.success) {

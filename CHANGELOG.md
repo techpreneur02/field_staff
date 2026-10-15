@@ -44,6 +44,31 @@ The format follows Keep a Changelog principles and semantic versioning intent.
 - Removed stale role-allowlist UI references from HR management flow.
 - Restored attendance map visibility and aligned mobile tab usability in employee portal.
 
+## [1.2.0] - 2026-10-14
+
+### Added
+- Dedicated HR Settings workspace for managing staff access, payroll cutoffs, and configuration outside operational attendance/payroll workflows.
+- Persisted payroll cutoff records with date windows, group metadata, and status tracking for cutoff-based payroll processing.
+- Cutoff-aware payroll reporting and selected-period review so the payrun workspace operates against a valid payroll window rather than ad hoc date filters alone.
+- Legacy payroll compatibility handling for older saved payroll rows while newer cutoff-driven processing is introduced.
+- Payroll-group assignment persistence and staff-directory normalization for employee payroll membership validation.
+- Migration and schema guard work for cutoff-aware tables, payroll-group fields, and upgrade-safe database changes.
+
+### Changed
+- Payrun generation and apply flow now require a valid cutoff selection, derive payroll dates from the cutoff, and validate employee payroll-group membership before saving results.
+- Payroll status handling was tightened to keep draft/approved/paid behavior aligned across save, query, UI, and report logic.
+- Controller and view logic now preserve cutoff identity, selected cutoff metadata, and preview invalidation behavior when the cutoff changes.
+- HR workspace access and configuration flow were refocused around HR Settings while routine operations remain in the operational workspace.
+- Version metadata and module packaging were reviewed and aligned with the current source package state.
+
+### Fixed
+- Prevented invalid payrun submissions without a valid cutoff and blocked editing of approved/closed cutoff periods.
+- Corrected mixed status assumptions between legacy records and newer cutoff-based payroll data.
+- Tightened duplicate protection logic and payroll write transactions to reduce duplicate employee/cutoff submissions and unsafe concurrent updates.
+- Preserved finalized payroll state and prevented accidental mutations to saved payroll rows after cutoff approval or closure.
+- Improved migration safeguards so schema changes require successful completion before the module records upgrade success.
+- Reworked legacy history presentation to keep historical payroll records separate from recalculated cutoff-driven views.
+
 ## [1.0.0] - 2026-06-22
 
 ### Added

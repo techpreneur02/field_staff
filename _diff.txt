@@ -1,0 +1,1330 @@
+diff --git a/controllers/Field_staff.php b/controllers/Field_staff.php
+index 33a6134..6084f89 100644
+--- a/controllers/Field_staff.php
++++ b/controllers/Field_staff.php
+@@ -9,8 +9,35 @@ class Field_staff extends AdminController
+         parent::__construct();
+ 
+         // Load field staff data services for module workflows.
++        // Schema upgrades are triggered via module activation/upgrade hooks instead of normal page requests.
+         $this->load->model('field_staff_model');
+-        $this->ensure_operations_schema();
++    }
++
++    /**
++     * Dedicated HR settings workspace for configuration that is not part of operations.
++     */
++    public function hr_settings()
++    {
++        $this->enforce_manage_settings_access();
++
++        $staff_ids = $this->field_staff_model->get_hr_payroll_staff_ids();
++        $cutoffs = $this->field_staff_model->get_payroll_cutoffs();
++        $selected_cutoff_id = (int) $this->input->get('cutoff_id', true);
++        $selected_cutoff = $selected_cutoff_id > 0 ? $this->field_staff_model->get_payroll_cutoff_by_id($selected_cutoff_id) : null;
++        $staff_directory = $this->field_staff_model->get_staff_directory();
++
++        $data['title'] = 'HR Settings';
++        $data['staff_directory'] = $staff_directory;
++        $data['hr_payroll_staff_ids'] = $staff_ids;
++        $data['current_user_staff_id'] = $this->resolve_session_staff_id();
++        $data['cutoffs'] = $cutoffs;
++        $data['selected_cutoff'] = $selected_cutoff;
++        $data['selected_cutoff_id'] = $selected_cutoff_id;
++        $data['save_hr_access_url'] = field_staff_admin_url('field_staff/save_hr_payroll_staff_ids');
++        $data['save_cutoff_url'] = field_staff_admin_url('field_staff/save_payroll_cutoff');
++        $data['current_url'] = field_staff_admin_url('field_staff/hr_settings');
++
++        $this->load->view('hr_settings', $data);
+     }
+ 
+     /**
+@@ -163,12 +190,24 @@ class Field_staff extends AdminController
+     {
+         $this->enforce_payroll_access();
+ 
++        $selected_cutoff_id = (int) $this->input->get_post('cutoff_id', true);
++        $cutoff_options = $this->field_staff_model->get_payroll_cutoffs();
++        $selected_cutoff = $selected_cutoff_id > 0 ? $this->field_staff_model->get_payroll_cutoff_by_id($selected_cutoff_id) : null;
++
++        if ($selected_cutoff_id > 0 && empty($selected_cutoff)) {
++            $selected_cutoff_id = 0;
++            $selected_cutoff = null;
++        }
++
+         $start_input = trim((string) $this->input->get_post('start_date', true));
+         $end_input   = trim((string) $this->input->get_post('end_date', true));
+ 
+         $today = new DateTimeImmutable('today');
+ 
+-        if ($start_input === '' || $end_input === '') {
++        if ($selected_cutoff_id > 0 && is_array($selected_cutoff)) {
++            $start_date = (string) ($selected_cutoff['start_date'] ?? '');
++            $end_date = (string) ($selected_cutoff['end_date'] ?? '');
++        } elseif ($start_input === '' || $end_input === '') {
+             $start_date = $today->modify('monday this week')->format('Y-m-d');
+             $end_date   = $today->modify('sunday this week')->format('Y-m-d');
+         } else {
+@@ -192,6 +231,7 @@ class Field_staff extends AdminController
+ 
+         $staff_rows = $this->db->get()->result_array();
+         $payroll_records = [];
++        $legacy_rows = [];
+ 
+         foreach ($staff_rows as $staff_row) {
+             $worker_id = isset($staff_row['staffid']) ? (int) $staff_row['staffid'] : 0;
+@@ -213,7 +253,7 @@ class Field_staff extends AdminController
+ 
+             $status = 'draft';
+             $master_record = $this->db
+-                ->select('status')
++                ->select('status, cutoff_id')
+                 ->from($master_table)
+                 ->where('staff_id', $worker_id)
+                 ->where('start_date', $start_date)
+@@ -231,15 +271,26 @@ class Field_staff extends AdminController
+             $calculation['hourly_rate'] = round((float) $hourly_rate, 2);
+             $calculation['status']      = in_array($status, ['draft', 'approved', 'paid'], true) ? $status : 'draft';
+ 
+-            $payroll_records[] = $calculation;
++            if ($selected_cutoff_id > 0) {
++                $calculation['cutoff_id'] = $selected_cutoff_id;
++                $calculation['cutoff_code'] = (string) ($selected_cutoff['cutoff_code'] ?? '');
++                $payroll_records[] = $calculation;
++            } elseif ($this->field_staff_model->has_legacy_payroll_for_window($worker_id, $start_date, $end_date)) {
++                $legacy_rows[] = $calculation;
++            } else {
++                $payroll_records[] = $calculation;
++            }
+         }
+ 
+         $data['title'] = 'HR Master Payroll Summary';
+         $data['start_date'] = $start_date;
+         $data['end_date'] = $end_date;
+-        $data['payroll_records'] = $payroll_records;
+-        // Compatibility alias for the current payroll table renderer.
+-        $data['payroll_rows'] = $payroll_records;
++        $data['selected_cutoff_id'] = $selected_cutoff_id;
++        $data['selected_cutoff'] = $selected_cutoff;
++        $data['cutoff_options'] = $cutoff_options;
++        $data['legacy_rows'] = $legacy_rows;
++        $data['payroll_records'] = $selected_cutoff_id > 0 ? $this->field_staff_model->get_cutoff_payroll_rows($selected_cutoff_id, $start_date, $end_date) : $payroll_records;
++        $data['payroll_rows'] = $data['payroll_records'];
+ 
+         $this->load->view('payroll_report', $data);
+     }
+@@ -749,13 +800,24 @@ class Field_staff extends AdminController
+             ]);
+         }
+ 
+-        $start_date = $this->normalize_date(trim((string) $this->input->post('start_date', true)));
+-        $end_date = $this->normalize_date(trim((string) $this->input->post('end_date', true)));
++        $cutoff_id = (int) $this->input->post('cutoff_id', true);
++        $cutoff = $cutoff_id > 0 ? $this->field_staff_model->get_payroll_cutoff_by_id($cutoff_id) : null;
++        if ($cutoff_id <= 0 || !is_array($cutoff)) {
++            $this->respond_json([
++                'success' => false,
++                'message' => 'A valid payroll cutoff is required before applying a payrun.',
++            ]);
++        }
++
++        $group = trim((string) ($cutoff['payroll_group'] ?? 'default'));
++        $start_date = trim((string) ($cutoff['start_date'] ?? ''));
++        $end_date = trim((string) ($cutoff['end_date'] ?? ''));
++        $status = strtolower(trim((string) ($cutoff['status'] ?? 'open')));
+ 
+-        if ($start_date === null || $end_date === null) {
++        if ($start_date === '' || $end_date === '' || !in_array($status, ['open', 'under_review', 'approved'], true)) {
+             $this->respond_json([
+                 'success' => false,
+-                'message' => 'Start and end dates are required.',
++                'message' => 'Selected cutoff is not editable.',
+             ]);
+         }
+ 
+@@ -780,6 +842,13 @@ class Field_staff extends AdminController
+                 continue;
+             }
+ 
++            $payroll_profile = $this->field_staff_model->get_payroll_profile($staff_id);
++            $payroll_group = trim((string) ($payroll_profile['payroll_group'] ?? ''));
++            if ($payroll_group !== '' && $payroll_group !== $group) {
++                $failed_count++;
++                continue;
++            }
++
+             $regular_hours = isset($row['regular_hours']) ? (float) $row['regular_hours'] : 0.00;
+             $ot_hours = isset($row['overtime_hours']) ? (float) $row['overtime_hours'] : 0.00;
+             $base_rate = isset($row['base_hourly_rate']) ? (float) $row['base_hourly_rate'] : 0.00;
+@@ -791,15 +860,13 @@ class Field_staff extends AdminController
+             $nhip_ee = $nhip_base_gross * 0.03;
+             $nhip_er = $nhip_base_gross * 0.03;
+ 
+-            $allowance_due = isset($row['allowance_due']) ? (float) $row['allowance_due'] : 0.00;
+-            $vacation_pay = isset($row['vacation_pay']) ? (float) $row['vacation_pay'] : 0.00;
+             $net_salary = $gross_salary - ($nib_ee + $nhip_ee);
+ 
+-            $payroll_profile = $this->field_staff_model->get_payroll_profile($staff_id);
+             $payment_method = isset($payroll_profile['payment_method']) ? $payroll_profile['payment_method'] : 'online_transfer';
+ 
+             $payload = [
+                 'staff_id'      => $staff_id,
++                'cutoff_id'    => $cutoff_id,
+                 'start_date'    => $start_date,
+                 'end_date'      => $end_date,
+                 'regular_hours' => round($regular_hours, 2),
+@@ -820,8 +887,7 @@ class Field_staff extends AdminController
+                 ->select('id')
+                 ->from($master_table)
+                 ->where('staff_id', $staff_id)
+-                ->where('start_date', $start_date)
+-                ->where('end_date', $end_date)
++                ->where('cutoff_id', $cutoff_id)
+                 ->order_by('id', 'DESC')
+                 ->limit(1)
+                 ->get()
+@@ -925,42 +991,15 @@ class Field_staff extends AdminController
+      */
+     public function save_manager_supervisor_roles()
+     {
+-        if (!$this->is_admin_user()) {
+-            $this->respond_unauthorized_json();
+-        }
+-
+-        if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
+-            $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
+-        }
+-
+-        $raw_value = trim((string) $this->input->post('staff_ids', true));
+-        $staff_ids = [];
+-        if ($raw_value !== '') {
+-            foreach (preg_split('/[^0-9]+/', $raw_value) as $value) {
+-                if ($value !== '') {
+-                    $staff_ids[] = (int) $value;
+-                }
+-            }
+-        }
+-
+-        $saved = $this->field_staff_model->save_hr_payroll_staff_ids($staff_ids);
+-        if (!$saved) {
+-            $this->respond_json(['success' => false, 'message' => 'Staff allowlist could not be saved.']);
+-        }
+-
+-        $this->respond_json([
+-            'success' => true,
+-            'message' => 'Staff allowlist updated successfully.',
+-            'staff_ids' => $this->field_staff_model->get_hr_payroll_staff_ids(),
+-        ]);
++        $this->save_hr_payroll_staff_ids();
+     }
+ 
+     /**
+-     * Save explicit staff ID allowlist for Master Payroll HR and HR Management Workspace.
++     * Save explicit staff ID allowlist for HR settings and payroll controls.
+      */
+     public function save_hr_payroll_staff_ids()
+     {
+-        if (!$this->is_admin_user()) {
++        if (!$this->can_manage_hr_settings()) {
+             $this->respond_unauthorized_json();
+         }
+ 
+@@ -968,11 +1007,6 @@ class Field_staff extends AdminController
+             $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
+         }
+ 
+-        $master_pin = trim((string) $this->input->post('master_pin', true));
+-        if ($master_pin !== '0212') {
+-            $this->respond_json(['success' => false, 'message' => 'Master PIN is invalid.']);
+-        }
+-
+         $staff_ids = [];
+         $raw_value = $this->input->post('staff_ids', true);
+ 
+@@ -1001,11 +1035,45 @@ class Field_staff extends AdminController
+ 
+         $this->respond_json([
+             'success' => true,
+-            'message' => 'HR/payroll staff allowlist updated successfully.',
++            'message' => 'HR/pass payroll staff allowlist updated successfully.',
+             'staff_ids' => $this->field_staff_model->get_hr_payroll_staff_ids(),
+         ]);
+     }
+ 
++    public function save_payroll_cutoff()
++    {
++        if (!$this->can_manage_hr_settings()) {
++            $this->respond_unauthorized_json();
++        }
++
++        if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
++            $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
++        }
++
++        $data = [
++            'id' => (int) $this->input->post('id', true),
++            'cutoff_code' => trim((string) $this->input->post('cutoff_code', true)),
++            'payroll_group' => trim((string) $this->input->post('payroll_group', true)),
++            'start_date' => trim((string) $this->input->post('start_date', true)),
++            'end_date' => trim((string) $this->input->post('end_date', true)),
++            'payment_date' => trim((string) $this->input->post('payment_date', true)),
++            'status' => strtolower(trim((string) $this->input->post('status', true))),
++            'created_by' => $this->resolve_session_staff_id(),
++            'updated_by' => $this->resolve_session_staff_id(),
++        ];
++
++        $saved = $this->field_staff_model->save_payroll_cutoff($data, $data['updated_by']);
++        if (!$saved) {
++            $this->respond_json(['success' => false, 'message' => 'Payroll cutoff could not be saved. Ensure the dates are valid and do not overlap within the same payroll group.']);
++        }
++
++        $this->respond_json([
++            'success' => true,
++            'message' => 'Payroll cutoff saved successfully.',
++            'cutoff' => $this->field_staff_model->get_payroll_cutoffs(['payroll_group' => $data['payroll_group']]),
++        ]);
++    }
++
+     /**
+      * Save, approve, or settle weekly payroll records.
+      */
+@@ -1024,35 +1092,59 @@ class Field_staff extends AdminController
+             exit;
+         }
+ 
+-        $staff_id_input = (int) $this->input->post('staff_id', true);
+-        $start_input    = trim((string) $this->input->post('start_date', true));
+-        $end_input      = trim((string) $this->input->post('end_date', true));
+-        $status_input   = strtolower(trim((string) $this->input->post('status', true)));
++        $cutoff_id = (int) $this->input->post('cutoff_id', true);
++        $cutoff = $cutoff_id > 0 ? $this->field_staff_model->get_payroll_cutoff_by_id($cutoff_id) : null;
+ 
+-        $staff_id   = (int) $staff_id_input;
+-        $start_date = $this->normalize_date($start_input);
+-        $end_date   = $this->normalize_date($end_input);
+-        $status     = in_array($status_input, ['draft', 'approved', 'paid'], true) ? $status_input : 'draft';
++        if ($cutoff_id <= 0 || !is_array($cutoff)) {
++            header('Content-Type: application/json');
++            echo json_encode([
++                'success' => false,
++                'message' => 'A valid payroll cutoff is required before saving payroll.',
++            ]);
++            exit;
++        }
+ 
+-        if ($staff_id <= 0 || $start_date === null || $end_date === null) {
++        $cutoff_status = strtolower(trim((string) ($cutoff['status'] ?? 'open')));
++        $cutoff_group = trim((string) ($cutoff['payroll_group'] ?? 'default'));
++        $start_date = trim((string) ($cutoff['start_date'] ?? ''));
++        $end_date = trim((string) ($cutoff['end_date'] ?? ''));
++
++        if ($start_date === '' || $end_date === '' || !in_array($cutoff_status, ['open', 'under_review', 'approved'], true)) {
+             header('Content-Type: application/json');
+             echo json_encode([
+                 'success' => false,
+-                'message' => 'Required payroll fields are missing or invalid.',
++                'message' => 'Selected cutoff is not editable.',
+             ]);
+             exit;
+         }
+ 
+-        if ($start_date > $end_date) {
+-            $tmp        = $start_date;
+-            $start_date = $end_date;
+-            $end_date   = $tmp;
++        $staff_id_input = (int) $this->input->post('staff_id', true);
++        $staff_id = (int) $staff_id_input;
++        $status_input = strtolower(trim((string) $this->input->post('status', true)));
++        $status = in_array($status_input, ['draft', 'approved', 'paid'], true) ? $status_input : 'draft';
++
++        if ($staff_id <= 0) {
++            header('Content-Type: application/json');
++            echo json_encode([
++                'success' => false,
++                'message' => 'Required payroll fields are missing or invalid.',
++            ]);
++            exit;
+         }
+ 
+         $staff_row = $this->get_staff_row_by_id($staff_id);
+         $payroll_profile = $this->field_staff_model->get_payroll_profile($staff_id);
+-        $hourly_rate = $this->resolve_hourly_rate($staff_row);
++        $employee_group = trim((string) ($payroll_profile['payroll_group'] ?? ''));
++        if ($employee_group !== '' && $employee_group !== $cutoff_group) {
++            header('Content-Type: application/json');
++            echo json_encode([
++                'success' => false,
++                'message' => 'Employee does not belong to the selected payroll group.',
++            ]);
++            exit;
++        }
+ 
++        $hourly_rate = $this->resolve_hourly_rate($staff_row);
+         $baseline = $this->field_staff_model->calculate_weekly_payroll(
+             $staff_id,
+             $start_date,
+@@ -1104,6 +1196,7 @@ class Field_staff extends AdminController
+         $master_table = db_prefix() . 'fs_payroll_master';
+         $payload = [
+             'staff_id'      => $staff_id,
++            'cutoff_id'    => $cutoff_id,
+             'start_date'    => $start_date,
+             'end_date'      => $end_date,
+             'regular_hours' => round($regular_hours, 2),
+@@ -1122,17 +1215,26 @@ class Field_staff extends AdminController
+         $this->db->trans_begin();
+ 
+         $existing = $this->db
+-            ->select('id')
++            ->select('id, status')
+             ->from($master_table)
+             ->where('staff_id', $staff_id)
+-            ->where('start_date', $start_date)
+-            ->where('end_date', $end_date)
++            ->where('cutoff_id', $cutoff_id)
+             ->order_by('id', 'DESC')
+             ->limit(1)
+             ->get()
+             ->row_array();
+ 
+         if (!empty($existing) && isset($existing['id'])) {
++            $status_value = strtolower(trim((string) ($existing['status'] ?? 'draft')));
++            if (in_array($status_value, ['approved', 'paid'], true) && $status !== $status_value) {
++                $this->db->trans_rollback();
++                header('Content-Type: application/json');
++                echo json_encode([
++                    'success' => false,
++                    'message' => 'Approved or paid payroll cannot be silently overwritten for this cutoff.',
++                ]);
++                exit;
++            }
+             $payroll_id = (int) $existing['id'];
+             $this->db->where('id', $payroll_id);
+             $saved = (bool) $this->db->update($master_table, $payload);
+@@ -1486,6 +1588,13 @@ class Field_staff extends AdminController
+         }
+     }
+ 
++    private function enforce_manage_settings_access()
++    {
++        if (!$this->can_manage_hr_settings()) {
++            access_denied('field_staff');
++        }
++    }
++
+     private function enforce_project_assignment_access()
+     {
+         if (!$this->can_access_project_assignment_tab()) {
+@@ -1528,21 +1637,33 @@ class Field_staff extends AdminController
+         }
+     }
+ 
++    private function can_manage_hr_settings()
++    {
++        if ($this->is_admin_user()) {
++            return true;
++        }
++
++        if (function_exists('has_permission') && has_permission('field_staff', '', 'manage_settings')) {
++            return true;
++        }
++
++        $staff_id = $this->resolve_session_staff_id();
++        if ($staff_id <= 0) {
++            return false;
++        }
++
++        $allowed_staff_ids = $this->field_staff_model->get_hr_payroll_staff_ids();
++        return !empty($allowed_staff_ids) && in_array($staff_id, $allowed_staff_ids, true);
++    }
++
+     private function can_access_hr_workspace()
+     {
+-        return $this->can_access_hr_payroll_workspace();
++        return $this->can_manage_hr_settings();
+     }
+ 
+     private function can_access_hr_payroll_workspace()
+     {
+-        $allowed_staff_ids = $this->field_staff_model->get_hr_payroll_staff_ids();
+-
+-        // Bootstrap safety: allow admins until an explicit whitelist is configured.
+-        if (empty($allowed_staff_ids)) {
+-            return $this->is_admin_user();
+-        }
+-
+-        return $this->is_hr_payroll_allowed_staff();
++        return $this->can_manage_hr_settings();
+     }
+ 
+     private function can_access_pay_setup_tab()
+@@ -1600,7 +1721,7 @@ class Field_staff extends AdminController
+ 
+     private function is_manager_or_supervisor()
+     {
+-        return $this->is_hr_payroll_allowed_staff();
++        return $this->can_manage_hr_settings();
+     }
+ 
+     private function resolve_default_hr_tab($can_manage_pay_setup, $can_manage_operations, $can_manage_reporting, $can_manage_project_assignment)
+@@ -1665,6 +1786,26 @@ class Field_staff extends AdminController
+         $leaves_table = $prefix . 'fs_leaves';
+         $project_assignments_table = $prefix . 'fs_project_assignments';
+         $settings_table = $prefix . 'fs_settings';
++        $cutoffs_table = $prefix . 'fs_payroll_cutoffs';
++
++        $this->ensure_table($cutoffs_table, "CREATE TABLE `{$cutoffs_table}` (
++            `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
++            `cutoff_code` VARCHAR(60) NOT NULL,
++            `payroll_group` VARCHAR(80) NOT NULL DEFAULT 'default',
++            `start_date` DATE NOT NULL,
++            `end_date` DATE NOT NULL,
++            `payment_date` DATE NOT NULL,
++            `status` ENUM('open','under_review','approved','closed') NOT NULL DEFAULT 'open',
++            `created_by` INT UNSIGNED NULL,
++            `updated_by` INT UNSIGNED NULL,
++            `created_at` DATETIME NOT NULL,
++            `updated_at` DATETIME NOT NULL,
++            PRIMARY KEY (`id`),
++            UNIQUE KEY `uq_fs_payroll_cutoffs_code` (`cutoff_code`),
++            KEY `idx_fs_payroll_cutoffs_group` (`payroll_group`),
++            KEY `idx_fs_payroll_cutoffs_dates` (`start_date`,`end_date`),
++            KEY `idx_fs_payroll_cutoffs_status` (`status`)
++        ) ENGINE=InnoDB;");
+ 
+         $this->ensure_table($profile_table, "CREATE TABLE `{$profile_table}` (
+             `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+@@ -1755,6 +1896,7 @@ class Field_staff extends AdminController
+         $this->ensure_column($profile_table, 'vacation_pay', 'DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `employee_nhip_rate`');
+         $this->ensure_column($profile_table, 'outstanding_loan', 'DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `vacation_pay`');
+         $this->ensure_column($profile_table, 'loan_repayment', 'DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `outstanding_loan`');
++        $this->ensure_column($master_table, 'cutoff_id', 'INT UNSIGNED NULL AFTER `end_date`');
+     }
+ 
+     private function ensure_table($table_name, $create_sql)
+diff --git a/field_staff.php b/field_staff.php
+index 791e745..70ec0f6 100644
+--- a/field_staff.php
++++ b/field_staff.php
+@@ -64,6 +64,7 @@ if (function_exists('register_activation_hook')) {
+ if (function_exists('hooks')) {
+     hooks()->add_action('admin_init', 'field_staff_init_menu_items');
+     hooks()->add_action('admin_init', 'field_staff_register_capabilities');
++    hooks()->add_action('admin_init', 'field_staff_run_pending_migrations');
+     hooks()->add_action('app_admin_head', 'field_staff_inject_assets');
+ }
+ 
+@@ -103,24 +104,23 @@ function field_staff_register_capabilities()
+         'view'     => 'View All Global Staff Attendance / Supervisor Access',
+         'edit'     => 'Edit/Modify Attendance Records',
+         'create'   => 'Manually Log Attendance',
++        'manage_settings' => 'Manage HR Settings and Payroll Controls',
+     ]);
+ }
+ 
+-function field_staff_can_manage_hr_workspace()
+-{
+-    return field_staff_can_access_hr_payroll_workspace();
+-}
+-
+-function field_staff_can_access_hr_payroll_workspace()
++function field_staff_can_manage_settings()
+ {
+-    $allowed_staff_ids = field_staff_get_hr_payroll_staff_ids();
++    if (function_exists('is_admin') && (bool) is_admin()) {
++        return true;
++    }
+ 
+-    // Bootstrap safety: allow admins until an explicit whitelist is configured.
+-    if (empty($allowed_staff_ids)) {
+-        return function_exists('is_admin') ? (bool) is_admin() : false;
++    if (function_exists('has_permission') && has_permission(FS_MODULE_NAME, '', 'manage_settings')) {
++        return true;
+     }
+ 
++    $allowed_staff_ids = field_staff_get_hr_payroll_staff_ids();
+     $staff_id = 0;
++
+     if (function_exists('get_staff_user_id')) {
+         $staff_id = (int) get_staff_user_id();
+     }
+@@ -136,56 +136,53 @@ function field_staff_can_access_hr_payroll_workspace()
+         return false;
+     }
+ 
+-    return in_array($staff_id, $allowed_staff_ids, true);
++    return !empty($allowed_staff_ids) && in_array($staff_id, $allowed_staff_ids, true);
+ }
+ 
+-function field_staff_is_manager_or_supervisor()
++function field_staff_can_manage_hr_workspace()
+ {
+-    if (!function_exists('get_instance') || !function_exists('db_prefix')) {
+-        return false;
+-    }
++    return field_staff_can_manage_settings();
++}
+ 
+-    $CI = &get_instance();
+-    if (!$CI || !isset($CI->db)) {
+-        return false;
++function field_staff_can_access_hr_payroll_workspace()
++{
++    if (field_staff_can_manage_settings()) {
++        return true;
+     }
+ 
++    $allowed_staff_ids = field_staff_get_hr_payroll_staff_ids();
+     $staff_id = 0;
+     if (function_exists('get_staff_user_id')) {
+         $staff_id = (int) get_staff_user_id();
+     }
+ 
+-    if ($staff_id <= 0 && isset($CI->session)) {
+-        $staff_id = (int) $CI->session->userdata('staff_user_id');
++    if ($staff_id <= 0 && function_exists('get_instance')) {
++        $CI = &get_instance();
++        if ($CI && isset($CI->session)) {
++            $staff_id = (int) $CI->session->userdata('staff_user_id');
++        }
+     }
+ 
+     if ($staff_id <= 0) {
+         return false;
+     }
+ 
+-    $staff_table = db_prefix() . 'staff';
+-    if (!$CI->db->table_exists($staff_table)) {
+-        return false;
+-    }
+-
+-    $staff_key = $CI->db->field_exists('staffid', $staff_table) ? 'staffid' : 'id';
+-    $staff_row = $CI->db->from($staff_table)->where($staff_key, $staff_id)->limit(1)->get()->row_array();
+-    if (!is_array($staff_row)) {
+-        return false;
+-    }
+-
+-    $allowed_role_ids = field_staff_get_manager_supervisor_role_ids();
+-    if (empty($allowed_role_ids) || !isset($staff_row['roleid'])) {
+-        return false;
+-    }
++    return !empty($allowed_staff_ids) && in_array($staff_id, $allowed_staff_ids, true);
++}
+ 
+-    return in_array((int) $staff_row['roleid'], $allowed_role_ids, true);
++function field_staff_is_manager_or_supervisor()
++{
++    return field_staff_can_manage_settings();
+ }
+ 
+ function field_staff_get_manager_supervisor_role_ids()
+ {
+-    $allowed_role_ids = [];
++    $allowed_staff_ids = field_staff_get_hr_payroll_staff_ids();
++    if (!empty($allowed_staff_ids)) {
++        return $allowed_staff_ids;
++    }
+ 
++    $legacy_role_ids = [];
+     if (function_exists('get_instance') && function_exists('db_prefix')) {
+         $CI = &get_instance();
+         if ($CI && isset($CI->db)) {
+@@ -203,7 +200,7 @@ function field_staff_get_manager_supervisor_role_ids()
+                 if ($raw_value !== '') {
+                     foreach (preg_split('/[^0-9]+/', $raw_value) as $value) {
+                         if ($value !== '') {
+-                            $allowed_role_ids[] = (int) $value;
++                            $legacy_role_ids[] = (int) $value;
+                         }
+                     }
+                 }
+@@ -211,15 +208,13 @@ function field_staff_get_manager_supervisor_role_ids()
+         }
+     }
+ 
+-    if (empty($allowed_role_ids) && defined('FS_MANAGER_SUPERVISOR_ROLE_IDS') && is_array(FS_MANAGER_SUPERVISOR_ROLE_IDS)) {
+-        $allowed_role_ids = array_map('intval', FS_MANAGER_SUPERVISOR_ROLE_IDS);
++    if (empty($legacy_role_ids) && defined('FS_MANAGER_SUPERVISOR_ROLE_IDS') && is_array(FS_MANAGER_SUPERVISOR_ROLE_IDS)) {
++        $legacy_role_ids = array_map('intval', FS_MANAGER_SUPERVISOR_ROLE_IDS);
+     }
+ 
+-    $allowed_role_ids = array_values(array_unique(array_filter($allowed_role_ids, function ($value) {
++    return array_values(array_unique(array_filter(array_map('intval', $legacy_role_ids), function ($value) {
+         return (int) $value > 0;
+     })));
+-
+-    return $allowed_role_ids;
+ }
+ 
+ function field_staff_get_hr_payroll_staff_ids()
+@@ -262,6 +257,110 @@ function field_staff_get_hr_payroll_staff_ids()
+     return $allowed_staff_ids;
+ }
+ 
++function field_staff_run_pending_migrations()
++{
++    if (!function_exists('get_instance') || !function_exists('db_prefix')) {
++        return;
++    }
++
++    $CI = &get_instance();
++    if (!$CI || !isset($CI->db)) {
++        return;
++    }
++
++    $prefix = db_prefix();
++    $migration_table = $prefix . 'fs_schema_migrations';
++    $payroll_master_table = $prefix . 'fs_payroll_master';
++    $payroll_profiles_table = $prefix . 'fs_payroll_profiles';
++    $cutoff_table = $prefix . 'fs_payroll_cutoffs';
++
++    if (!$CI->db->table_exists($migration_table)) {
++        $CI->db->query("CREATE TABLE `{$migration_table}` (
++            `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
++            `migration_name` VARCHAR(191) NOT NULL,
++            `applied_at` DATETIME NOT NULL,
++            PRIMARY KEY (`id`),
++            UNIQUE KEY `uq_fs_schema_migrations_name` (`migration_name`)
++        ) ENGINE=InnoDB;");
++    }
++
++    $migrations = [
++        '2026_10_13_payroll_cutoff_foundation' => [
++            "CREATE TABLE IF NOT EXISTS `{$cutoff_table}` (
++                `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
++                `cutoff_code` VARCHAR(60) NOT NULL,
++                `payroll_group` VARCHAR(80) NOT NULL DEFAULT 'default',
++                `start_date` DATE NOT NULL,
++                `end_date` DATE NOT NULL,
++                `payment_date` DATE NOT NULL,
++                `status` ENUM('open','under_review','approved','closed') NOT NULL DEFAULT 'open',
++                `created_by` INT UNSIGNED NULL,
++                `updated_by` INT UNSIGNED NULL,
++                `created_at` DATETIME NOT NULL,
++                `updated_at` DATETIME NOT NULL,
++                PRIMARY KEY (`id`),
++                UNIQUE KEY `uq_fs_payroll_cutoffs_code` (`cutoff_code`),
++                KEY `idx_fs_payroll_cutoffs_group` (`payroll_group`),
++                KEY `idx_fs_payroll_cutoffs_dates` (`start_date`,`end_date`),
++                KEY `idx_fs_payroll_cutoffs_status` (`status`)
++            ) ENGINE=InnoDB;",
++            "ALTER TABLE `{$payroll_master_table}` ADD COLUMN IF NOT EXISTS `cutoff_id` INT UNSIGNED NULL AFTER `end_date`",
++        ],
++    ];
++
++    foreach ($migrations as $migration_name => $statement_set) {
++        $existing = $CI->db
++            ->select('id')
++            ->from($migration_table)
++            ->where('migration_name', $migration_name)
++            ->limit(1)
++            ->get()
++            ->row_array();
++
++        if (is_array($existing) && !empty($existing)) {
++            continue;
++        }
++
++        foreach ($statement_set as $statement) {
++            if (trim((string) $statement) === '') {
++                continue;
++            }
++
++            if (stripos($statement, 'CREATE TABLE') !== false) {
++                $table_name = preg_replace('/^.*`([^`]+)`.*$/', '$1', $statement);
++                if ($table_name !== $statement && $CI->db->table_exists($table_name)) {
++                    continue;
++                }
++            }
++
++            if (stripos($statement, 'ALTER TABLE') !== false) {
++                if (preg_match('/ADD COLUMN IF NOT EXISTS `?([A-Za-z0-9_]+)`?/i', $statement, $match)) {
++                    $table_name = preg_match('/ALTER TABLE `?([^` ]+)`?/i', $statement, $table_match) ? $table_match[1] : '';
++                    $column_name = $match[1];
++                    if ($table_name !== '' && $CI->db->table_exists($table_name) && $CI->db->field_exists($column_name, $table_name)) {
++                        continue;
++                    }
++                }
++            }
++
++            try {
++                $CI->db->query($statement);
++            } catch (Throwable $e) {
++                if (stripos((string) $e->getMessage(), 'already exists') !== false || stripos((string) $e->getMessage(), 'Duplicate') !== false || stripos((string) $e->getMessage(), 'exists') !== false) {
++                    continue;
++                }
++
++                throw $e;
++            }
++        }
++
++        $CI->db->insert($migration_table, [
++            'migration_name' => $migration_name,
++            'applied_at' => date('Y-m-d H:i:s'),
++        ]);
++    }
++}
++
+ function field_staff_init_menu_items()
+ {
+     if (!function_exists('get_instance')) {
+@@ -310,6 +409,14 @@ function field_staff_init_menu_items()
+             ]);
+         }
+ 
++        if (field_staff_can_manage_settings()) {
++            $CI->app_menu->add_sidebar_children_item(FS_MODULE_NAME, [
++                'slug' => 'field_staff_hr_settings',
++                'name' => 'HR Settings',
++                'href' => field_staff_admin_url('field_staff/hr_settings'),
++            ]);
++        }
++
+         if (field_staff_can_manage_hr_workspace()) {
+             $CI->app_menu->add_sidebar_children_item(FS_MODULE_NAME, [
+                 'slug' => 'field_staff_hr_management',
+@@ -342,6 +449,13 @@ function field_staff_init_menu_items()
+                 ]);
+             }
+ 
++            if (field_staff_can_manage_settings()) {
++                add_submenu_item(FS_MODULE_NAME, [
++                    'name' => 'HR Settings',
++                    'href' => field_staff_admin_url('field_staff/hr_settings'),
++                ]);
++            }
++
+             if (field_staff_can_manage_hr_workspace()) {
+                 add_submenu_item(FS_MODULE_NAME, [
+                     'name' => 'HR Management Workspace',
+diff --git a/install.php b/install.php
+index b4779ea..2341e06 100644
+--- a/install.php
++++ b/install.php
+@@ -124,6 +124,7 @@ $attendanceTable = $prefix . 'fs_attendance';
+ $attributesTable = $prefix . 'fs_payroll_attributes';
+ $valuesTable     = $prefix . 'fs_payroll_values';
+ $masterTable     = $prefix . 'fs_payroll_master';
++$cutoffTable     = $prefix . 'fs_payroll_cutoffs';
+ $profilesTable   = $prefix . 'fs_payroll_profiles';
+ $departmentsTable = $prefix . 'fs_departments';
+ $shiftsTable = $prefix . 'fs_shifts';
+diff --git a/models/Field_staff_model.php b/models/Field_staff_model.php
+index 4559f27..64a8985 100644
+--- a/models/Field_staff_model.php
++++ b/models/Field_staff_model.php
+@@ -896,6 +896,288 @@ class Field_staff_model extends App_Model
+         ]);
+     }
+ 
++    public function get_payroll_cutoff_by_id($cutoff_id)
++    {
++        $cutoff_id = (int) $cutoff_id;
++        if ($cutoff_id <= 0) {
++            return null;
++        }
++
++        $table = db_prefix() . 'fs_payroll_cutoffs';
++        if (!$this->db->table_exists($table)) {
++            return null;
++        }
++
++        $row = $this->db
++            ->from($table)
++            ->where('id', $cutoff_id)
++            ->limit(1)
++            ->get()
++            ->row_array();
++
++        if (!is_array($row)) {
++            return null;
++        }
++
++        $row['payroll_count'] = (int) $this->count_payroll_records_for_cutoff($cutoff_id);
++        return $row;
++    }
++
++    public function get_payroll_cutoffs(array $filters = [])
++    {
++        $table = db_prefix() . 'fs_payroll_cutoffs';
++        if (!$this->db->table_exists($table)) {
++            return [];
++        }
++
++        $query = $this->db->from($table);
++
++        if (!empty($filters['payroll_group'])) {
++            $query->where('payroll_group', trim((string) $filters['payroll_group']));
++        }
++
++        if (!empty($filters['status'])) {
++            $query->where('status', strtolower(trim((string) $filters['status'])));
++        }
++
++        $rows = $query
++            ->order_by('start_date', 'DESC')
++            ->order_by('id', 'DESC')
++            ->get()
++            ->result_array();
++
++        foreach ($rows as &$row) {
++            $row['payroll_count'] = (int) $this->count_payroll_records_for_cutoff((int) ($row['id'] ?? 0));
++        }
++        unset($row);
++
++        return $rows;
++    }
++
++    public function save_payroll_cutoff(array $data, $user_staff_id = 0)
++    {
++        $table = db_prefix() . 'fs_payroll_cutoffs';
++        if (!$this->db->table_exists($table)) {
++            return false;
++        }
++
++        $cutoff_id = (int) ($data['id'] ?? 0);
++        $group = trim((string) ($data['payroll_group'] ?? 'default'));
++        $group = $group !== '' ? $group : 'default';
++        $start_date = trim((string) ($data['start_date'] ?? ''));
++        $end_date = trim((string) ($data['end_date'] ?? ''));
++        $payment_date = trim((string) ($data['payment_date'] ?? ''));
++        $status = strtolower(trim((string) ($data['status'] ?? 'open')));
++        $status = in_array($status, ['open', 'under_review', 'approved', 'closed'], true) ? $status : 'open';
++
++        if ($start_date === '' || $end_date === '' || $payment_date === '') {
++            return false;
++        }
++
++        if ($start_date > $end_date) {
++            $tmp = $start_date;
++            $start_date = $end_date;
++            $end_date = $tmp;
++        }
++
++        $existing = [];
++        if ($cutoff_id > 0) {
++            $existing = $this->db
++                ->from($table)
++                ->where('id', $cutoff_id)
++                ->limit(1)
++                ->get()
++                ->row_array();
++        }
++
++        if (!empty($existing)) {
++            $old_status = strtolower((string) ($existing['status'] ?? 'open'));
++            $allowed_transitions = [
++                'open' => ['under_review', 'closed'],
++                'under_review' => ['approved', 'closed'],
++                'approved' => ['closed'],
++                'closed' => [],
++            ];
++
++            if ($old_status !== $status && !in_array($status, $allowed_transitions[$old_status] ?? [], true)) {
++                return false;
++            }
++
++            $payroll_count = (int) $this->count_payroll_records_for_cutoff($cutoff_id);
++            if ($payroll_count > 0) {
++                if ((string) ($existing['payroll_group'] ?? '') !== $group || (string) ($existing['start_date'] ?? '') !== $start_date || (string) ($existing['end_date'] ?? '') !== $end_date) {
++                    return false;
++                }
++            }
++        }
++
++        $overlap_check = $this->db
++            ->select('id')
++            ->from($table)
++            ->where('payroll_group', $group)
++            ->where('id !=', $cutoff_id)
++            ->group_start()
++            ->where('start_date <=', $end_date)
++            ->where('end_date >=', $start_date)
++            ->group_end()
++            ->limit(1)
++            ->get()
++            ->row_array();
++
++        if (is_array($overlap_check) && !empty($overlap_check)) {
++            return false;
++        }
++
++        $cutoff_code = trim((string) ($data['cutoff_code'] ?? ''));
++        if ($cutoff_code === '') {
++            $cutoff_code = $this->generate_cutoff_code($group, $start_date, $end_date);
++        }
++
++        $payload = [
++            'cutoff_code' => $cutoff_code,
++            'payroll_group' => $group,
++            'start_date' => $start_date,
++            'end_date' => $end_date,
++            'payment_date' => $payment_date,
++            'status' => $status,
++            'updated_by' => (int) ($user_staff_id > 0 ? $user_staff_id : (int) ($data['updated_by'] ?? 0)),
++            'updated_at' => date('Y-m-d H:i:s'),
++        ];
++
++        if ($cutoff_id > 0) {
++            $this->db->where('id', $cutoff_id);
++            return (bool) $this->db->update($table, $payload);
++        }
++
++        $payload['created_by'] = (int) ($user_staff_id > 0 ? $user_staff_id : (int) ($data['created_by'] ?? 0));
++        $payload['created_at'] = date('Y-m-d H:i:s');
++        return (bool) $this->db->insert($table, $payload);
++    }
++
++    public function get_cutoff_payroll_rows($cutoff_id, $start_date = '', $end_date = '')
++    {
++        $cutoff_id = (int) $cutoff_id;
++        if ($cutoff_id <= 0) {
++            return [];
++        }
++
++        $table = db_prefix() . 'fs_payroll_master';
++        if (!$this->db->table_exists($table)) {
++            return [];
++        }
++
++        $query = $this->db
++            ->from($table)
++            ->where('cutoff_id', $cutoff_id);
++
++        if ($start_date !== '') {
++            $query->where('start_date >=', $start_date);
++        }
++
++        if ($end_date !== '') {
++            $query->where('end_date <=', $end_date);
++        }
++
++        $rows = $query
++            ->order_by('end_date', 'DESC')
++            ->order_by('id', 'DESC')
++            ->get()
++            ->result_array();
++
++        foreach ($rows as &$row) {
++            $row['worker_name'] = $this->resolve_staff_name($this->get_staff_row((int) ($row['staff_id'] ?? 0)), (int) ($row['staff_id'] ?? 0));
++        }
++        unset($row);
++
++        return $rows;
++    }
++
++    public function get_legacy_payroll_rows($start_date = '', $end_date = '')
++    {
++        $table = db_prefix() . 'fs_payroll_master';
++        if (!$this->db->table_exists($table) || !$this->db->field_exists('cutoff_id', $table)) {
++            return [];
++        }
++
++        $query = $this->db->from($table)->where('cutoff_id IS NULL', null, false);
++
++        if ($start_date !== '') {
++            $query->where('start_date >=', $start_date);
++        }
++
++        if ($end_date !== '') {
++            $query->where('end_date <=', $end_date);
++        }
++
++        $rows = $query
++            ->order_by('end_date', 'DESC')
++            ->order_by('id', 'DESC')
++            ->get()
++            ->result_array();
++
++        foreach ($rows as &$row) {
++            $row['worker_name'] = $this->resolve_staff_name($this->get_staff_row((int) ($row['staff_id'] ?? 0)), (int) ($row['staff_id'] ?? 0));
++            $row['legacy_history'] = true;
++        }
++        unset($row);
++
++        return $rows;
++    }
++
++    public function has_legacy_payroll_for_window($staff_id, $start_date, $end_date)
++    {
++        $table = db_prefix() . 'fs_payroll_master';
++        if (!$this->db->table_exists($table) || !$this->db->field_exists('cutoff_id', $table)) {
++            return false;
++        }
++
++        $staff_id = (int) $staff_id;
++        if ($staff_id <= 0) {
++            return false;
++        }
++
++        return $this->db
++            ->from($table)
++            ->where('staff_id', $staff_id)
++            ->where('cutoff_id IS NULL', null, false)
++            ->where('start_date >=', $start_date)
++            ->where('end_date <=', $end_date)
++            ->limit(1)
++            ->count_all_results() > 0;
++    }
++
++    public function count_payroll_records_for_cutoff($cutoff_id)
++    {
++        $cutoff_id = (int) $cutoff_id;
++        if ($cutoff_id <= 0) {
++            return 0;
++        }
++
++        $table = db_prefix() . 'fs_payroll_master';
++        if (!$this->db->table_exists($table) || !$this->db->field_exists('cutoff_id', $table)) {
++            return 0;
++        }
++
++        return (int) $this->db
++            ->from($table)
++            ->where('cutoff_id', $cutoff_id)
++            ->count_all_results();
++    }
++
++    public function generate_cutoff_code($group, $start_date, $end_date)
++    {
++        $group = preg_replace('/[^A-Za-z0-9-]/', '-', trim((string) $group));
++        $group = trim($group, '-');
++        if ($group === '') {
++            $group = 'DEFAULT';
++        }
++
++        $suffix = date('Ymd', strtotime($start_date)) . '-' . date('Ymd', strtotime($end_date));
++        $unique = strtoupper(substr($group, 0, 16));
++
++        return $unique . '-' . $suffix;
++    }
++
+     /**
+      * Get configured staff IDs allowed into supervisor-level workspaces.
+      *
+@@ -1412,9 +1694,17 @@ class Field_staff_model extends App_Model
+ 
+         $payload = [
+             'staff_id'             => $staff_id,
++            'department_id'        => isset($normalized['department_id']) ? (int) $normalized['department_id'] : 0,
++            'default_shift_id'     => isset($normalized['default_shift_id']) ? (int) $normalized['default_shift_id'] : 0,
+             'base_hourly_rate'     => round((float) $normalized['base_hourly_rate'], 2),
+             'overtime_multiplier'  => round((float) $normalized['overtime_multiplier'], 2),
+             'daily_field_allowance' => round((float) $normalized['daily_field_allowance'], 2),
++            'employee_nib_rate'    => round((float) $normalized['employee_nib_rate'], 2),
++            'employer_nib_rate'    => round((float) $normalized['employer_nib_rate'], 2),
++            'employee_nhip_rate'   => round((float) $normalized['employee_nhip_rate'], 2),
++            'vacation_pay'         => round((float) $normalized['vacation_pay'], 2),
++            'outstanding_loan'     => round((float) $normalized['outstanding_loan'], 2),
++            'loan_repayment'       => round((float) $normalized['loan_repayment'], 2),
+             'payment_method'       => $normalized['payment_method'],
+             'bank_account_info'    => $normalized['bank_account_info'],
+             'updated_at'           => $timestamp,
+diff --git a/views/hr_management.php b/views/hr_management.php
+index 7bf8194..5be9734 100644
+--- a/views/hr_management.php
++++ b/views/hr_management.php
+@@ -455,30 +455,12 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] :
+                                             <h5 class="panel-title no-margin"><i class="fa fa-users"></i> Allowed Staff Members for Payroll Admin</h5>
+                                         </div>
+                                         <div class="panel-body">
+-                                            <div class="alert alert-warning">
+-                                                <strong><i class="fa fa-lock"></i> Master PIN Required:</strong> Enter the master code to unlock editing for Payroll Admin users.
+-                                            </div>
+-                                            <div class="row">
+-                                                <div class="col-md-6 col-sm-8 col-xs-12">
+-                                                    <div class="input-group">
+-                                                        <input type="password" id="payroll-admin-master-pin" class="form-control" placeholder="Enter master PIN">
+-                                                        <span class="input-group-btn">
+-                                                            <button type="button" id="unlock-payroll-admin-btn" class="btn btn-warning">Unlock Edit</button>
+-                                                        </span>
+-                                                    </div>
+-                                                    <p class="text-muted mtop5 mbot0">Editing is locked until valid PIN is entered.</p>
+-                                                </div>
+-                                                <div class="col-md-6 col-sm-4 col-xs-12 text-right">
+-                                                    <span id="payroll-admin-pin-status" class="label label-default">Locked</span>
+-                                                </div>
+-                                            </div>
+-
+                                             <p class="text-muted"><i class="fa fa-info-circle"></i> Select which staff members can access payroll management, reporting, and HR workspace. Leave empty to restrict access to super admin only.</p>
+                                             <p class="text-info mtop10"><strong><i class="fa fa-user-circle"></i> Your Staff ID:</strong> <?php echo $current_user_staff_id; ?></p>
+ 
+                                             <div class="form-group mtop15">
+                                                 <label for="hr-payroll-staff-ids" class="control-label"><i class="fa fa-check-circle"></i> Payroll Admin Users</label>
+-                                                <select id="hr-payroll-staff-ids" class="form-control selectpicker" data-live-search="true" data-width="100%" multiple data-actions-box="true" disabled>
++                                                <select id="hr-payroll-staff-ids" class="form-control selectpicker" data-live-search="true" data-width="100%" multiple data-actions-box="true">
+                                                     <?php foreach ($staff_directory as $staff) { ?>
+                                                         <?php $sid = (int) ($staff['staff_id'] ?? 0);
+                                                         if ($sid <= 0) continue; ?>
+@@ -490,7 +472,7 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] :
+                                             </div>
+ 
+                                             <div class="mtop25">
+-                                                <button type="button" id="save-hr-payroll-staff-allowlist-btn" class="btn btn-primary btn-lg" disabled>
++                                                <button type="button" id="save-hr-payroll-staff-allowlist-btn" class="btn btn-primary btn-lg">
+                                                     <i class="fa fa-save"></i> Save Allowed Staff Members
+                                                 </button>
+                                             </div>
+@@ -1171,9 +1153,7 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] :
+             var saveHolidayUrl = <?php echo json_encode(field_staff_admin_url('field_staff/save_holiday')); ?>;
+             var deleteHolidayUrl = <?php echo json_encode(field_staff_admin_url('field_staff/delete_holiday')); ?>;
+             var getHolidaysUrl = <?php echo json_encode(field_staff_admin_url('field_staff/get_holidays')); ?>;
+-            var payrollAdminMasterPin = '0212';
+-            var payrollAdminUnlocked = false;
+-            var currentPayrunStatement = null;;
++            var currentPayrunStatement = null;
+ 
+             function notify(type, message) {
+                 if (typeof alert_float === 'function') {
+@@ -1615,35 +1595,10 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] :
+                 });
+             });
+ 
+-            $('#unlock-payroll-admin-btn').click(function() {
+-                var enteredPin = ($('#payroll-admin-master-pin').val() || '').trim();
+-                if (enteredPin !== payrollAdminMasterPin) {
+-                    payrollAdminUnlocked = false;
+-                    $('#payroll-admin-pin-status').removeClass('label-success').addClass('label-danger').text('Invalid PIN');
+-                    notify('danger', 'Invalid master PIN.');
+-                    return;
+-                }
+-
+-                payrollAdminUnlocked = true;
+-                $('#payroll-admin-pin-status').removeClass('label-default label-danger').addClass('label-success').text('Unlocked');
+-                $('#hr-payroll-staff-ids').prop('disabled', false);
+-                $('#save-hr-payroll-staff-allowlist-btn').prop('disabled', false);
+-                if ($.fn.selectpicker) {
+-                    $('#hr-payroll-staff-ids').selectpicker('refresh');
+-                }
+-                notify('success', 'Payroll Admin editing unlocked.');
+-            });
+-
+             $('#save-hr-payroll-staff-allowlist-btn').click(function() {
+-                if (!payrollAdminUnlocked) {
+-                    notify('danger', 'Enter the master PIN to unlock Payroll Admin editing.');
+-                    return;
+-                }
+-
+                 var staffIds = $('#hr-payroll-staff-ids').val() || [];
+ 
+                 $.post(saveHrPayrollStaffAllowlistUrl, appendCsrf({
+-                    master_pin: ($('#payroll-admin-master-pin').val() || '').trim(),
+                     staff_ids: staffIds
+                 }), function(response) {
+                     if (response && response.success) {
+diff --git a/views/payroll_report.php b/views/payroll_report.php
+index e4af59b..b0c2a60 100644
+--- a/views/payroll_report.php
++++ b/views/payroll_report.php
+@@ -11,6 +11,10 @@ if (!function_exists('html_escape')) {
+ $start_date = isset($start_date) ? html_escape($start_date) : date('Y-m-d', strtotime('monday this week'));
+ $end_date = isset($end_date) ? html_escape($end_date) : date('Y-m-d', strtotime('sunday this week'));
+ $records = isset($payroll_records) ? $payroll_records : (isset($payroll_rows) ? $payroll_rows : []);
++$legacy_rows = isset($legacy_rows) && is_array($legacy_rows) ? $legacy_rows : [];
++$cutoff_options = isset($cutoff_options) && is_array($cutoff_options) ? $cutoff_options : [];
++$selected_cutoff_id = isset($selected_cutoff_id) ? (int) $selected_cutoff_id : 0;
++$selected_cutoff = isset($selected_cutoff) && is_array($selected_cutoff) ? $selected_cutoff : [];
+ 
+ $form_action = function_exists('current_url') ? current_url() : '';
+ if ($form_action === '' && isset($_SERVER['REQUEST_URI'])) {
+@@ -29,19 +33,34 @@ $title_text = isset($title) ? html_escape($title) : 'HR Master Payroll Summary';
+                         <p class="text-muted mtop5">Weekly payroll register and statutory reporting summary.</p>
+ 
+                         <form method="get" action="<?php echo html_escape($form_action); ?>" class="row mtop10">
+-                            <div class="col-md-4 col-sm-6 col-xs-12">
++                            <div class="col-md-3 col-sm-6 col-xs-12">
++                                <div class="form-group">
++                                    <label for="cutoff_id" class="control-label">Payroll Cutoff</label>
++                                    <select id="cutoff_id" name="cutoff_id" class="form-control" style="width: 100%;">
++                                        <option value="0" <?php echo $selected_cutoff_id <= 0 ? 'selected' : ''; ?>>Legacy / All</option>
++                                        <?php foreach ($cutoff_options as $cutoff_option) { ?>
++                                            <?php $cutoff_id_value = (int) ($cutoff_option['id'] ?? 0); ?>
++                                            <?php if ($cutoff_id_value <= 0) continue; ?>
++                                            <option value="<?php echo $cutoff_id_value; ?>" <?php echo $selected_cutoff_id === $cutoff_id_value ? 'selected' : ''; ?>>
++                                                <?php echo html_escape((string) ($cutoff_option['cutoff_code'] ?? '')) . ' — ' . html_escape((string) ($cutoff_option['start_date'] ?? '')) . ' to ' . html_escape((string) ($cutoff_option['end_date'] ?? '')); ?>
++                                            </option>
++                                        <?php } ?>
++                                    </select>
++                                </div>
++                            </div>
++                            <div class="col-md-3 col-sm-6 col-xs-12">
+                                 <div class="form-group">
+                                     <label for="start_date" class="control-label">Start Date</label>
+                                     <input type="date" class="form-control" id="start_date" name="start_date" value="<?php echo $start_date; ?>">
+                                 </div>
+                             </div>
+-                            <div class="col-md-4 col-sm-6 col-xs-12">
++                            <div class="col-md-3 col-sm-6 col-xs-12">
+                                 <div class="form-group">
+                                     <label for="end_date" class="control-label">End Date</label>
+                                     <input type="date" class="form-control" id="end_date" name="end_date" value="<?php echo $end_date; ?>">
+                                 </div>
+                             </div>
+-                            <div class="col-md-4 col-sm-12 col-xs-12">
++                            <div class="col-md-3 col-sm-12 col-xs-12">
+                                 <div class="form-group mtop25">
+                                     <button type="submit" class="btn btn-primary">Apply Period</button>
+                                     <a href="<?php echo html_escape($form_action); ?>" class="btn btn-default">Reset</a>
+@@ -49,6 +68,14 @@ $title_text = isset($title) ? html_escape($title) : 'HR Master Payroll Summary';
+                             </div>
+                         </form>
+ 
++                        <?php if ($selected_cutoff_id > 0 && !empty($selected_cutoff)) { ?>
++                            <div class="alert alert-info mtop10">
++                                <strong>Cutoff in view:</strong> <?php echo html_escape((string) ($selected_cutoff['cutoff_code'] ?? '')); ?>
++                                &nbsp;|&nbsp; <?php echo html_escape((string) ($selected_cutoff['start_date'] ?? '')); ?> to <?php echo html_escape((string) ($selected_cutoff['end_date'] ?? '')); ?>
++                                &nbsp;|&nbsp; Payment: <?php echo html_escape((string) ($selected_cutoff['payment_date'] ?? '')); ?>
++                            </div>
++                        <?php } ?>
++
+                         <div class="table-responsive mtop15">
+                             <table class="table table-striped table-hover dt-table">
+                                 <thead>
+@@ -133,6 +160,47 @@ $title_text = isset($title) ? html_escape($title) : 'HR Master Payroll Summary';
+                                 </tbody>
+                             </table>
+                         </div>
++
++                        <?php if (!empty($legacy_rows)) { ?>
++                            <div class="mtop25">
++                                <h4 class="no-margin">Legacy Payroll History</h4>
++                                <p class="text-muted">Unmapped payroll rows remain here until explicitly assigned to a cutoff.</p>
++                                <div class="table-responsive mtop10">
++                                    <table class="table table-striped table-hover">
++                                        <thead>
++                                            <tr>
++                                                <th>Worker Name</th>
++                                                <th>Start Date</th>
++                                                <th>End Date</th>
++                                                <th class="text-right">Gross</th>
++                                                <th class="text-right">Net</th>
++                                                <th class="text-center">Status</th>
++                                            </tr>
++                                        </thead>
++                                        <tbody>
++                                            <?php foreach ($legacy_rows as $legacy_row) { ?>
++                                                <?php
++                                                $legacy_name = is_array($legacy_row) ? ($legacy_row['worker_name'] ?? 'Unknown') : ($legacy_row->worker_name ?? 'Unknown');
++                                                $legacy_start = is_array($legacy_row) ? ($legacy_row['start_date'] ?? '') : ($legacy_row->start_date ?? '');
++                                                $legacy_end = is_array($legacy_row) ? ($legacy_row['end_date'] ?? '') : ($legacy_row->end_date ?? '');
++                                                $legacy_gross = is_array($legacy_row) ? ($legacy_row['gross_salary'] ?? 0) : ($legacy_row->gross_salary ?? 0);
++                                                $legacy_net = is_array($legacy_row) ? ($legacy_row['net_salary'] ?? 0) : ($legacy_row->net_salary ?? 0);
++                                                $legacy_status = is_array($legacy_row) ? ($legacy_row['status'] ?? 'draft') : ($legacy_row->status ?? 'draft');
++                                                ?>
++                                                <tr>
++                                                    <td><?php echo html_escape((string) $legacy_name); ?></td>
++                                                    <td><?php echo html_escape((string) $legacy_start); ?></td>
++                                                    <td><?php echo html_escape((string) $legacy_end); ?></td>
++                                                    <td class="text-right">$<?php echo number_format((float) $legacy_gross, 2); ?></td>
++                                                    <td class="text-right">$<?php echo number_format((float) $legacy_net, 2); ?></td>
++                                                    <td class="text-center"><span class="badge bg-secondary text-uppercase"><?php echo html_escape((string) $legacy_status); ?></span></td>
++                                                </tr>
++                                            <?php } ?>
++                                        </tbody>
++                                    </table>
++                                </div>
++                            </div>
++                        <?php } ?>
+                     </div>
+                 </div>
+             </div>

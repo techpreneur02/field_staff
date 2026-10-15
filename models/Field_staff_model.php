@@ -602,7 +602,7 @@ class Field_staff_model extends App_Model
         $query = $this->db
             ->select('id, staff_id, start_date, end_date, gross_salary, net_salary, payment_method, status, created_at')
             ->from($table)
-            ->where('status', 'issued')
+            ->where_in('status', ['paid', 'issued'])
             ->where('start_date >=', $start_date)
             ->where('end_date <=', $end_date)
             ->order_by('end_date', 'DESC')
@@ -894,6 +894,288 @@ class Field_staff_model extends App_Model
             'created_at' => $timestamp,
             'updated_at' => $timestamp,
         ]);
+    }
+
+    public function get_payroll_cutoff_by_id($cutoff_id)
+    {
+        $cutoff_id = (int) $cutoff_id;
+        if ($cutoff_id <= 0) {
+            return null;
+        }
+
+        $table = db_prefix() . 'fs_payroll_cutoffs';
+        if (!$this->db->table_exists($table)) {
+            return null;
+        }
+
+        $row = $this->db
+            ->from($table)
+            ->where('id', $cutoff_id)
+            ->limit(1)
+            ->get()
+            ->row_array();
+
+        if (!is_array($row)) {
+            return null;
+        }
+
+        $row['payroll_count'] = (int) $this->count_payroll_records_for_cutoff($cutoff_id);
+        return $row;
+    }
+
+    public function get_payroll_cutoffs(array $filters = [])
+    {
+        $table = db_prefix() . 'fs_payroll_cutoffs';
+        if (!$this->db->table_exists($table)) {
+            return [];
+        }
+
+        $query = $this->db->from($table);
+
+        if (!empty($filters['payroll_group'])) {
+            $query->where('payroll_group', trim((string) $filters['payroll_group']));
+        }
+
+        if (!empty($filters['status'])) {
+            $query->where('status', strtolower(trim((string) $filters['status'])));
+        }
+
+        $rows = $query
+            ->order_by('start_date', 'DESC')
+            ->order_by('id', 'DESC')
+            ->get()
+            ->result_array();
+
+        foreach ($rows as &$row) {
+            $row['payroll_count'] = (int) $this->count_payroll_records_for_cutoff((int) ($row['id'] ?? 0));
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    public function save_payroll_cutoff(array $data, $user_staff_id = 0)
+    {
+        $table = db_prefix() . 'fs_payroll_cutoffs';
+        if (!$this->db->table_exists($table)) {
+            return false;
+        }
+
+        $cutoff_id = (int) ($data['id'] ?? 0);
+        $group = trim((string) ($data['payroll_group'] ?? 'default'));
+        $group = $group !== '' ? $group : 'default';
+        $start_date = trim((string) ($data['start_date'] ?? ''));
+        $end_date = trim((string) ($data['end_date'] ?? ''));
+        $payment_date = trim((string) ($data['payment_date'] ?? ''));
+        $status = strtolower(trim((string) ($data['status'] ?? 'open')));
+        $status = in_array($status, ['open', 'under_review', 'approved', 'closed'], true) ? $status : 'open';
+
+        if ($start_date === '' || $end_date === '' || $payment_date === '') {
+            return false;
+        }
+
+        if ($start_date > $end_date) {
+            $tmp = $start_date;
+            $start_date = $end_date;
+            $end_date = $tmp;
+        }
+
+        $existing = [];
+        if ($cutoff_id > 0) {
+            $existing = $this->db
+                ->from($table)
+                ->where('id', $cutoff_id)
+                ->limit(1)
+                ->get()
+                ->row_array();
+        }
+
+        if (!empty($existing)) {
+            $old_status = strtolower((string) ($existing['status'] ?? 'open'));
+            $allowed_transitions = [
+                'open' => ['under_review', 'closed'],
+                'under_review' => ['approved', 'closed'],
+                'approved' => ['closed'],
+                'closed' => [],
+            ];
+
+            if ($old_status !== $status && !in_array($status, $allowed_transitions[$old_status] ?? [], true)) {
+                return false;
+            }
+
+            $payroll_count = (int) $this->count_payroll_records_for_cutoff($cutoff_id);
+            if ($payroll_count > 0) {
+                if ((string) ($existing['payroll_group'] ?? '') !== $group || (string) ($existing['start_date'] ?? '') !== $start_date || (string) ($existing['end_date'] ?? '') !== $end_date) {
+                    return false;
+                }
+            }
+        }
+
+        $overlap_check = $this->db
+            ->select('id')
+            ->from($table)
+            ->where('payroll_group', $group)
+            ->where('id !=', $cutoff_id)
+            ->group_start()
+            ->where('start_date <=', $end_date)
+            ->where('end_date >=', $start_date)
+            ->group_end()
+            ->limit(1)
+            ->get()
+            ->row_array();
+
+        if (is_array($overlap_check) && !empty($overlap_check)) {
+            return false;
+        }
+
+        $cutoff_code = trim((string) ($data['cutoff_code'] ?? ''));
+        if ($cutoff_code === '') {
+            $cutoff_code = $this->generate_cutoff_code($group, $start_date, $end_date);
+        }
+
+        $payload = [
+            'cutoff_code' => $cutoff_code,
+            'payroll_group' => $group,
+            'start_date' => $start_date,
+            'end_date' => $end_date,
+            'payment_date' => $payment_date,
+            'status' => $status,
+            'updated_by' => (int) ($user_staff_id > 0 ? $user_staff_id : (int) ($data['updated_by'] ?? 0)),
+            'updated_at' => date('Y-m-d H:i:s'),
+        ];
+
+        if ($cutoff_id > 0) {
+            $this->db->where('id', $cutoff_id);
+            return (bool) $this->db->update($table, $payload);
+        }
+
+        $payload['created_by'] = (int) ($user_staff_id > 0 ? $user_staff_id : (int) ($data['created_by'] ?? 0));
+        $payload['created_at'] = date('Y-m-d H:i:s');
+        return (bool) $this->db->insert($table, $payload);
+    }
+
+    public function get_cutoff_payroll_rows($cutoff_id, $start_date = '', $end_date = '')
+    {
+        $cutoff_id = (int) $cutoff_id;
+        if ($cutoff_id <= 0) {
+            return [];
+        }
+
+        $table = db_prefix() . 'fs_payroll_master';
+        if (!$this->db->table_exists($table)) {
+            return [];
+        }
+
+        $query = $this->db
+            ->from($table)
+            ->where('cutoff_id', $cutoff_id);
+
+        if ($start_date !== '') {
+            $query->where('start_date >=', $start_date);
+        }
+
+        if ($end_date !== '') {
+            $query->where('end_date <=', $end_date);
+        }
+
+        $rows = $query
+            ->order_by('end_date', 'DESC')
+            ->order_by('id', 'DESC')
+            ->get()
+            ->result_array();
+
+        foreach ($rows as &$row) {
+            $row['worker_name'] = $this->resolve_staff_name($this->get_staff_row((int) ($row['staff_id'] ?? 0)), (int) ($row['staff_id'] ?? 0));
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    public function get_legacy_payroll_rows($start_date = '', $end_date = '')
+    {
+        $table = db_prefix() . 'fs_payroll_master';
+        if (!$this->db->table_exists($table) || !$this->db->field_exists('cutoff_id', $table)) {
+            return [];
+        }
+
+        $query = $this->db->from($table)->where('cutoff_id IS NULL', null, false);
+
+        if ($start_date !== '') {
+            $query->where('start_date >=', $start_date);
+        }
+
+        if ($end_date !== '') {
+            $query->where('end_date <=', $end_date);
+        }
+
+        $rows = $query
+            ->order_by('end_date', 'DESC')
+            ->order_by('id', 'DESC')
+            ->get()
+            ->result_array();
+
+        foreach ($rows as &$row) {
+            $row['worker_name'] = $this->resolve_staff_name($this->get_staff_row((int) ($row['staff_id'] ?? 0)), (int) ($row['staff_id'] ?? 0));
+            $row['legacy_history'] = true;
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    public function has_legacy_payroll_for_window($staff_id, $start_date, $end_date)
+    {
+        $table = db_prefix() . 'fs_payroll_master';
+        if (!$this->db->table_exists($table) || !$this->db->field_exists('cutoff_id', $table)) {
+            return false;
+        }
+
+        $staff_id = (int) $staff_id;
+        if ($staff_id <= 0) {
+            return false;
+        }
+
+        return $this->db
+            ->from($table)
+            ->where('staff_id', $staff_id)
+            ->where('cutoff_id IS NULL', null, false)
+            ->where('start_date >=', $start_date)
+            ->where('end_date <=', $end_date)
+            ->limit(1)
+            ->count_all_results() > 0;
+    }
+
+    public function count_payroll_records_for_cutoff($cutoff_id)
+    {
+        $cutoff_id = (int) $cutoff_id;
+        if ($cutoff_id <= 0) {
+            return 0;
+        }
+
+        $table = db_prefix() . 'fs_payroll_master';
+        if (!$this->db->table_exists($table) || !$this->db->field_exists('cutoff_id', $table)) {
+            return 0;
+        }
+
+        return (int) $this->db
+            ->from($table)
+            ->where('cutoff_id', $cutoff_id)
+            ->count_all_results();
+    }
+
+    public function generate_cutoff_code($group, $start_date, $end_date)
+    {
+        $group = preg_replace('/[^A-Za-z0-9-]/', '-', trim((string) $group));
+        $group = trim($group, '-');
+        if ($group === '') {
+            $group = 'DEFAULT';
+        }
+
+        $suffix = date('Ymd', strtotime($start_date)) . '-' . date('Ymd', strtotime($end_date));
+        $unique = strtoupper(substr($group, 0, 16));
+
+        return $unique . '-' . $suffix;
     }
 
     /**
@@ -1412,9 +1694,18 @@ class Field_staff_model extends App_Model
 
         $payload = [
             'staff_id'             => $staff_id,
+            'payroll_group'        => $normalized['payroll_group'],
+            'department_id'        => isset($normalized['department_id']) ? (int) $normalized['department_id'] : 0,
+            'default_shift_id'     => isset($normalized['default_shift_id']) ? (int) $normalized['default_shift_id'] : 0,
             'base_hourly_rate'     => round((float) $normalized['base_hourly_rate'], 2),
             'overtime_multiplier'  => round((float) $normalized['overtime_multiplier'], 2),
             'daily_field_allowance' => round((float) $normalized['daily_field_allowance'], 2),
+            'employee_nib_rate'    => round((float) $normalized['employee_nib_rate'], 2),
+            'employer_nib_rate'    => round((float) $normalized['employer_nib_rate'], 2),
+            'employee_nhip_rate'   => round((float) $normalized['employee_nhip_rate'], 2),
+            'vacation_pay'         => round((float) $normalized['vacation_pay'], 2),
+            'outstanding_loan'     => round((float) $normalized['outstanding_loan'], 2),
+            'loan_repayment'       => round((float) $normalized['loan_repayment'], 2),
             'payment_method'       => $normalized['payment_method'],
             'bank_account_info'    => $normalized['bank_account_info'],
             'updated_at'           => $timestamp,
@@ -1600,8 +1891,18 @@ class Field_staff_model extends App_Model
      *
      * @return array
      */
-    public function generate_payrun_statement($start_date, $end_date, $staff_id = 0, $department_id = 0)
+    public function generate_payrun_statement($start_date, $end_date, $staff_id = 0, $department_id = 0, $cutoff = null)
     {
+        $cutoff_id = 0;
+        $cutoff_code = '';
+        $payroll_group = '';
+
+        if (is_array($cutoff)) {
+            $cutoff_id = (int) ($cutoff['id'] ?? 0);
+            $cutoff_code = trim((string) ($cutoff['cutoff_code'] ?? ''));
+            $payroll_group = trim((string) ($cutoff['payroll_group'] ?? ''));
+        }
+
         $analytics = $this->get_attendance_analytics($start_date, $end_date, $staff_id, $department_id);
         $holidays = $this->get_holidays();
         $holiday_dates = array_column($holidays, 'date');
@@ -1730,6 +2031,9 @@ class Field_staff_model extends App_Model
             'generated_at' => date('Y-m-d H:i:s'),
             'start_date' => $start_date,
             'end_date' => $end_date,
+            'cutoff_id' => $cutoff_id,
+            'cutoff_code' => $cutoff_code,
+            'payroll_group' => $payroll_group,
         ];
     }
 
@@ -2084,8 +2388,14 @@ class Field_staff_model extends App_Model
             ? (float) $profile_row['daily_field_allowance']
             : 0.0;
 
+        $payroll_group = trim((string) ($profile_row['payroll_group'] ?? $staff_row['payroll_group'] ?? 'default'));
+        if ($payroll_group === '') {
+            $payroll_group = 'default';
+        }
+
         return [
             'base_hourly_rate' => round(max($default_rate, 0), 2),
+            'payroll_group' => $payroll_group,
             'department_id' => isset($profile_row['department_id']) ? (int) $profile_row['department_id'] : (isset($staff_row['department_id']) ? (int) $staff_row['department_id'] : 0),
             'default_shift_id' => isset($profile_row['default_shift_id']) ? (int) $profile_row['default_shift_id'] : 0,
             'overtime_multiplier' => round($overtime_multiplier, 2),

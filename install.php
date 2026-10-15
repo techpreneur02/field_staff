@@ -124,6 +124,7 @@ $attendanceTable = $prefix . 'fs_attendance';
 $attributesTable = $prefix . 'fs_payroll_attributes';
 $valuesTable     = $prefix . 'fs_payroll_values';
 $masterTable     = $prefix . 'fs_payroll_master';
+$cutoffTable     = $prefix . 'fs_payroll_cutoffs';
 $profilesTable   = $prefix . 'fs_payroll_profiles';
 $departmentsTable = $prefix . 'fs_departments';
 $shiftsTable = $prefix . 'fs_shifts';
@@ -184,6 +185,7 @@ if (!fs_table_exists($CI, $masterTable)) {
     fs_install_exec($CI, 'create_fs_payroll_master', "CREATE TABLE `{$masterTable}` (
         `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `staff_id` INT UNSIGNED NOT NULL,
+        `cutoff_id` INT UNSIGNED NULL,
         `start_date` DATE NOT NULL,
         `end_date` DATE NOT NULL,
         `regular_hours` DECIMAL(8,2) NOT NULL DEFAULT 0.00,
@@ -199,7 +201,9 @@ if (!fs_table_exists($CI, $masterTable)) {
         `status` ENUM('draft','approved','paid') NOT NULL DEFAULT 'draft',
         `created_at` DATETIME NOT NULL,
         PRIMARY KEY (`id`),
+        UNIQUE KEY `uq_fs_payroll_master_staff_cutoff` (`staff_id`,`cutoff_id`),
         KEY `idx_fs_payroll_master_staff_id` (`staff_id`),
+        KEY `idx_fs_payroll_master_cutoff_id` (`cutoff_id`),
         KEY `idx_fs_payroll_master_date_range` (`start_date`,`end_date`)
     ) ENGINE=InnoDB;");
 } else {
@@ -210,6 +214,7 @@ if (!fs_table_exists($CI, $profilesTable)) {
     fs_install_exec($CI, 'create_fs_payroll_profiles', "CREATE TABLE `{$profilesTable}` (
         `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `staff_id` INT UNSIGNED NOT NULL,
+        `payroll_group` VARCHAR(80) NOT NULL DEFAULT 'default',
         `base_hourly_rate` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
         `overtime_multiplier` DECIMAL(5,2) NOT NULL DEFAULT 1.50,
         `daily_field_allowance` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
@@ -219,7 +224,8 @@ if (!fs_table_exists($CI, $profilesTable)) {
         `updated_at` DATETIME NOT NULL,
         PRIMARY KEY (`id`),
         UNIQUE KEY `uq_fs_payroll_profiles_staff_id` (`staff_id`),
-        KEY `idx_fs_payroll_profiles_staff_id` (`staff_id`)
+        KEY `idx_fs_payroll_profiles_staff_id` (`staff_id`),
+        KEY `idx_fs_payroll_profiles_group` (`payroll_group`)
     ) ENGINE=InnoDB;");
 } else {
     fs_install_log('Table exists, skipped: ' . $profilesTable, 'debug');
@@ -280,6 +286,7 @@ if (!fs_table_exists($CI, $leavesTable)) {
     fs_install_log('Table exists, skipped: ' . $leavesTable, 'debug');
 }
 
+fs_install_add_column($CI, $profilesTable, 'payroll_group', 'VARCHAR(80) NOT NULL DEFAULT "default" AFTER `staff_id`');
 fs_install_add_column($CI, $profilesTable, 'department_id', 'INT UNSIGNED NULL AFTER `staff_id`');
 fs_install_add_column($CI, $profilesTable, 'default_shift_id', 'INT UNSIGNED NULL AFTER `department_id`');
 fs_install_add_column($CI, $profilesTable, 'employee_nib_rate', 'DECIMAL(5,2) NOT NULL DEFAULT 5.50 AFTER `daily_field_allowance`');
