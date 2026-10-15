@@ -314,6 +314,15 @@ function field_staff_run_pending_migrations()
             "ALTER TABLE `{$payroll_profiles_table}` ADD INDEX IF NOT EXISTS `idx_fs_payroll_profiles_group` (`payroll_group`)",
             "ALTER TABLE `{$payroll_master_table}` ADD UNIQUE INDEX IF NOT EXISTS `uq_fs_payroll_master_staff_cutoff` (`staff_id`,`cutoff_id`)",
         ],
+        '2026_10_16_payroll_component_uniqueness' => [
+            "ALTER TABLE `{$prefix}fs_payroll_values` ADD UNIQUE INDEX `uq_fs_payroll_values_payroll_attribute` (`payroll_id`, `attribute_id`)",
+        ],
+        '2026_10_17_employee_classification_fields' => [
+            "ALTER TABLE `{$payroll_profiles_table}` ADD COLUMN IF NOT EXISTS `position` VARCHAR(32) NOT NULL DEFAULT 'worker' AFTER `payroll_group`",
+            "ALTER TABLE `{$payroll_profiles_table}` ADD COLUMN IF NOT EXISTS `employment_arrangement` VARCHAR(32) NOT NULL DEFAULT 'permanent' AFTER `position`",
+            "ALTER TABLE `{$payroll_profiles_table}` ADD COLUMN IF NOT EXISTS `payment_basis` VARCHAR(32) NOT NULL DEFAULT 'hourly' AFTER `employment_arrangement`",
+            "ALTER TABLE `{$payroll_profiles_table}` ADD COLUMN IF NOT EXISTS `attendance_requirement` VARCHAR(32) NOT NULL DEFAULT 'required' AFTER `payment_basis`",
+        ],
     ];
 
     foreach ($migrations as $migration_name => $statement_set) {

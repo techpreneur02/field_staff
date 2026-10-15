@@ -174,11 +174,27 @@ if (!fs_table_exists($CI, $valuesTable)) {
         `attribute_id` INT UNSIGNED NOT NULL,
         `value` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
         PRIMARY KEY (`id`),
+        UNIQUE KEY `uq_fs_payroll_values_payroll_attribute` (`payroll_id`, `attribute_id`),
         KEY `idx_fs_payroll_values_payroll_id` (`payroll_id`),
         KEY `idx_fs_payroll_values_attribute_id` (`attribute_id`)
     ) ENGINE=InnoDB;");
 } else {
     fs_install_log('Table exists, skipped: ' . $valuesTable, 'debug');
+
+    try {
+        $index_check = $CI->db->query("SHOW INDEX FROM `{$valuesTable}` WHERE Key_name = 'uq_fs_payroll_values_payroll_attribute' LIMIT 1");
+        if (!$index_check || $index_check->num_rows() === 0) {
+            $CI->db->query("ALTER TABLE `{$valuesTable}` ADD UNIQUE INDEX `uq_fs_payroll_values_payroll_attribute` (`payroll_id`, `attribute_id`)");
+            fs_install_log('Added unique payroll attribute index: ' . $valuesTable, 'debug');
+        }
+    } catch (Throwable $e) {
+        $message = strtolower((string) $e->getMessage());
+        if (strpos($message, 'duplicate') === false && strpos($message, 'already exists') === false && strpos($message, 'exist') === false) {
+            throw $e;
+        }
+
+        fs_install_log('Payroll value dedupe index already present or could not be repaired safely: ' . $valuesTable . ' | ' . $message, 'warning');
+    }
 }
 
 if (!fs_table_exists($CI, $masterTable)) {
@@ -287,6 +303,10 @@ if (!fs_table_exists($CI, $leavesTable)) {
 }
 
 fs_install_add_column($CI, $profilesTable, 'payroll_group', 'VARCHAR(80) NOT NULL DEFAULT "default" AFTER `staff_id`');
+fs_install_add_column($CI, $profilesTable, 'position', 'VARCHAR(32) NOT NULL DEFAULT "worker" AFTER `payroll_group`');
+fs_install_add_column($CI, $profilesTable, 'employment_arrangement', 'VARCHAR(32) NOT NULL DEFAULT "permanent" AFTER `position`');
+fs_install_add_column($CI, $profilesTable, 'payment_basis', 'VARCHAR(32) NOT NULL DEFAULT "hourly" AFTER `employment_arrangement`');
+fs_install_add_column($CI, $profilesTable, 'attendance_requirement', 'VARCHAR(32) NOT NULL DEFAULT "required" AFTER `payment_basis`');
 fs_install_add_column($CI, $profilesTable, 'department_id', 'INT UNSIGNED NULL AFTER `staff_id`');
 fs_install_add_column($CI, $profilesTable, 'default_shift_id', 'INT UNSIGNED NULL AFTER `department_id`');
 fs_install_add_column($CI, $profilesTable, 'employee_nib_rate', 'DECIMAL(5,2) NOT NULL DEFAULT 5.50 AFTER `daily_field_allowance`');

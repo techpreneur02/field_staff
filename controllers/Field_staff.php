@@ -321,6 +321,10 @@ class Field_staff extends AdminController
         }
 
         $saved = $this->field_staff_model->save_payroll_profile($staff_id, [
+            'position' => $this->input->post('position', true),
+            'employment_arrangement' => $this->input->post('employment_arrangement', true),
+            'payment_basis' => $this->input->post('payment_basis', true),
+            'attendance_requirement' => $this->input->post('attendance_requirement', true),
             'department_id' => $this->input->post('department_id', true),
             'default_shift_id' => $this->input->post('default_shift_id', true),
             'base_hourly_rate' => $this->input->post('base_hourly_rate', true),

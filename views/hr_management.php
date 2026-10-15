@@ -2,12 +2,13 @@
 <?php init_head(); ?>
 <style>
     .hr-dashboard-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
+        background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+        color: #0f172a;
         padding: 30px 20px;
         border-radius: 8px;
-        margin-bottom: 30px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        margin-bottom: 24px;
+        box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+        border: 1px solid #dbeafe;
     }
 
     .hr-dashboard-header h1 {
@@ -18,13 +19,52 @@
 
     .hr-dashboard-header p {
         margin: 0;
-        opacity: 0.95;
+        opacity: 0.8;
         font-size: 14px;
+    }
+
+    .workspace-section-nav {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(120px, 1fr));
+        gap: 10px;
+        margin: 0 0 24px;
+    }
+
+    .workspace-section-link {
+        display: block;
+        padding: 12px 14px;
+        background: #ffffff;
+        border: 1px solid #dfe7f3;
+        border-radius: 8px;
+        color: #374151;
+        text-decoration: none;
+        transition: all 0.2s ease;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+
+    .workspace-section-link:hover,
+    .workspace-section-link.active {
+        border-color: #93c5fd;
+        background: #f8fbff;
+        text-decoration: none;
+        color: #1d4ed8;
+    }
+
+    .workspace-section-link span {
+        display: block;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+    }
+
+    .workspace-section-link small {
+        display: block;
+        color: #64748b;
+        margin-top: 4px;
     }
 
     .stat-card {
         background: white;
-        border-left: 4px solid #667eea;
+        border-left: 4px solid #2563eb;
         padding: 20px;
         border-radius: 6px;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
@@ -331,6 +371,14 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
             </div>
         </div>
 
+        <div class="workspace-section-nav">
+            <a href="#tab-manual-attendance" class="workspace-section-link active"><span>My Work</span><small>Attendance & approvals</small></a>
+            <a href="#tab-shift-department" class="workspace-section-link"><span>Team Operations</span><small>Scheduling & assignments</small></a>
+            <a href="#tab-payroll-admin" class="workspace-section-link"><span>Payroll</span><small>Pay policies & admin</small></a>
+            <a href="#tab-reporting-payrun" class="workspace-section-link"><span>Reports</span><small>Cutoff summaries</small></a>
+            <a href="#tab-employee-pay-setup" class="workspace-section-link"><span>HR Settings</span><small>Employees & config</small></a>
+        </div>
+
         <!-- Filter Panel -->
         <div class="filter-panel mtop25">
             <div class="filter-title">Workspace Filters</div>
@@ -551,6 +599,53 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                                                 <?php $shift_id = isset($shift_row['id']) ? (int) $shift_row['id'] : 0; ?>
                                                 <option value="<?php echo $shift_id; ?>"><?php echo field_staff_hr_escape(isset($shift_row['shift_name']) ? $shift_row['shift_name'] : ''); ?></option>
                                             <?php } ?>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-3 col-sm-6 col-xs-12">
+                                    <div class="form-group">
+                                        <label for="position" class="control-label">Position</label>
+                                        <select id="position" class="form-control">
+                                            <option value="worker">Worker</option>
+                                            <option value="supervisor">Supervisor</option>
+                                            <option value="manager">Manager</option>
+                                            <option value="executive">Executive</option>
+                                            <option value="owner">Owner</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 col-sm-6 col-xs-12">
+                                    <div class="form-group">
+                                        <label for="employment_arrangement" class="control-label">Employment Arrangement</label>
+                                        <select id="employment_arrangement" class="form-control">
+                                            <option value="permanent">Permanent</option>
+                                            <option value="fixed_term">Fixed-term</option>
+                                            <option value="temporary">Temporary</option>
+                                            <option value="casual">Casual</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 col-sm-6 col-xs-12">
+                                    <div class="form-group">
+                                        <label for="payment_basis" class="control-label">Payment Basis</label>
+                                        <select id="payment_basis" class="form-control">
+                                            <option value="hourly">Hourly</option>
+                                            <option value="salary">Salary</option>
+                                            <option value="daily">Daily</option>
+                                            <option value="per_job">Per Job</option>
+                                            <option value="per_unit">Per Unit</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 col-sm-6 col-xs-12">
+                                    <div class="form-group">
+                                        <label for="attendance_requirement" class="control-label">Attendance Requirement</label>
+                                        <select id="attendance_requirement" class="form-control">
+                                            <option value="required">Required</option>
+                                            <option value="optional">Optional</option>
+                                            <option value="not_required">Not required</option>
                                         </select>
                                     </div>
                                 </div>
@@ -1220,6 +1315,10 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                     return {
                         department_id: 0,
                         default_shift_id: 0,
+                        position: 'worker',
+                        employment_arrangement: 'permanent',
+                        payment_basis: 'hourly',
+                        attendance_requirement: 'required',
                         base_hourly_rate: '0.00',
                         overtime_multiplier: '1.50',
                         daily_field_allowance: '0.00',
@@ -1240,6 +1339,10 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                 var profile = getSelectedProfile();
                 $('#department_id').val(String(profile.department_id || 0));
                 $('#default_shift_id').val(String(profile.default_shift_id || 0));
+                $('#position').val(profile.position || 'worker');
+                $('#employment_arrangement').val(profile.employment_arrangement || 'permanent');
+                $('#payment_basis').val(profile.payment_basis || 'hourly');
+                $('#attendance_requirement').val(profile.attendance_requirement || 'required');
                 $('#base_hourly_rate').val(profile.base_hourly_rate || '0.00');
                 $('#overtime_multiplier').val(profile.overtime_multiplier || '1.50');
                 $('#daily_field_allowance').val(profile.daily_field_allowance || '0.00');
@@ -1357,6 +1460,10 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
 
                 var payload = appendCsrf({
                     staff_id: staffId,
+                    position: $('#position').val(),
+                    employment_arrangement: $('#employment_arrangement').val(),
+                    payment_basis: $('#payment_basis').val(),
+                    attendance_requirement: $('#attendance_requirement').val(),
                     department_id: $('#department_id').val(),
                     default_shift_id: $('#default_shift_id').val(),
                     base_hourly_rate: $('#base_hourly_rate').val(),
@@ -1466,6 +1573,17 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                 }, 'json').fail(function() {
                     notify('danger', 'Shift distribution failed.');
                 });
+            });
+
+            $('.workspace-section-link').on('click', function(e) {
+                e.preventDefault();
+                $('.workspace-section-link').removeClass('active');
+                $(this).addClass('active');
+
+                var targetId = $(this).attr('href');
+                if (targetId && $(targetId).length) {
+                    $('a[href="' + targetId + '"][role="tab"]').trigger('click');
+                }
             });
 
             $('#save-manual-attendance-btn').click(function() {

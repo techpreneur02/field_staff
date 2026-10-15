@@ -20,6 +20,10 @@ class Field_staff_model extends App_Model
         $action = strtolower(trim((string) $action));
 
         if (in_array($action, ['clock_in', 'in'], true)) {
+            if (!$this->validate_attendance_transition($staff_id, 'clock_in')) {
+                return false;
+            }
+
             return $this->clock_in(
                 $staff_id,
                 date('Y-m-d'),
@@ -31,6 +35,10 @@ class Field_staff_model extends App_Model
         }
 
         if (in_array($action, ['clock_out', 'out'], true)) {
+            if (!$this->validate_attendance_transition($staff_id, 'clock_out')) {
+                return false;
+            }
+
             return $this->clock_out(
                 $staff_id,
                 date('Y-m-d H:i:s'),
@@ -38,6 +46,46 @@ class Field_staff_model extends App_Model
                 $longitude,
                 $notes
             );
+        }
+
+        return false;
+    }
+
+    /**
+     * Validate the next attendance state transition for a staff member.
+     *
+     * @param int    $staff_id
+     * @param string $requested_action
+     *
+     * @return bool
+     */
+    public function validate_attendance_transition($staff_id, $requested_action)
+    {
+        $staff_id = (int) $staff_id;
+        $requested_action = strtolower(trim((string) $requested_action));
+
+        if ($staff_id <= 0 || $requested_action === '') {
+            return false;
+        }
+
+        $attendance_table = db_prefix() . 'fs_attendance';
+        if (!$this->db->table_exists($attendance_table)) {
+            return false;
+        }
+
+        $has_open_record = (bool) $this->db
+            ->from($attendance_table)
+            ->where('staff_id', $staff_id)
+            ->where('clock_out IS NULL', null, false)
+            ->limit(1)
+            ->count_all_results();
+
+        if ($requested_action === 'clock_in') {
+            return !$has_open_record;
+        }
+
+        if ($requested_action === 'clock_out') {
+            return $has_open_record;
         }
 
         return false;
@@ -1693,22 +1741,26 @@ class Field_staff_model extends App_Model
         }
 
         $payload = [
-            'staff_id'             => $staff_id,
-            'payroll_group'        => $normalized['payroll_group'],
-            'department_id'        => isset($normalized['department_id']) ? (int) $normalized['department_id'] : 0,
-            'default_shift_id'     => isset($normalized['default_shift_id']) ? (int) $normalized['default_shift_id'] : 0,
-            'base_hourly_rate'     => round((float) $normalized['base_hourly_rate'], 2),
-            'overtime_multiplier'  => round((float) $normalized['overtime_multiplier'], 2),
-            'daily_field_allowance' => round((float) $normalized['daily_field_allowance'], 2),
-            'employee_nib_rate'    => round((float) $normalized['employee_nib_rate'], 2),
-            'employer_nib_rate'    => round((float) $normalized['employer_nib_rate'], 2),
-            'employee_nhip_rate'   => round((float) $normalized['employee_nhip_rate'], 2),
-            'vacation_pay'         => round((float) $normalized['vacation_pay'], 2),
-            'outstanding_loan'     => round((float) $normalized['outstanding_loan'], 2),
-            'loan_repayment'       => round((float) $normalized['loan_repayment'], 2),
-            'payment_method'       => $normalized['payment_method'],
-            'bank_account_info'    => $normalized['bank_account_info'],
-            'updated_at'           => $timestamp,
+            'staff_id'                 => $staff_id,
+            'payroll_group'            => $normalized['payroll_group'],
+            'position'                 => $normalized['position'],
+            'employment_arrangement'   => $normalized['employment_arrangement'],
+            'payment_basis'            => $normalized['payment_basis'],
+            'attendance_requirement'   => $normalized['attendance_requirement'],
+            'department_id'            => isset($normalized['department_id']) ? (int) $normalized['department_id'] : 0,
+            'default_shift_id'         => isset($normalized['default_shift_id']) ? (int) $normalized['default_shift_id'] : 0,
+            'base_hourly_rate'         => round((float) $normalized['base_hourly_rate'], 2),
+            'overtime_multiplier'      => round((float) $normalized['overtime_multiplier'], 2),
+            'daily_field_allowance'    => round((float) $normalized['daily_field_allowance'], 2),
+            'employee_nib_rate'        => round((float) $normalized['employee_nib_rate'], 2),
+            'employer_nib_rate'        => round((float) $normalized['employer_nib_rate'], 2),
+            'employee_nhip_rate'       => round((float) $normalized['employee_nhip_rate'], 2),
+            'vacation_pay'             => round((float) $normalized['vacation_pay'], 2),
+            'outstanding_loan'         => round((float) $normalized['outstanding_loan'], 2),
+            'loan_repayment'           => round((float) $normalized['loan_repayment'], 2),
+            'payment_method'           => $normalized['payment_method'],
+            'bank_account_info'        => $normalized['bank_account_info'],
+            'updated_at'               => $timestamp,
         ];
 
         $existing = $this->db
@@ -2145,7 +2197,7 @@ class Field_staff_model extends App_Model
     {
         $payroll_id     = (int) $payroll_id;
         $attribute_code = trim((string) $attribute_code);
-        $value          = (float) $value;
+        $value          = round((float) $value, 2);
 
         if ($payroll_id <= 0 || $attribute_code === '') {
             return false;
@@ -2158,18 +2210,47 @@ class Field_staff_model extends App_Model
             ->select('id')
             ->from($attributes_table)
             ->where('code', $attribute_code)
+            ->limit(1)
             ->get()
-            ->row();
+            ->row_array();
 
-        if (!$attribute) {
+        if (!is_array($attribute) || !isset($attribute['id'])) {
             return false;
         }
 
-        return (bool) $this->db->insert($values_table, [
-            'payroll_id'   => $payroll_id,
-            'attribute_id' => (int) $attribute->id,
-            'value'        => round($value, 2),
-        ]);
+        $attribute_id = (int) $attribute['id'];
+        $existing_row = $this->db
+            ->select('id')
+            ->from($values_table)
+            ->where('payroll_id', $payroll_id)
+            ->where('attribute_id', $attribute_id)
+            ->limit(1)
+            ->get()
+            ->row_array();
+
+        if (is_array($existing_row) && isset($existing_row['id'])) {
+            $this->db->where('id', (int) $existing_row['id']);
+            return (bool) $this->db->update($values_table, ['value' => $value]);
+        }
+
+        try {
+            return (bool) $this->db->insert($values_table, [
+                'payroll_id'   => $payroll_id,
+                'attribute_id' => $attribute_id,
+                'value'        => $value,
+            ]);
+        } catch (Throwable $e) {
+            $message = strtolower((string) $e->getMessage());
+            if (strpos($message, 'duplicate') !== false || strpos($message, 'exists') !== false || strpos($message, 'already exists') !== false) {
+                $this->db->where('payroll_id', $payroll_id)
+                    ->where('attribute_id', $attribute_id)
+                    ->limit(1)
+                    ->update($values_table, ['value' => $value]);
+                return true;
+            }
+
+            return false;
+        }
     }
 
     /**
@@ -2393,9 +2474,38 @@ class Field_staff_model extends App_Model
             $payroll_group = 'default';
         }
 
+        $allowed_positions = ['owner', 'executive', 'manager', 'supervisor', 'worker'];
+        $allowed_arrangements = ['permanent', 'fixed_term', 'temporary', 'casual'];
+        $allowed_payment_bases = ['salary', 'hourly', 'daily', 'per_job', 'per_unit'];
+        $allowed_attendance_requirements = ['required', 'optional', 'not_required'];
+
+        $position = strtolower(trim((string) ($profile_row['position'] ?? $staff_row['position'] ?? 'worker')));
+        if (!in_array($position, $allowed_positions, true)) {
+            $position = 'worker';
+        }
+
+        $employment_arrangement = strtolower(trim((string) ($profile_row['employment_arrangement'] ?? $staff_row['employment_arrangement'] ?? 'permanent')));
+        if (!in_array($employment_arrangement, $allowed_arrangements, true)) {
+            $employment_arrangement = 'permanent';
+        }
+
+        $payment_basis = strtolower(trim((string) ($profile_row['payment_basis'] ?? $staff_row['payment_basis'] ?? 'hourly')));
+        if (!in_array($payment_basis, $allowed_payment_bases, true)) {
+            $payment_basis = 'hourly';
+        }
+
+        $attendance_requirement = strtolower(trim((string) ($profile_row['attendance_requirement'] ?? $staff_row['attendance_requirement'] ?? 'required')));
+        if (!in_array($attendance_requirement, $allowed_attendance_requirements, true)) {
+            $attendance_requirement = 'required';
+        }
+
         return [
             'base_hourly_rate' => round(max($default_rate, 0), 2),
             'payroll_group' => $payroll_group,
+            'position' => $position,
+            'employment_arrangement' => $employment_arrangement,
+            'payment_basis' => $payment_basis,
+            'attendance_requirement' => $attendance_requirement,
             'department_id' => isset($profile_row['department_id']) ? (int) $profile_row['department_id'] : (isset($staff_row['department_id']) ? (int) $staff_row['department_id'] : 0),
             'default_shift_id' => isset($profile_row['default_shift_id']) ? (int) $profile_row['default_shift_id'] : 0,
             'overtime_multiplier' => round($overtime_multiplier, 2),
