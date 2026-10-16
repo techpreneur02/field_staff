@@ -25,9 +25,11 @@ class Field_staff extends AdminController
         $selected_cutoff_id = (int) $this->input->get('cutoff_id', true);
         $selected_cutoff = $selected_cutoff_id > 0 ? $this->field_staff_model->get_payroll_cutoff_by_id($selected_cutoff_id) : null;
         $staff_directory = $this->field_staff_model->get_staff_directory();
+        $department_rows = $this->field_staff_model->get_departments();
 
         $data['title'] = 'HR Settings';
         $data['staff_directory'] = $staff_directory;
+        $data['departments'] = $department_rows;
         $data['hr_payroll_staff_ids'] = $staff_ids;
         $data['current_user_staff_id'] = $this->resolve_session_staff_id();
         $data['cutoffs'] = $cutoffs;
@@ -35,9 +37,248 @@ class Field_staff extends AdminController
         $data['selected_cutoff_id'] = $selected_cutoff_id;
         $data['save_hr_access_url'] = field_staff_admin_url('field_staff/save_hr_payroll_staff_ids');
         $data['save_cutoff_url'] = field_staff_admin_url('field_staff/save_payroll_cutoff');
+        $data['save_hr_settings_section_url'] = field_staff_admin_url('field_staff/save_hr_settings_section');
         $data['current_url'] = field_staff_admin_url('field_staff/hr_settings');
+        $data['default_employee_policy'] = [
+            'position' => 'worker',
+            'employment_arrangement' => 'permanent',
+            'payment_basis' => 'hourly',
+            'attendance_requirement' => 'required',
+            'base_hourly_rate' => '0.00',
+            'payroll_group' => 'default',
+        ];
+        $data['policy_settings'] = [
+            'grace_period_mins' => $this->field_staff_model->get_module_setting('field_staff_grace_period_mins', '10'),
+            'attendance_rounding' => $this->field_staff_model->get_module_setting('field_staff_attendance_rounding', 'nearest_15'),
+            'break_policy' => $this->field_staff_model->get_module_setting('field_staff_break_policy', 'paid'),
+            'break_duration_limit_mins' => $this->field_staff_model->get_module_setting('field_staff_break_duration_limit_mins', '60'),
+            'regular_hours_cap' => $this->field_staff_model->get_module_setting('field_staff_regular_hours_cap', '44'),
+            'overtime_multiplier' => $this->field_staff_model->get_module_setting('field_staff_overtime_multiplier', '1.5'),
+            'daily_field_allowance' => $this->field_staff_model->get_module_setting('field_staff_daily_field_allowance', '0'),
+            'employee_nib_rate' => $this->field_staff_model->get_module_setting('field_staff_nib_employee_rate', '5.5'),
+            'employer_nib_rate' => $this->field_staff_model->get_module_setting('field_staff_nib_employer_rate', '6.5'),
+            'employee_nhip_rate' => $this->field_staff_model->get_module_setting('field_staff_nhip_employee_rate', '3.0'),
+            'employer_nhip_rate' => $this->field_staff_model->get_module_setting('field_staff_nhip_employer_rate', '3.0'),
+            'verification_status' => $this->field_staff_model->get_module_setting('field_staff_statutory_verification_status', 'pending'),
+            'verification_source' => $this->field_staff_model->get_module_setting('field_staff_statutory_verification_source', 'manual'),
+        ];
 
         $this->load->view('hr_settings', $data);
+    }
+
+    public function ui_preview()
+    {
+        $data['title'] = 'Field Staff UI Preview';
+        $data['preview_mode'] = true;
+        $data['screen_map'] = [
+            ['id' => 'my-work', 'label' => 'My Work', 'description' => 'Attendance, leave, and payslip actions'],
+            ['id' => 'team-operations', 'label' => 'Team Operations', 'description' => 'Attendance monitor and approval queue'],
+            ['id' => 'payroll', 'label' => 'Payroll', 'description' => 'Cutoff review and saved payruns'],
+            ['id' => 'reports', 'label' => 'Reports', 'description' => 'Payroll register and exports'],
+            ['id' => 'hr-settings', 'label' => 'HR Settings', 'description' => 'Centralized workforce configuration'],
+        ];
+        $data['employee'] = [
+            'name' => 'Maria Thompson',
+            'staff_id' => 'FS-2045',
+            'role' => 'Field Supervisor',
+            'department' => 'Operations',
+            'payment_basis' => 'Hourly',
+            'position' => 'Supervisor',
+            'employment_arrangement' => 'Permanent',
+            'attendance_requirement' => 'Required',
+        ];
+        $data['attendance_rows'] = [
+            ['date' => '2026-10-15', 'clock_in' => '07:20', 'clock_out' => '16:40', 'hours' => '9.25', 'status' => 'Approved'],
+            ['date' => '2026-10-14', 'clock_in' => '07:15', 'clock_out' => '16:30', 'hours' => '9.00', 'status' => 'Approved'],
+            ['date' => '2026-10-13', 'clock_in' => '08:00', 'clock_out' => '17:05', 'hours' => '8.75', 'status' => 'Pending'],
+            ['date' => '2026-10-12', 'clock_in' => '07:45', 'clock_out' => '16:15', 'hours' => '8.25', 'status' => 'Review'],
+        ];
+        $data['leave_rows'] = [
+            ['type' => 'Annual Leave', 'dates' => '2026-10-20 to 2026-10-22', 'status' => 'Approved'],
+            ['type' => 'Sick Leave', 'dates' => '2026-10-08', 'status' => 'Submitted'],
+        ];
+        $data['payslip_rows'] = [
+            ['cutoff' => 'CW-41', 'net' => '$1,248.60', 'status' => 'Issued'],
+            ['cutoff' => 'CW-40', 'net' => '$1,235.40', 'status' => 'Issued'],
+        ];
+        $data['team_rows'] = [
+            ['name' => 'Dylan Brown', 'status' => 'On shift', 'hours' => '7.5', 'location' => 'North Dock'],
+            ['name' => 'Ella Harper', 'status' => 'Break', 'hours' => '5.25', 'location' => 'Warehouse B'],
+            ['name' => 'Noah Scott', 'status' => 'Late', 'hours' => '3.5', 'location' => 'Plant 2'],
+        ];
+        $data['payroll_rows'] = [
+            ['employee' => 'Maria Thompson', 'base' => '$1,120.00', 'allowance' => '$80.00', 'deductions' => '$52.40', 'net' => '$1,147.60', 'status' => 'Draft'],
+            ['employee' => 'Dylan Brown', 'base' => '$980.00', 'allowance' => '$60.00', 'deductions' => '$45.10', 'net' => '$994.90', 'status' => 'Approved'],
+            ['employee' => 'Ella Harper', 'base' => '$875.00', 'allowance' => '$40.00', 'deductions' => '$38.25', 'net' => '$876.75', 'status' => 'Awaiting review'],
+        ];
+        $data['report_rows'] = [
+            ['cutoff' => 'CW-41', 'gross' => '$18,420.00', 'employee_nib' => '$640.35', 'employer_nib' => '$786.50', 'net' => '$16,993.15', 'exports' => 'Ready'],
+            ['cutoff' => 'CW-40', 'gross' => '$17,860.00', 'employee_nib' => '$610.20', 'employer_nib' => '$750.25', 'net' => '$16,499.55', 'exports' => 'Issued'],
+        ];
+        $data['settings_sections'] = [
+            'Employees',
+            'Departments',
+            'Attendance & Break Policies',
+            'Pay Policies',
+            'Payroll Groups & Calendar',
+            'Holidays',
+            'Statutory Configuration',
+            'Access & Approvals',
+        ];
+
+        $this->load->view('ui_preview', $data);
+    }
+
+    /**
+     * Save a centralized HR settings form section.
+     */
+    public function get_employee_profile()
+    {
+        if (!$this->can_manage_hr_settings()) {
+            $this->respond_unauthorized_json();
+        }
+
+        if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'GET') {
+            $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
+        }
+
+        $staff_id = (int) $this->input->get('staff_id', true);
+        if ($staff_id <= 0) {
+            $this->respond_json(['success' => false, 'message' => 'A valid employee is required.']);
+        }
+
+        $this->respond_json([
+            'success' => true,
+            'staff_id' => $staff_id,
+            'profile' => $this->field_staff_model->get_payroll_profile($staff_id),
+        ]);
+    }
+
+    public function save_hr_settings_section()
+    {
+        if (!$this->can_manage_hr_settings()) {
+            $this->respond_unauthorized_json();
+        }
+
+        if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
+            $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
+        }
+
+        $section = strtolower(trim((string) $this->input->post('section', true)));
+        if ($section === '') {
+            $this->respond_json(['success' => false, 'message' => 'A settings section is required.']);
+        }
+
+        try {
+            switch ($section) {
+                case 'department':
+                    $name = trim((string) $this->input->post('department_name', true));
+                    if ($name === '') {
+                        $this->respond_json(['success' => false, 'message' => 'Department name is required.']);
+                    }
+                    $saved = $this->field_staff_model->save_department($name);
+                    $this->respond_json([
+                        'success' => $saved,
+                        'message' => $saved ? 'Department saved successfully.' : 'Department could not be saved.',
+                        'departments' => $this->field_staff_model->get_departments(),
+                    ]);
+                    break;
+
+                case 'employee_profile':
+                    $staff_id = (int) $this->input->post('staff_id', true);
+                    if ($staff_id <= 0) {
+                        $this->respond_json(['success' => false, 'message' => 'A valid employee is required.']);
+                    }
+                    $saved = $this->field_staff_model->save_payroll_profile($staff_id, [
+                        'position' => $this->input->post('position', true),
+                        'employment_arrangement' => $this->input->post('employment_arrangement', true),
+                        'payment_basis' => $this->input->post('payment_basis', true),
+                        'attendance_requirement' => $this->input->post('attendance_requirement', true),
+                        'department_id' => $this->input->post('department_id', true),
+                        'base_hourly_rate' => $this->input->post('base_hourly_rate', true),
+                        'payroll_group' => $this->input->post('payroll_group', true),
+                        'payment_method' => $this->input->post('payment_method', true),
+                    ]);
+                    $this->respond_json([
+                        'success' => $saved,
+                        'message' => $saved ? 'Employee configuration saved successfully.' : 'Employee configuration could not be saved.',
+                        'profile' => $this->field_staff_model->get_payroll_profile($staff_id),
+                    ]);
+                    break;
+
+                case 'attendance_policy':
+                    $settings = [
+                        'field_staff_grace_period_mins' => (string) $this->input->post('grace_period_mins', true),
+                        'field_staff_attendance_rounding' => (string) $this->input->post('attendance_rounding', true),
+                        'field_staff_break_policy' => (string) $this->input->post('break_policy', true),
+                        'field_staff_break_duration_limit_mins' => (string) $this->input->post('break_duration_limit_mins', true),
+                    ];
+                    $saved = true;
+                    foreach ($settings as $key => $value) {
+                        $saved = $this->field_staff_model->save_module_setting($key, $value) && $saved;
+                    }
+                    $this->respond_json([
+                        'success' => $saved,
+                        'message' => $saved ? 'Attendance and break policy saved successfully.' : 'Attendance and break policy could not be saved.',
+                    ]);
+                    break;
+
+                case 'break_policy':
+                    $settings = [
+                        'field_staff_break_policy' => (string) $this->input->post('break_policy', true),
+                        'field_staff_break_duration_limit_mins' => (string) $this->input->post('break_duration_limit_mins', true),
+                    ];
+                    $saved = true;
+                    foreach ($settings as $key => $value) {
+                        $saved = $this->field_staff_model->save_module_setting($key, $value) && $saved;
+                    }
+                    $this->respond_json([
+                        'success' => $saved,
+                        'message' => $saved ? 'Break policy saved successfully.' : 'Break policy could not be saved.',
+                    ]);
+                    break;
+
+                case 'pay_policy':
+                    $settings = [
+                        'field_staff_regular_hours_cap' => (string) $this->input->post('regular_hours_cap', true),
+                        'field_staff_overtime_multiplier' => (string) $this->input->post('overtime_multiplier', true),
+                        'field_staff_daily_field_allowance' => (string) $this->input->post('daily_field_allowance', true),
+                    ];
+                    $saved = true;
+                    foreach ($settings as $key => $value) {
+                        $saved = $this->field_staff_model->save_module_setting($key, $value) && $saved;
+                    }
+                    $this->respond_json([
+                        'success' => $saved,
+                        'message' => $saved ? 'Pay policy saved successfully.' : 'Pay policy could not be saved.',
+                    ]);
+                    break;
+
+                case 'statutory_policy':
+                    $settings = [
+                        'field_staff_nib_employee_rate' => (string) $this->input->post('employee_nib_rate', true),
+                        'field_staff_nib_employer_rate' => (string) $this->input->post('employer_nib_rate', true),
+                        'field_staff_nhip_employee_rate' => (string) $this->input->post('employee_nhip_rate', true),
+                        'field_staff_nhip_employer_rate' => (string) $this->input->post('employer_nhip_rate', true),
+                        'field_staff_statutory_verification_status' => (string) $this->input->post('verification_status', true),
+                        'field_staff_statutory_verification_source' => (string) $this->input->post('verification_source', true),
+                    ];
+                    $saved = true;
+                    foreach ($settings as $key => $value) {
+                        $saved = $this->field_staff_model->save_module_setting($key, $value) && $saved;
+                    }
+                    $this->respond_json([
+                        'success' => $saved,
+                        'message' => $saved ? 'Statutory settings saved successfully.' : 'Statutory settings could not be saved.',
+                    ]);
+                    break;
+
+                default:
+                    $this->respond_json(['success' => false, 'message' => 'Unsupported settings section.']);
+            }
+        } catch (Throwable $e) {
+            $this->respond_json(['success' => false, 'message' => 'Settings could not be saved due to a validation error.']);
+        }
     }
 
     /**
@@ -74,6 +315,7 @@ class Field_staff extends AdminController
         $data['get_payslip_statement_url'] = field_staff_admin_url('field_staff/get_employee_payslip_statement');
         $data['download_payslip_url'] = field_staff_admin_url('field_staff/download_payslip_statement');
         $data['clock_action_url'] = field_staff_admin_url('field_staff/clock_action');
+        $data['attendance_state_url'] = field_staff_admin_url('field_staff/get_attendance_state');
 
         $this->load->view('attendance_dashboard', $data);
     }
@@ -83,6 +325,11 @@ class Field_staff extends AdminController
      */
     public function hr_management()
     {
+        if (field_staff_can_manage_settings()) {
+            redirect(field_staff_admin_url('field_staff/hr_settings'));
+            return;
+        }
+
         $this->enforce_hr_management_access();
 
         $can_manage_pay_setup = $this->can_access_pay_setup_tab();
@@ -192,110 +439,118 @@ class Field_staff extends AdminController
      */
     public function payroll()
     {
-        $this->enforce_payroll_access();
+        $data = [
+            'title' => 'HR Master Payroll Summary',
+            'start_date' => '',
+            'end_date' => '',
+            'selected_cutoff_id' => 0,
+            'selected_cutoff' => null,
+            'cutoff_options' => [],
+            'legacy_rows' => [],
+            'payroll_records' => [],
+            'payroll_rows' => [],
+            'export_csv_url' => field_staff_admin_url('field_staff/export_payroll_register'),
+            'print_url' => field_staff_admin_url('field_staff/print_payroll_register'),
+            'pdf_url' => field_staff_admin_url('field_staff/download_payroll_register_pdf'),
+            'summary_error' => '',
+        ];
 
-        $selected_cutoff_id = (int) $this->input->get_post('cutoff_id', true);
-        $cutoff_options = $this->field_staff_model->get_payroll_cutoffs();
-        $selected_cutoff = $selected_cutoff_id > 0 ? $this->field_staff_model->get_payroll_cutoff_by_id($selected_cutoff_id) : null;
+        $request_id = 'FS-' . strtoupper(substr(hash('sha256', (string) microtime(true) . uniqid('', true)), 0, 12));
+        $timings = [
+            'request_started_at' => microtime(true),
+            'access_check_ms' => null,
+            'cutoff_options_ms' => null,
+            'selected_cutoff_ms' => null,
+            'date_resolution_ms' => null,
+            'payroll_rows_ms' => null,
+        ];
 
-        if ($selected_cutoff_id > 0 && empty($selected_cutoff)) {
-            show_error('Invalid payroll cutoff selected.', 400);
-        }
+        try {
+            $timer = microtime(true);
+            $this->enforce_payroll_access();
+            $timings['access_check_ms'] = round((microtime(true) - $timer) * 1000, 2);
 
-        $start_input = trim((string) $this->input->get_post('start_date', true));
-        $end_input   = trim((string) $this->input->get_post('end_date', true));
+            $selected_cutoff_id = (int) $this->input->get_post('cutoff_id', true);
 
-        $today = new DateTimeImmutable('today');
+            $timer = microtime(true);
+            $cutoff_options = $this->field_staff_model->get_payroll_cutoffs();
+            $timings['cutoff_options_ms'] = round((microtime(true) - $timer) * 1000, 2);
 
-        if ($selected_cutoff_id > 0 && is_array($selected_cutoff)) {
-            $start_date = (string) ($selected_cutoff['start_date'] ?? '');
-            $end_date = (string) ($selected_cutoff['end_date'] ?? '');
-        } elseif ($start_input === '' || $end_input === '') {
-            $start_date = $today->modify('monday this week')->format('Y-m-d');
-            $end_date   = $today->modify('sunday this week')->format('Y-m-d');
-        } else {
-            $start_date = $this->normalize_date($start_input) ?: $today->modify('monday this week')->format('Y-m-d');
-            $end_date   = $this->normalize_date($end_input) ?: $today->modify('sunday this week')->format('Y-m-d');
-        }
+            $timer = microtime(true);
+            $selected_cutoff = $selected_cutoff_id > 0 ? $this->field_staff_model->get_payroll_cutoff_by_id($selected_cutoff_id) : null;
+            $timings['selected_cutoff_ms'] = round((microtime(true) - $timer) * 1000, 2);
 
-        if ($start_date > $end_date) {
-            $tmp        = $start_date;
-            $start_date = $end_date;
-            $end_date   = $tmp;
-        }
-
-        $staff_table = db_prefix() . 'staff';
-        $master_table = db_prefix() . 'fs_payroll_master';
-
-        $this->db->from($staff_table);
-        if ($this->db->field_exists('active', $staff_table)) {
-            $this->db->where('active', 1);
-        }
-
-        $staff_rows = $this->db->get()->result_array();
-        $payroll_records = [];
-        $legacy_rows = [];
-
-        foreach ($staff_rows as $staff_row) {
-            $worker_id = isset($staff_row['staffid']) ? (int) $staff_row['staffid'] : 0;
-            if ($worker_id <= 0 && isset($staff_row['id'])) {
-                $worker_id = (int) $staff_row['id'];
+            if ($selected_cutoff_id > 0 && empty($selected_cutoff)) {
+                throw new RuntimeException('Selected payroll cutoff is missing or invalid.');
             }
 
-            if ($worker_id <= 0) {
-                continue;
-            }
+            $start_input = trim((string) $this->input->get_post('start_date', true));
+            $end_input   = trim((string) $this->input->get_post('end_date', true));
 
-            $hourly_rate = $this->resolve_hourly_rate($staff_row);
-            $calculation = $this->field_staff_model->calculate_weekly_payroll(
-                $worker_id,
-                $start_date,
-                $end_date,
-                $hourly_rate
-            );
+            $today = new DateTimeImmutable('today');
 
-            $status = 'draft';
-            $master_record = $this->db
-                ->select('status, cutoff_id')
-                ->from($master_table)
-                ->where('staff_id', $worker_id)
-                ->where('start_date', $start_date)
-                ->where('end_date', $end_date)
-                ->order_by('id', 'DESC')
-                ->limit(1)
-                ->get()
-                ->row_array();
-
-            if (!empty($master_record) && isset($master_record['status'])) {
-                $status = (string) $master_record['status'];
-            }
-
-            $calculation['worker_name'] = $this->resolve_worker_name($staff_row, $worker_id);
-            $calculation['hourly_rate'] = round((float) $hourly_rate, 2);
-            $calculation['status']      = in_array($status, ['draft', 'approved', 'paid'], true) ? $status : 'draft';
-
-            if ($selected_cutoff_id > 0) {
-                $calculation['cutoff_id'] = $selected_cutoff_id;
-                $calculation['cutoff_code'] = (string) ($selected_cutoff['cutoff_code'] ?? '');
-                $payroll_records[] = $calculation;
-            } elseif ($this->field_staff_model->has_legacy_payroll_for_window($worker_id, $start_date, $end_date)) {
-                $legacy_rows[] = $calculation;
+            $timer = microtime(true);
+            if ($selected_cutoff_id > 0 && is_array($selected_cutoff)) {
+                $start_date = (string) ($selected_cutoff['start_date'] ?? '');
+                $end_date = (string) ($selected_cutoff['end_date'] ?? '');
+            } elseif ($start_input === '' || $end_input === '') {
+                $start_date = $today->modify('monday this week')->format('Y-m-d');
+                $end_date   = $today->modify('sunday this week')->format('Y-m-d');
             } else {
-                $payroll_records[] = $calculation;
+                $start_date = $this->normalize_date($start_input) ?: $today->modify('monday this week')->format('Y-m-d');
+                $end_date   = $this->normalize_date($end_input) ?: $today->modify('sunday this week')->format('Y-m-d');
             }
+
+            if ($start_date > $end_date) {
+                $tmp        = $start_date;
+                $start_date = $end_date;
+                $end_date   = $tmp;
+            }
+            $timings['date_resolution_ms'] = round((microtime(true) - $timer) * 1000, 2);
+
+            $data['start_date'] = $start_date;
+            $data['end_date'] = $end_date;
+            $data['selected_cutoff_id'] = $selected_cutoff_id;
+            $data['selected_cutoff'] = $selected_cutoff;
+            $data['cutoff_options'] = $cutoff_options;
+
+            if ($selected_cutoff_id <= 0) {
+                $data['legacy_rows'] = [];
+                $data['payroll_records'] = [];
+                $data['payroll_rows'] = [];
+                $data['summary_error'] = '';
+                $this->load->view('payroll_report', $data);
+                return;
+            }
+
+            $timer = microtime(true);
+            $data['payroll_records'] = $this->field_staff_model->get_cutoff_payroll_rows($selected_cutoff_id, $start_date, $end_date);
+            $data['payroll_rows'] = $data['payroll_records'];
+            $timings['payroll_rows_ms'] = round((microtime(true) - $timer) * 1000, 2);
+
+            if (!is_array($data['payroll_records'])) {
+                throw new RuntimeException('Payroll rows returned an invalid payload.');
+            }
+
+            $this->load->view('payroll_report', $data);
+        } catch (Throwable $e) {
+            $timings['failed_at'] = microtime(true);
+            $stack_trace = $e->getTraceAsString();
+            error_log(sprintf(
+                '[field_staff][payroll_summary][%s] %s | total_ms=%.2f | timings=%s | trace=%s',
+                $request_id,
+                $e->getMessage(),
+                round((microtime(true) - $timings['request_started_at']) * 1000, 2),
+                json_encode($timings),
+                $stack_trace
+            ));
+
+            $data['summary_error'] = 'The payroll summary could not be loaded. Reference ID: ' . $request_id . '. Please retry or select a different cutoff.';
+            $data['legacy_rows'] = [];
+            $data['payroll_records'] = [];
+            $data['payroll_rows'] = [];
+            $this->load->view('payroll_report', $data);
         }
-
-        $data['title'] = 'HR Master Payroll Summary';
-        $data['start_date'] = $start_date;
-        $data['end_date'] = $end_date;
-        $data['selected_cutoff_id'] = $selected_cutoff_id;
-        $data['selected_cutoff'] = $selected_cutoff;
-        $data['cutoff_options'] = $cutoff_options;
-        $data['legacy_rows'] = $legacy_rows;
-        $data['payroll_records'] = $selected_cutoff_id > 0 ? $this->field_staff_model->get_cutoff_payroll_rows($selected_cutoff_id, $start_date, $end_date) : $payroll_records;
-        $data['payroll_rows'] = $data['payroll_records'];
-
-        $this->load->view('payroll_report', $data);
     }
 
     /**
@@ -627,6 +882,243 @@ class Field_staff extends AdminController
         echo '<tr><td><strong>Net Salary</strong></td><td><strong>$' . number_format((float) ($statement['net_salary'] ?? 0), 2) . '</strong></td></tr>';
         echo '</tbody></table>';
         echo '</body></html>';
+        exit;
+    }
+
+    /**
+     * Build the payroll register rows in the saved-cutoff format used by the report UI and exports.
+     */
+    private function get_payroll_register_rows_for_period($cutoff_id, $start_date = '', $end_date = '')
+    {
+        $cutoff_id = (int) $cutoff_id;
+        if ($cutoff_id <= 0) {
+            return [];
+        }
+
+        $cutoff = $this->field_staff_model->get_payroll_cutoff_by_id($cutoff_id);
+        if (!is_array($cutoff) || empty($cutoff)) {
+            return [];
+        }
+
+        $rows = $this->field_staff_model->get_cutoff_payroll_rows($cutoff_id, $start_date, $end_date);
+        return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * Sum payroll register totals from the saved snapshot-backed values in the row set.
+     */
+    private function summarize_payroll_register_rows(array $rows)
+    {
+        $totals = [
+            'regular_hours' => 0.0,
+            'overtime_hours' => 0.0,
+            'hourly_rate' => 0.0,
+            'gross_salary' => 0.0,
+            'nib_ee' => 0.0,
+            'nib_er' => 0.0,
+            'nhip_ee' => 0.0,
+            'nhip_er' => 0.0,
+            'net_salary' => 0.0,
+        ];
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $totals['regular_hours'] += (float) ($row['regular_hours'] ?? $row['regular_pay'] ?? 0);
+            $totals['overtime_hours'] += (float) ($row['overtime_hours'] ?? $row['ot_hours'] ?? 0);
+            $totals['hourly_rate'] += (float) ($row['hourly_rate'] ?? 0);
+            $totals['gross_salary'] += (float) ($row['gross_salary'] ?? $row['gross_earnings'] ?? 0);
+            $totals['nib_ee'] += (float) ($row['nib_ee'] ?? $row['employee_nib'] ?? 0);
+            $totals['nib_er'] += (float) ($row['nib_er'] ?? $row['employer_nib'] ?? 0);
+            $totals['nhip_ee'] += (float) ($row['nhip_ee'] ?? $row['employee_nhip'] ?? 0);
+            $totals['nhip_er'] += (float) ($row['nhip_er'] ?? $row['employer_nhip'] ?? 0);
+            $totals['net_salary'] += (float) ($row['net_salary'] ?? 0);
+        }
+
+        return $totals;
+    }
+
+    /**
+     * Render the current payroll register in a print-friendly HTML layout matched to the saved register row set.
+     */
+    private function render_payroll_register_html($cutoff, array $rows, array $totals)
+    {
+        $cutoff_label = 'Payroll register';
+        if (is_array($cutoff) && !empty($cutoff)) {
+            $cutoff_label = trim((string) ($cutoff['cutoff_code'] ?? '')) !== '' ? (string) $cutoff['cutoff_code'] : 'Payroll register';
+        }
+
+        $base_rows = '';
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $worker_name = trim((string) ($row['worker_name'] ?? 'Unknown'));
+            $regular_hours = (float) ($row['regular_hours'] ?? $row['regular_pay'] ?? 0);
+            $overtime_hours = (float) ($row['overtime_hours'] ?? $row['ot_hours'] ?? 0);
+            $hourly_rate = (float) ($row['hourly_rate'] ?? 0);
+            $gross_salary = (float) ($row['gross_salary'] ?? $row['gross_earnings'] ?? 0);
+            $nib_ee = (float) ($row['nib_ee'] ?? $row['employee_nib'] ?? 0);
+            $nib_er = (float) ($row['nib_er'] ?? $row['employer_nib'] ?? 0);
+            $nhip_ee = (float) ($row['nhip_ee'] ?? $row['employee_nhip'] ?? 0);
+            $nhip_er = (float) ($row['nhip_er'] ?? $row['employer_nhip'] ?? 0);
+            $net_salary = (float) ($row['net_salary'] ?? 0);
+
+            $base_rows .= '<tr>'
+                . '<td>' . htmlspecialchars($worker_name, ENT_QUOTES, 'UTF-8') . '</td>'
+                . '<td class="text-right">' . number_format($regular_hours, 2) . '</td>'
+                . '<td class="text-right">' . number_format($overtime_hours, 2) . '</td>'
+                . '<td class="text-right">$' . number_format($hourly_rate, 2) . '</td>'
+                . '<td class="text-right">$' . number_format($gross_salary, 2) . '</td>'
+                . '<td class="text-right">$' . number_format($nib_ee, 2) . '</td>'
+                . '<td class="text-right">$' . number_format($nib_er, 2) . '</td>'
+                . '<td class="text-right">$' . number_format($nhip_ee, 2) . '</td>'
+                . '<td class="text-right">$' . number_format($nhip_er, 2) . '</td>'
+                . '<td class="text-right"><strong>$' . number_format($net_salary, 2) . '</strong></td>'
+                . '</tr>';
+        }
+
+        if ($base_rows === '') {
+            $base_rows = '<tr><td colspan="10" class="text-center">No payroll results for the selected cutoff.</td></tr>';
+        }
+
+        $html = '<!doctype html><html><head><meta charset="utf-8"><title>' . htmlspecialchars($cutoff_label, ENT_QUOTES, 'UTF-8') . '</title>'
+            . '<style>body{font-family:Arial,sans-serif;margin:24px;color:#111}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f4f4f4}.text-right{text-align:right}.muted{color:#555}h2{margin-bottom:8px}tfoot td{font-weight:700;background:#fafafa}</style>'
+            . '</head><body>'
+            . '<h2>' . htmlspecialchars($cutoff_label, ENT_QUOTES, 'UTF-8') . '</h2>'
+            . '<p class="muted">Saved register totals reflect the cutoff snapshot entries, not ad hoc recalculation.</p>'
+            . '<table><thead><tr>'
+            . '<th>Worker Name</th><th class="text-right">Regular Hours</th><th class="text-right">Overtime Hours</th><th class="text-right">Hourly Rate</th><th class="text-right">Gross</th><th class="text-right">EE NIB</th><th class="text-right">ER NIB</th><th class="text-right">EE NHIP</th><th class="text-right">ER NHIP</th><th class="text-right">Net</th>'
+            . '</tr></thead><tbody>' . $base_rows . '</tbody>'
+            . '<tfoot><tr>'
+            . '<td>Total</td><td class="text-right">' . number_format((float) ($totals['regular_hours'] ?? 0), 2) . '</td>'
+            . '<td class="text-right">' . number_format((float) ($totals['overtime_hours'] ?? 0), 2) . '</td>'
+            . '<td class="text-right">$' . number_format((float) ($totals['hourly_rate'] ?? 0), 2) . '</td>'
+            . '<td class="text-right">$' . number_format((float) ($totals['gross_salary'] ?? 0), 2) . '</td>'
+            . '<td class="text-right">$' . number_format((float) ($totals['nib_ee'] ?? 0), 2) . '</td>'
+            . '<td class="text-right">$' . number_format((float) ($totals['nib_er'] ?? 0), 2) . '</td>'
+            . '<td class="text-right">$' . number_format((float) ($totals['nhip_ee'] ?? 0), 2) . '</td>'
+            . '<td class="text-right">$' . number_format((float) ($totals['nhip_er'] ?? 0), 2) . '</td>'
+            . '<td class="text-right">$' . number_format((float) ($totals['net_salary'] ?? 0), 2) . '</td>'
+            . '</tr></tfoot></table></body></html>';
+
+        return $html;
+    }
+
+    /**
+     * Export the selected payroll register as CSV using the saved cutoff snapshot rows as the source of truth.
+     */
+    public function export_payroll_register()
+    {
+        if (!$this->can_access_reporting_tab()) {
+            access_denied('field_staff');
+        }
+
+        $cutoff_id = (int) $this->input->get('cutoff_id', true);
+        if ($cutoff_id <= 0) {
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename="field_staff_payroll_register_empty_' . date('Ymd_His') . '.csv"');
+            $out = fopen('php://output', 'w');
+            fputcsv($out, ['Worker Name', 'Regular Hours', 'Overtime Hours', 'Hourly Rate', 'Gross', 'EE NIB', 'ER NIB', 'EE NHIP', 'ER NHIP', 'Net']);
+            fclose($out);
+            exit;
+        }
+
+        $start_date = trim((string) $this->input->get('start_date', true));
+        $end_date = trim((string) $this->input->get('end_date', true));
+        $cutoff = $this->field_staff_model->get_payroll_cutoff_by_id($cutoff_id);
+        if (!is_array($cutoff) || empty($cutoff)) {
+            show_404();
+        }
+
+        $rows = $this->get_payroll_register_rows_for_period($cutoff_id, $start_date, $end_date);
+        $totals = $this->summarize_payroll_register_rows($rows);
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="field_staff_payroll_register_' . (int) $cutoff_id . '_' . date('Ymd_His') . '.csv"');
+
+        $output = fopen('php://output', 'w');
+        fputcsv($output, ['Worker Name', 'Regular Hours', 'Overtime Hours', 'Hourly Rate', 'Gross', 'EE NIB', 'ER NIB', 'EE NHIP', 'ER NHIP', 'Net']);
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            fputcsv($output, [
+                trim((string) ($row['worker_name'] ?? 'Unknown')),
+                (float) ($row['regular_hours'] ?? $row['regular_pay'] ?? 0),
+                (float) ($row['overtime_hours'] ?? $row['ot_hours'] ?? 0),
+                (float) ($row['hourly_rate'] ?? 0),
+                (float) ($row['gross_salary'] ?? $row['gross_earnings'] ?? 0),
+                (float) ($row['nib_ee'] ?? $row['employee_nib'] ?? 0),
+                (float) ($row['nib_er'] ?? $row['employer_nib'] ?? 0),
+                (float) ($row['nhip_ee'] ?? $row['employee_nhip'] ?? 0),
+                (float) ($row['nhip_er'] ?? $row['employer_nhip'] ?? 0),
+                (float) ($row['net_salary'] ?? 0),
+            ]);
+        }
+
+        fputcsv($output, ['TOTAL', $totals['regular_hours'], $totals['overtime_hours'], $totals['hourly_rate'], $totals['gross_salary'], $totals['nib_ee'], $totals['nib_er'], $totals['nhip_ee'], $totals['nhip_er'], $totals['net_salary']]);
+        fclose($output);
+        exit;
+    }
+
+    /**
+     * Print the selected payroll register using the same saved cutoff rows as the report and CSV export.
+     */
+    public function print_payroll_register()
+    {
+        if (!$this->can_access_reporting_tab()) {
+            access_denied('field_staff');
+        }
+
+        $cutoff_id = (int) $this->input->get('cutoff_id', true);
+        $start_date = trim((string) $this->input->get('start_date', true));
+        $end_date = trim((string) $this->input->get('end_date', true));
+        $cutoff = $cutoff_id > 0 ? $this->field_staff_model->get_payroll_cutoff_by_id($cutoff_id) : null;
+        $rows = $this->get_payroll_register_rows_for_period($cutoff_id, $start_date, $end_date);
+        $totals = $this->summarize_payroll_register_rows($rows);
+
+        header('Content-Type: text/html; charset=utf-8');
+        echo $this->render_payroll_register_html($cutoff, $rows, $totals);
+        exit;
+    }
+
+    /**
+     * Download a best-effort PDF for the selected payroll register from the saved cutoff register rows.
+     */
+    public function download_payroll_register_pdf()
+    {
+        if (!$this->can_access_reporting_tab()) {
+            access_denied('field_staff');
+        }
+
+        $cutoff_id = (int) $this->input->get('cutoff_id', true);
+        $start_date = trim((string) $this->input->get('start_date', true));
+        $end_date = trim((string) $this->input->get('end_date', true));
+        $cutoff = $cutoff_id > 0 ? $this->field_staff_model->get_payroll_cutoff_by_id($cutoff_id) : null;
+        $rows = $this->get_payroll_register_rows_for_period($cutoff_id, $start_date, $end_date);
+        $totals = $this->summarize_payroll_register_rows($rows);
+        $html = $this->render_payroll_register_html($cutoff, $rows, $totals);
+        $filename = 'payroll_register_' . ($cutoff_id > 0 ? (int) $cutoff_id : 'all') . '_' . date('Ymd_His');
+
+        if (class_exists('Dompdf\Dompdf')) {
+            $dompdf = new \Dompdf\Dompdf();
+            $dompdf->loadHtml($html);
+            $dompdf->setPaper('A4', 'portrait');
+            $dompdf->render();
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: attachment; filename="' . $filename . '.pdf"');
+            echo $dompdf->output();
+            exit;
+        }
+
+        header('Content-Type: text/html; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '.html"');
+        echo $html;
         exit;
     }
 
@@ -1033,6 +1525,16 @@ class Field_staff extends AdminController
                 }
 
                 $this->persist_payroll_components($payroll_id, $row);
+
+                $snapshot_payload = $this->field_staff_model->build_payroll_snapshot_payload($payroll_id, $payload, $row, $profile, $cutoff);
+                if (!$this->field_staff_model->save_payroll_snapshot($payroll_id, 'draft', $snapshot_payload)) {
+                    $this->db->trans_rollback();
+                    $this->respond_json([
+                        'success' => false,
+                        'message' => 'Payrun snapshot could not be saved. The transaction was rolled back.',
+                    ]);
+                }
+
                 $saved_count++;
             }
 
@@ -1060,10 +1562,92 @@ class Field_staff extends AdminController
     }
 
     /**
+     * Enforce the explicit payroll workflow state transitions.
+     */
+    public function payroll_workflow_action()
+    {
+        $this->require_reporting_json();
+
+        if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
+            $this->respond_json([
+                'success' => false,
+                'message' => 'Request validation failed.',
+            ]);
+        }
+
+        $payroll_id = (int) $this->input->post('payroll_id', true);
+        if ($payroll_id <= 0) {
+            $this->respond_json([
+                'success' => false,
+                'message' => 'A valid payroll record is required for this action.',
+            ]);
+        }
+
+        $action = strtolower(trim((string) $this->input->post('action', true)));
+        $allowed_actions = ['submit_for_review', 'return_to_draft', 'approve', 'record_payment'];
+        if (!in_array($action, $allowed_actions, true)) {
+            $this->respond_json([
+                'success' => false,
+                'message' => 'A supported payroll workflow action is required.',
+            ]);
+        }
+
+        $actor_staff_id = (int) $this->resolve_session_staff_id();
+        $details = [
+            'notes' => trim((string) $this->input->post('notes', true)),
+            'payment_method' => trim((string) $this->input->post('payment_method', true)),
+            'payment_reference' => trim((string) $this->input->post('payment_reference', true)),
+            'payment_amount' => $this->input->post('payment_amount', true),
+            'payment_date' => trim((string) $this->input->post('payment_date', true)),
+        ];
+
+        $this->db->trans_begin();
+        try {
+            $locked_payroll = $this->lock_payroll_master_for_update($payroll_id);
+            if (!is_array($locked_payroll)) {
+                $this->db->trans_rollback();
+                $this->respond_json([
+                    'success' => false,
+                    'message' => 'The selected payroll record could not be locked for update.',
+                ]);
+            }
+
+            $result = $this->field_staff_model->apply_payroll_workflow_action($payroll_id, $action, $actor_staff_id, $details);
+            if (empty($result) || !isset($result['success']) || $result['success'] !== true) {
+                $this->db->trans_rollback();
+                $this->respond_json([
+                    'success' => false,
+                    'message' => isset($result['message']) ? (string) $result['message'] : 'Payroll workflow update failed.',
+                ]);
+            }
+
+            if ($this->db->trans_status() === false) {
+                $this->db->trans_rollback();
+                $this->respond_json([
+                    'success' => false,
+                    'message' => 'Payroll workflow update failed during the database transaction.',
+                ]);
+            }
+
+            $this->db->trans_commit();
+            $this->respond_json([
+                'success' => true,
+                'message' => isset($result['message']) ? (string) $result['message'] : 'Payroll workflow updated successfully.',
+                'status' => isset($result['status']) ? (string) $result['status'] : '',
+            ]);
+        } catch (Throwable $e) {
+            $this->db->trans_rollback();
+            $this->respond_json([
+                'success' => false,
+                'message' => 'Payroll workflow action could not be completed due to a database conflict.',
+            ]);
+        }
+    }
+
+    /**
      * Save project assignment rows for one or multiple staff members.
      */
-    public function save_project_assignment()
-    {
+    public function save_project_assignment() {
         $this->require_project_assignment_json();
 
         if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
@@ -1104,6 +1688,191 @@ class Field_staff extends AdminController
         $this->respond_json([
             'success' => true,
             'message' => 'Project assignment saved successfully for ' . $saved_count . ' staff member(s).',
+        ]);
+    }
+
+    /**
+     * Save one employee policy override and return the current snapshot.
+     */
+    public function save_employee_policy_override()
+    {
+        if (!$this->can_manage_hr_settings()) {
+            $this->respond_unauthorized_json();
+        }
+
+        if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
+            $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
+        }
+
+        $staff_id = (int) $this->input->post('staff_id', true);
+        $field_name = strtolower(trim((string) $this->input->post('field_name', true)));
+
+        if ($staff_id <= 0 || $field_name === '') {
+            $this->respond_json(['success' => false, 'message' => 'A valid employee and policy field are required.']);
+        }
+
+        $saved = $this->field_staff_model->save_employee_policy_override($staff_id, [
+            'field_name' => $field_name,
+            'value' => $this->input->post('value', true),
+            'effective_from' => trim((string) $this->input->post('effective_from', true)),
+            'effective_to' => trim((string) $this->input->post('effective_to', true)),
+            'source' => strtolower(trim((string) $this->input->post('source', true))),
+            'verification_status' => strtolower(trim((string) $this->input->post('verification_status', true))),
+            'notes' => trim((string) $this->input->post('notes', true)),
+        ]);
+
+        if (!$saved) {
+            $this->respond_json(['success' => false, 'message' => 'The employee policy override could not be saved.']);
+        }
+
+        $this->respond_json([
+            'success' => true,
+            'message' => 'Policy override saved successfully.',
+            'snapshot' => $this->field_staff_model->get_employee_policy_snapshot($staff_id),
+            'history' => $this->field_staff_model->get_employee_policy_overrides($staff_id),
+        ]);
+    }
+
+    /**
+     * Return effective policy records for one employee.
+     */
+    public function get_employee_policy_overrides()
+    {
+        if (!$this->can_manage_hr_settings()) {
+            $this->respond_unauthorized_json();
+        }
+
+        $staff_id = (int) $this->input->get('staff_id', true);
+        $as_of_date = trim((string) $this->input->get('as_of_date', true));
+
+        if ($staff_id <= 0) {
+            $this->respond_json(['success' => false, 'message' => 'A valid employee is required.']);
+        }
+
+        $this->respond_json([
+            'success' => true,
+            'snapshot' => $this->field_staff_model->get_employee_policy_snapshot($staff_id, $as_of_date),
+            'history' => $this->field_staff_model->get_employee_policy_overrides($staff_id, $as_of_date),
+        ]);
+    }
+
+    /**
+     * Create an attendance correction request for review.
+     */
+    public function save_attendance_correction_request()
+    {
+        if (!$this->can_manage_hr_settings() && !$this->can_access_operations_tab()) {
+            $this->respond_unauthorized_json();
+        }
+
+        if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
+            $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
+        }
+
+        $payload = [
+            'attendance_id' => (int) $this->input->post('attendance_id', true),
+            'staff_id' => (int) $this->input->post('staff_id', true),
+            'requested_by' => $this->resolve_session_staff_id(),
+            'correction_type' => trim((string) $this->input->post('correction_type', true)),
+            'before_value' => trim((string) $this->input->post('before_value', true)),
+            'after_value' => trim((string) $this->input->post('after_value', true)),
+            'reason' => trim((string) $this->input->post('reason', true)),
+        ];
+
+        $saved = $this->field_staff_model->save_attendance_correction_request($payload);
+        if (!$saved) {
+            $this->respond_json(['success' => false, 'message' => 'Attendance correction request could not be created.']);
+        }
+
+        $this->respond_json([
+            'success' => true,
+            'message' => 'Attendance correction request submitted for review.',
+            'history' => $this->field_staff_model->get_attendance_correction_history((int) $payload['staff_id']),
+        ]);
+    }
+
+    /**
+     * Approve or reject an attendance correction request.
+     */
+    public function approve_attendance_correction_request()
+    {
+        if (!$this->can_manage_hr_settings()) {
+            $this->respond_unauthorized_json();
+        }
+
+        if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
+            $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
+        }
+
+        $request_id = (int) $this->input->post('request_id', true);
+        $status = strtolower(trim((string) $this->input->post('status', true)));
+        $notes = trim((string) $this->input->post('notes', true));
+        $approved_by = $this->resolve_session_staff_id();
+
+        $saved = $this->field_staff_model->approve_attendance_correction($request_id, $approved_by, $status, $notes);
+        if (!$saved) {
+            $this->respond_json(['success' => false, 'message' => 'Correction request could not be updated.']);
+        }
+
+        $this->respond_json([
+            'success' => true,
+            'message' => 'Correction request updated successfully.',
+            'history' => $this->field_staff_model->get_attendance_correction_history(),
+        ]);
+    }
+
+    /**
+     * Get a live status snapshot for the current team.
+     */
+    public function get_team_monitor()
+    {
+        if (!$this->can_access_operations_tab()) {
+            $this->respond_unauthorized_json();
+        }
+
+        $department_id = (int) $this->input->get('department_id', true);
+        $date = trim((string) $this->input->get('date', true));
+
+        $this->respond_json([
+            'success' => true,
+            'team' => $this->field_staff_model->get_live_team_monitor($department_id, $date),
+        ]);
+    }
+
+    /**
+     * Return the current attendance state for the logged-in employee.
+     */
+    public function get_attendance_state()
+    {
+        if (!$this->input || !isset($this->input)) {
+            $this->respond_json(['success' => false, 'reason' => 'server_error', 'message' => 'Attendance state is unavailable.']);
+        }
+
+        if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'GET') {
+            $this->respond_json(['success' => false, 'reason' => 'invalid_request', 'message' => 'Request validation failed.']);
+        }
+
+        $staff_id = $this->resolve_session_staff_id();
+        if ($staff_id <= 0) {
+            $this->respond_json(['success' => false, 'reason' => 'not_authorized', 'message' => 'Session is not active.']);
+        }
+
+        $open_attendance = $this->field_staff_model->get_open_attendance_id($staff_id);
+        $active_break = $this->field_staff_model->get_active_break_session($staff_id);
+        $csrf_name = isset($this->security) && method_exists($this->security, 'get_csrf_token_name') ? (string) $this->security->get_csrf_token_name() : '';
+        $csrf_hash = isset($this->security) && method_exists($this->security, 'get_csrf_hash') ? (string) $this->security->get_csrf_hash() : '';
+
+        $this->respond_json([
+            'success' => true,
+            'state' => [
+                'staff_id' => $staff_id,
+                'clocked_in' => $open_attendance > 0,
+                'on_break' => is_array($active_break) && !empty($active_break),
+                'break_type' => is_array($active_break) && !empty($active_break) ? strtolower(trim((string) ($active_break['break_type'] ?? 'paid'))) : null,
+                'pending_action' => null,
+                'last_updated' => date('c'),
+            ],
+            'csrf' => $csrf_name !== '' || $csrf_hash !== '' ? ['name' => $csrf_name, 'hash' => $csrf_hash] : null,
         ]);
     }
 
@@ -1259,7 +2028,13 @@ class Field_staff extends AdminController
         }
 
         $status_input = strtolower(trim((string) $this->input->post('status', true)));
-        $status = in_array($status_input, ['draft', 'approved', 'paid'], true) ? $status_input : 'draft';
+        if (in_array($status_input, ['approved', 'paid'], true)) {
+            $this->respond_json([
+                'success' => false,
+                'message' => 'Payroll approval and payment must be recorded through the explicit workflow actions.',
+            ]);
+        }
+        $status = in_array($status_input, ['draft'], true) ? $status_input : 'draft';
 
         $this->db->trans_begin();
         try {
@@ -1409,6 +2184,28 @@ class Field_staff extends AdminController
 
             foreach ($provided_adjustments as $attribute_code => $value) {
                 $this->field_staff_model->add_eav_payroll_value($payroll_id, $attribute_code, $value);
+            }
+
+            $snapshot_row = [
+                'regular_pay' => round($regular_hours * (float) $hourly_rate, 2),
+                'overtime_pay' => round($ot_hours * (float) $hourly_rate * 1.5, 2),
+                'holiday_pay' => 0.0,
+                'allowance_due' => 0.0,
+                'vacation_pay' => round((float) ($adjustment_map['vacation_pay'] ?? 0.0), 2),
+                'commission_pay' => round((float) ($adjustment_map['commission'] ?? 0.0), 2),
+                'loan_repayment' => round((float) ($adjustment_map['loan_adjustment'] ?? 0.0), 2),
+                'advance_repayment' => round((float) ($adjustment_map['advance'] ?? 0.0), 2),
+                'other_misc_deductions' => 0.0,
+                'total_deductions' => round(((float) ($adjustment_map['loan_adjustment'] ?? 0.0) + (float) ($adjustment_map['advance'] ?? 0.0) + $nib_ee + $nhip_ee), 2),
+                'net_pay' => round($net_salary, 2),
+            ];
+            $snapshot_payload = $this->field_staff_model->build_payroll_snapshot_payload($payroll_id, $payload, $snapshot_row, $payroll_profile, $cutoff);
+            if (!$this->field_staff_model->save_payroll_snapshot($payroll_id, $status, $snapshot_payload)) {
+                $this->db->trans_rollback();
+                $this->respond_json([
+                    'success' => false,
+                    'message' => 'Payroll snapshot could not be saved. The transaction was rolled back.',
+                ]);
             }
 
             if ($this->db->trans_status() === false) {
@@ -1580,6 +2377,27 @@ class Field_staff extends AdminController
     }
 
     /**
+     * Lock a payroll master row for update while preserving the transaction boundary.
+     *
+     * @param int $payroll_id
+     *
+     * @return array|null
+     */
+    private function lock_payroll_master_for_update($payroll_id)
+    {
+        $payroll_id = (int) $payroll_id;
+        if ($payroll_id <= 0) {
+            return null;
+        }
+
+        $table = db_prefix() . 'fs_payroll_master';
+        $query = $this->db->query('SELECT * FROM ' . $table . ' WHERE id = ' . $payroll_id . ' FOR UPDATE');
+        $row = $query ? $query->row_array() : null;
+
+        return is_array($row) ? $row : null;
+    }
+
+    /**
      * Extract a deduplicated list of employee IDs from request payloads.
      *
      * @param mixed $employee_ids
@@ -1726,71 +2544,147 @@ class Field_staff extends AdminController
      */
     public function clock_action()
     {
-        $is_post = strtoupper((string) $this->input->server('REQUEST_METHOD')) === 'POST';
+        $reference_id = 'fs-' . bin2hex(random_bytes(6));
 
-        if (!$is_post) {
+        try {
+            $is_post = strtoupper((string) $this->input->server('REQUEST_METHOD')) === 'POST';
+
+            if (!$is_post) {
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success' => false,
+                    'reason' => 'invalid_request',
+                    'message' => 'Request validation failed.',
+                ]);
+                exit;
+            }
+
+            $action = strtolower(trim((string) $this->input->post('action', true)));
+            $allowed_actions = ['clock_in', 'clock_out', 'break_out', 'break_in'];
+
+            $latitude  = trim((string) $this->input->post('latitude', true));
+            $longitude = trim((string) $this->input->post('longitude', true));
+            $notes     = trim((string) $this->input->post('notes', true));
+            $break_type = strtolower(trim((string) $this->input->post('break_type', true)));
+            $staff_id  = $this->resolve_session_staff_id();
+
+            if ($staff_id <= 0) {
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success' => false,
+                    'reason' => 'not_authorized',
+                    'message' => 'Session is not active.',
+                ]);
+                exit;
+            }
+
+            $can_manage_attendance = $this->can_access_operations_tab() || $this->can_manage_hr_settings();
+            if (!$can_manage_attendance && !isset($this->session)) {
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success' => false,
+                    'reason' => 'not_authorized',
+                    'message' => 'You do not have permission to record attendance.',
+                ]);
+                exit;
+            }
+
+            if (!in_array($action, $allowed_actions, true)) {
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success' => false,
+                    'reason' => 'invalid_action',
+                    'message' => 'The selected attendance action is not supported.',
+                ]);
+                exit;
+            }
+
+            if (!is_numeric($latitude) || !is_numeric($longitude)) {
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success' => false,
+                    'reason' => 'missing_location',
+                    'message' => 'Location details are required to record attendance.',
+                ]);
+                exit;
+            }
+
+            $transition_valid = false;
+            switch ($action) {
+                case 'clock_in':
+                    $transition_valid = $this->field_staff_model->validate_attendance_transition($staff_id, 'clock_in');
+                    break;
+                case 'clock_out':
+                    $transition_valid = $this->field_staff_model->validate_attendance_transition($staff_id, 'clock_out');
+                    break;
+                case 'break_out':
+                    $transition_valid = $this->field_staff_model->validate_break_transition($staff_id, 'break_out');
+                    break;
+                case 'break_in':
+                    $transition_valid = $this->field_staff_model->validate_break_transition($staff_id, 'break_in');
+                    break;
+                default:
+                    $transition_valid = false;
+                    break;
+            }
+
+            if (!$transition_valid) {
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success' => false,
+                    'reason' => 'invalid_transition',
+                    'message' => 'The current attendance state does not allow that action. Refresh to confirm the latest status before retrying.',
+                ]);
+                exit;
+            }
+
+            $latitude  = (float) $latitude;
+            $longitude = (float) $longitude;
+
+            $saved = (bool) $this->field_staff_model->record_clock_action(
+                $staff_id,
+                $action,
+                $latitude,
+                $longitude,
+                $notes,
+                in_array($break_type, ['paid', 'unpaid'], true) ? $break_type : 'paid'
+            );
+
+            if ($saved) {
+                $latest_record = $this->field_staff_model->get_latest_attendance_by_staff($staff_id);
+
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Attendance recorded successfully',
+                    'record' => $latest_record,
+                ]);
+                exit;
+            }
+
             header('Content-Type: application/json');
             echo json_encode([
                 'success' => false,
-                'message' => 'Request validation failed.',
+                'reason' => 'server_error',
+                'message' => 'The attendance action could not be completed. Please refresh and verify the current status before retrying.',
+                'reference_id' => $reference_id,
             ]);
             exit;
-        }
+        } catch (Throwable $e) {
+            error_log('Field Staff attendance action failed [' . $reference_id . ']: ' . $e->getMessage());
+            if (method_exists($e, 'getTraceAsString')) {
+                error_log($e->getTraceAsString());
+            }
 
-        $action = strtolower(trim((string) $this->input->post('action', true)));
-
-        $latitude  = trim((string) $this->input->post('latitude', true));
-        $longitude = trim((string) $this->input->post('longitude', true));
-        $notes     = trim((string) $this->input->post('notes', true));
-        $staff_id  = $this->resolve_session_staff_id();
-
-        if ($staff_id <= 0) {
             header('Content-Type: application/json');
             echo json_encode([
                 'success' => false,
-                'message' => 'Session is not active.',
+                'reason' => 'server_error',
+                'message' => 'The attendance action could not be completed. Please refresh and verify the current status before retrying.',
+                'reference_id' => $reference_id,
             ]);
             exit;
         }
-
-        if (!is_numeric($latitude) || !is_numeric($longitude)) {
-            header('Content-Type: application/json');
-            echo json_encode([
-                'success' => false,
-                'message' => 'Location details are required to record attendance.',
-            ]);
-            exit;
-        }
-
-        $latitude  = (float) $latitude;
-        $longitude = (float) $longitude;
-
-        $saved = (bool) $this->field_staff_model->record_clock_action(
-            $staff_id,
-            $action,
-            $latitude,
-            $longitude,
-            $notes
-        );
-
-        if ($saved) {
-            $latest_record = $this->field_staff_model->get_latest_attendance_by_staff($staff_id);
-
-            header('Content-Type: application/json');
-            echo json_encode([
-                'success' => true,
-                'message' => 'Attendance recorded successfully',
-                'record' => $latest_record,
-            ]);
-            exit;
-        }
-
-        header('Content-Type: application/json');
-        echo json_encode([
-            'success' => false,
-            'message' => 'Server routing communication error or action denied.',
-        ]);
-        exit;
     }
 
     /**

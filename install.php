@@ -124,6 +124,8 @@ $attendanceTable = $prefix . 'fs_attendance';
 $attributesTable = $prefix . 'fs_payroll_attributes';
 $valuesTable     = $prefix . 'fs_payroll_values';
 $masterTable     = $prefix . 'fs_payroll_master';
+$snapshotsTable  = $prefix . 'fs_payroll_snapshots';
+$workflowTable   = $prefix . 'fs_payroll_workflow_history';
 $cutoffTable     = $prefix . 'fs_payroll_cutoffs';
 $profilesTable   = $prefix . 'fs_payroll_profiles';
 $departmentsTable = $prefix . 'fs_departments';
@@ -151,6 +153,78 @@ if (!fs_table_exists($CI, $attendanceTable)) {
     ) ENGINE=InnoDB;");
 } else {
     fs_install_log('Table exists, skipped: ' . $attendanceTable, 'debug');
+}
+
+$breakSessionsTable = $prefix . 'fs_break_sessions';
+$policyOverridesTable = $prefix . 'fs_policy_overrides';
+$attendanceCorrectionsTable = $prefix . 'fs_attendance_corrections';
+
+if (!fs_table_exists($CI, $breakSessionsTable)) {
+    fs_install_exec($CI, 'create_fs_break_sessions', "CREATE TABLE `{$breakSessionsTable}` (
+        `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        `staff_id` INT UNSIGNED NOT NULL,
+        `attendance_id` INT UNSIGNED NOT NULL,
+        `break_out_at` DATETIME NULL,
+        `break_in_at` DATETIME NULL,
+        `ended_at` DATETIME NULL,
+        `break_type` ENUM('paid','unpaid') NOT NULL DEFAULT 'paid',
+        `notes` TEXT NULL,
+        `created_at` DATETIME NOT NULL,
+        `updated_at` DATETIME NOT NULL,
+        PRIMARY KEY (`id`),
+        KEY `idx_fs_break_sessions_staff_id` (`staff_id`),
+        KEY `idx_fs_break_sessions_attendance_id` (`attendance_id`),
+        KEY `idx_fs_break_sessions_active` (`staff_id`,`ended_at`)
+    ) ENGINE=InnoDB;");
+} else {
+    fs_install_log('Table exists, skipped: ' . $breakSessionsTable, 'debug');
+}
+
+if (!fs_table_exists($CI, $policyOverridesTable)) {
+    fs_install_exec($CI, 'create_fs_policy_overrides', "CREATE TABLE `{$policyOverridesTable}` (
+        `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        `staff_id` INT UNSIGNED NOT NULL,
+        `field_name` VARCHAR(90) NOT NULL,
+        `value` TEXT NULL,
+        `effective_from` DATE NOT NULL,
+        `effective_to` DATE NULL,
+        `source` VARCHAR(32) NOT NULL DEFAULT 'manual',
+        `verification_status` VARCHAR(32) NOT NULL DEFAULT 'pending',
+        `notes` TEXT NULL,
+        `created_at` DATETIME NOT NULL,
+        `updated_at` DATETIME NOT NULL,
+        PRIMARY KEY (`id`),
+        UNIQUE KEY `uq_fs_policy_overrides_staff_field_date` (`staff_id`, `field_name`, `effective_from`),
+        KEY `idx_fs_policy_overrides_staff_id` (`staff_id`),
+        KEY `idx_fs_policy_overrides_effective` (`effective_from`,`effective_to`)
+    ) ENGINE=InnoDB;");
+} else {
+    fs_install_log('Table exists, skipped: ' . $policyOverridesTable, 'debug');
+}
+
+if (!fs_table_exists($CI, $attendanceCorrectionsTable)) {
+    fs_install_exec($CI, 'create_fs_attendance_corrections', "CREATE TABLE `{$attendanceCorrectionsTable}` (
+        `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        `attendance_id` INT UNSIGNED NOT NULL,
+        `staff_id` INT UNSIGNED NOT NULL,
+        `requested_by` INT UNSIGNED NOT NULL,
+        `approved_by` INT UNSIGNED NULL,
+        `correction_type` VARCHAR(50) NOT NULL DEFAULT 'attendance',
+        `before_value` TEXT NULL,
+        `after_value` TEXT NULL,
+        `reason` TEXT NOT NULL,
+        `status` ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+        `notes` TEXT NULL,
+        `approved_at` DATETIME NULL,
+        `created_at` DATETIME NOT NULL,
+        `updated_at` DATETIME NOT NULL,
+        PRIMARY KEY (`id`),
+        KEY `idx_fs_attendance_corrections_staff_id` (`staff_id`),
+        KEY `idx_fs_attendance_corrections_attendance_id` (`attendance_id`),
+        KEY `idx_fs_attendance_corrections_status` (`status`)
+    ) ENGINE=InnoDB;");
+} else {
+    fs_install_log('Table exists, skipped: ' . $attendanceCorrectionsTable, 'debug');
 }
 
 if (!fs_table_exists($CI, $attributesTable)) {
@@ -182,9 +256,30 @@ if (!fs_table_exists($CI, $valuesTable)) {
     fs_install_log('Table exists, skipped: ' . $valuesTable, 'debug');
 
     try {
-        $index_check = $CI->db->query("SHOW INDEX FROM `{$valuesTable}` WHERE Key_name = 'uq_fs_payroll_values_payroll_attribute' LIMIT 1");
-        if (!$index_check || $index_check->num_rows() === 0) {
-            $CI->db->query("ALTER TABLE `{$valuesTable}` ADD UNIQUE INDEX `uq_fs_payroll_values_payroll_attribute` (`payroll_id`, `attribute_id`)");
+        $index_check = $CI->db->query("SHOW INDEX FROM `{$valuesTable}` WHERE Key_name = 'uq_fs_payroll_values_payroll_attribute'");
+        if (!$index_check || !method_exists($index_check, 'result_array') || (method_exists($index_check, 'num_rows') && $index_check->num_rows() === 0)) {
+            $alter_result = $CI->db->query("ALTER TABLE `{$valuesTable}` ADD UNIQUE INDEX `uq_fs_payroll_values_payroll_attribute` (`payroll_id`, `attribute_id`)");
+            if ($alter_result === false) {
+                $error = method_exists($CI->db, 'error') ? $CI->db->error() : ['message' => 'Unknown DB error'];
+                $message = is_array($error) && isset($error['message']) ? (string) $error['message'] : (string) $error;
+                fs_install_log('Failed to add unique payroll attribute index: ' . $valuesTable . ' | ' . $message, 'warning');
+                return;
+            }
+
+            fs_install_log('Added unique payroll attribute index: ' . $valuesTable, 'debug');
+            return;
+        }
+
+        $rows = $index_check->result_array();
+        if (empty($rows)) {
+            $alter_result = $CI->db->query("ALTER TABLE `{$valuesTable}` ADD UNIQUE INDEX `uq_fs_payroll_values_payroll_attribute` (`payroll_id`, `attribute_id`)");
+            if ($alter_result === false) {
+                $error = method_exists($CI->db, 'error') ? $CI->db->error() : ['message' => 'Unknown DB error'];
+                $message = is_array($error) && isset($error['message']) ? (string) $error['message'] : (string) $error;
+                fs_install_log('Failed to add unique payroll attribute index: ' . $valuesTable . ' | ' . $message, 'warning');
+                return;
+            }
+
             fs_install_log('Added unique payroll attribute index: ' . $valuesTable, 'debug');
         }
     } catch (Throwable $e) {
@@ -214,7 +309,7 @@ if (!fs_table_exists($CI, $masterTable)) {
         `nhip_er` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
         `net_salary` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
         `payment_method` ENUM('cash','online_transfer','check') NOT NULL DEFAULT 'online_transfer',
-        `status` ENUM('draft','approved','paid') NOT NULL DEFAULT 'draft',
+        `status` ENUM('draft','under_review','approved','paid') NOT NULL DEFAULT 'draft',
         `created_at` DATETIME NOT NULL,
         PRIMARY KEY (`id`),
         UNIQUE KEY `uq_fs_payroll_master_staff_cutoff` (`staff_id`,`cutoff_id`),
@@ -224,6 +319,55 @@ if (!fs_table_exists($CI, $masterTable)) {
     ) ENGINE=InnoDB;");
 } else {
     fs_install_log('Table exists, skipped: ' . $masterTable, 'debug');
+}
+
+if (!fs_table_exists($CI, $snapshotsTable)) {
+    fs_install_exec($CI, 'create_fs_payroll_snapshots', "CREATE TABLE `{$snapshotsTable}` (
+        `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        `payroll_id` INT UNSIGNED NOT NULL,
+        `staff_id` INT UNSIGNED NOT NULL,
+        `cutoff_id` INT UNSIGNED NULL,
+        `calculation_version` VARCHAR(80) NOT NULL DEFAULT '2026.10.19.payroll.v1',
+        `snapshot_status` ENUM('draft','under_review','approved','paid') NOT NULL DEFAULT 'draft',
+        `snapshot_data` LONGTEXT NOT NULL,
+        `generated_at` DATETIME NOT NULL,
+        `created_at` DATETIME NOT NULL,
+        `updated_at` DATETIME NOT NULL,
+        PRIMARY KEY (`id`),
+        UNIQUE KEY `uq_fs_payroll_snapshots_payroll_id` (`payroll_id`),
+        KEY `idx_fs_payroll_snapshots_staff_id` (`staff_id`),
+        KEY `idx_fs_payroll_snapshots_cutoff_id` (`cutoff_id`),
+        KEY `idx_fs_payroll_snapshots_status` (`snapshot_status`)
+    ) ENGINE=InnoDB;");
+} else {
+    fs_install_log('Table exists, skipped: ' . $snapshotsTable, 'debug');
+}
+
+if (!fs_table_exists($CI, $workflowTable)) {
+    fs_install_exec($CI, 'create_fs_payroll_workflow_history', "CREATE TABLE `{$workflowTable}` (
+        `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        `payroll_id` INT UNSIGNED NOT NULL,
+        `staff_id` INT UNSIGNED NOT NULL,
+        `cutoff_id` INT UNSIGNED NULL,
+        `action` VARCHAR(40) NOT NULL,
+        `from_status` VARCHAR(20) NULL,
+        `to_status` VARCHAR(20) NULL,
+        `actor_staff_id` INT UNSIGNED NULL,
+        `notes` TEXT NULL,
+        `payment_date` DATE NULL,
+        `payment_method` VARCHAR(32) NULL,
+        `payment_reference` VARCHAR(120) NULL,
+        `payment_amount` DECIMAL(12,2) NULL,
+        `snapshot_id` INT UNSIGNED NULL,
+        `created_at` DATETIME NOT NULL,
+        PRIMARY KEY (`id`),
+        KEY `idx_fs_payroll_workflow_payroll_id` (`payroll_id`),
+        KEY `idx_fs_payroll_workflow_staff_id` (`staff_id`),
+        KEY `idx_fs_payroll_workflow_action` (`action`),
+        KEY `idx_fs_payroll_workflow_cutoff_id` (`cutoff_id`)
+    ) ENGINE=InnoDB;");
+} else {
+    fs_install_log('Table exists, skipped: ' . $workflowTable, 'debug');
 }
 
 if (!fs_table_exists($CI, $profilesTable)) {

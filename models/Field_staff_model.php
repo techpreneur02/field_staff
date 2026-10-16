@@ -15,40 +15,122 @@ class Field_staff_model extends App_Model
      *
      * @return bool
      */
-    public function record_clock_action($staff_id, $action, $latitude, $longitude, $notes)
+    public function record_clock_action($staff_id, $action, $latitude, $longitude, $notes, $break_type = 'paid')
     {
         $action = strtolower(trim((string) $action));
-
-        if (in_array($action, ['clock_in', 'in'], true)) {
-            if (!$this->validate_attendance_transition($staff_id, 'clock_in')) {
-                return false;
-            }
-
-            return $this->clock_in(
-                $staff_id,
-                date('Y-m-d'),
-                date('Y-m-d H:i:s'),
-                $latitude,
-                $longitude,
-                $notes
-            );
+        $break_type = strtolower(trim((string) $break_type));
+        if (!in_array($break_type, ['paid', 'unpaid'], true)) {
+            $break_type = 'paid';
         }
 
-        if (in_array($action, ['clock_out', 'out'], true)) {
-            if (!$this->validate_attendance_transition($staff_id, 'clock_out')) {
-                return false;
+        $this->db->trans_begin();
+
+        try {
+            if (in_array($action, ['clock_in', 'in'], true)) {
+                if (!$this->validate_attendance_transition($staff_id, 'clock_in')) {
+                    $this->db->trans_rollback();
+                    return false;
+                }
+
+                $saved = $this->clock_in(
+                    $staff_id,
+                    date('Y-m-d'),
+                    date('Y-m-d H:i:s'),
+                    $latitude,
+                    $longitude,
+                    $notes
+                );
+
+                if (!$saved) {
+                    $this->db->trans_rollback();
+                    return false;
+                }
+
+                $this->db->trans_commit();
+                return true;
             }
 
-            return $this->clock_out(
-                $staff_id,
-                date('Y-m-d H:i:s'),
-                $latitude,
-                $longitude,
-                $notes
-            );
-        }
+            if (in_array($action, ['break_out', 'break-out', 'breakout'], true)) {
+                if (!$this->validate_break_transition($staff_id, 'break_out')) {
+                    $this->db->trans_rollback();
+                    return false;
+                }
 
-        return false;
+                $attendance_id = $this->get_open_attendance_id($staff_id);
+                if ($attendance_id <= 0) {
+                    $this->db->trans_rollback();
+                    return false;
+                }
+
+                $saved = $this->record_break_session($staff_id, $attendance_id, 'break_out', $break_type, $notes);
+                if (!$saved) {
+                    $this->db->trans_rollback();
+                    return false;
+                }
+
+                $this->db->trans_commit();
+                return true;
+            }
+
+            if (in_array($action, ['break_in', 'break-in', 'breakin'], true)) {
+                if (!$this->validate_break_transition($staff_id, 'break_in')) {
+                    $this->db->trans_rollback();
+                    return false;
+                }
+
+                $attendance_id = $this->get_open_attendance_id($staff_id);
+                if ($attendance_id <= 0) {
+                    $this->db->trans_rollback();
+                    return false;
+                }
+
+                $saved = $this->record_break_session($staff_id, $attendance_id, 'break_in', $break_type, $notes);
+                if (!$saved) {
+                    $this->db->trans_rollback();
+                    return false;
+                }
+
+                $this->db->trans_commit();
+                return true;
+            }
+
+            if (in_array($action, ['clock_out', 'out'], true)) {
+                if (!$this->validate_attendance_transition($staff_id, 'clock_out')) {
+                    $this->db->trans_rollback();
+                    return false;
+                }
+
+                $saved = $this->clock_out(
+                    $staff_id,
+                    date('Y-m-d H:i:s'),
+                    $latitude,
+                    $longitude,
+                    $notes
+                );
+
+                if (!$saved) {
+                    $this->db->trans_rollback();
+                    return false;
+                }
+
+                $this->db->trans_commit();
+                return true;
+            }
+
+            $this->db->trans_rollback();
+            return false;
+        } catch (Throwable $e) {
+            if ($this->db && method_exists($this->db, 'trans_rollback')) {
+                $this->db->trans_rollback();
+            }
+
+            error_log('Field Staff attendance model exception: ' . $e->getMessage());
+            if (method_exists($e, 'getTraceAsString')) {
+                error_log($e->getTraceAsString());
+            }
+
+            throw $e;
+        }
     }
 
     /**
@@ -89,6 +171,682 @@ class Field_staff_model extends App_Model
         }
 
         return false;
+    }
+
+    /**
+     * Validate the next break state transition for a staff member.
+     *
+     * @param int    $staff_id
+     * @param string $requested_status
+     *
+     * @return bool
+     */
+    public function validate_break_transition($staff_id, $requested_status)
+    {
+        $staff_id = (int) $staff_id;
+        $requested_status = strtolower(trim((string) $requested_status));
+
+        if ($staff_id <= 0 || $requested_status === '') {
+            return false;
+        }
+
+        $attendance_table = db_prefix() . 'fs_attendance';
+        $break_table = db_prefix() . 'fs_break_sessions';
+
+        if (!$this->db || !method_exists($this->db, 'table_exists') || !$this->db->table_exists($attendance_table)) {
+            return false;
+        }
+
+        $has_open_record = (bool) $this->db
+            ->from($attendance_table)
+            ->where('staff_id', $staff_id)
+            ->where('clock_out IS NULL', null, false)
+            ->limit(1)
+            ->count_all_results();
+
+        $has_active_break = false;
+        if ($this->db->table_exists($break_table)) {
+            $break_row = $this->db
+                ->from($break_table)
+                ->where('staff_id', $staff_id)
+                ->where('ended_at IS NULL', null, false)
+                ->limit(1)
+                ->get()
+                ->row_array();
+
+            $has_active_break = is_array($break_row) && !empty($break_row);
+        }
+
+        if ($requested_status === 'clock_in') {
+            return !$has_open_record;
+        }
+
+        if ($requested_status === 'break_out') {
+            return $has_open_record && !$has_active_break;
+        }
+
+        if ($requested_status === 'break_in') {
+            return $has_open_record && $has_active_break;
+        }
+
+        if ($requested_status === 'working') {
+            return $has_open_record && !$has_active_break;
+        }
+
+        if ($requested_status === 'clock_out') {
+            return $has_open_record && !$has_active_break;
+        }
+
+        return false;
+    }
+
+    /**
+     * Return the active attendance record ID if a staff member is currently on shift.
+     *
+     * @param int $staff_id
+     *
+     * @return int
+     */
+    public function get_open_attendance_id($staff_id)
+    {
+        $staff_id = (int) $staff_id;
+        if ($staff_id <= 0) {
+            return 0;
+        }
+
+        $attendance_table = db_prefix() . 'fs_attendance';
+        $row = $this->db
+            ->select('id')
+            ->from($attendance_table)
+            ->where('staff_id', $staff_id)
+            ->where('clock_out IS NULL', null, false)
+            ->order_by('clock_in', 'DESC')
+            ->limit(1)
+            ->get()
+            ->row_array();
+
+        return is_array($row) && isset($row['id']) ? (int) $row['id'] : 0;
+    }
+
+    /**
+     * Record a break entry or exit on the active attendance row.
+     *
+     * @param int    $staff_id
+     * @param int    $attendance_id
+     * @param string $direction
+     * @param string $break_type
+     * @param string $notes
+     *
+     * @return bool
+     */
+    public function record_break_session($staff_id, $attendance_id, $direction, $break_type = 'paid', $notes = '')
+    {
+        $staff_id = (int) $staff_id;
+        $attendance_id = (int) $attendance_id;
+        $direction = strtolower(trim((string) $direction));
+        $break_type = strtolower(trim((string) $break_type));
+        $notes = trim((string) $notes);
+
+        if ($staff_id <= 0 || $attendance_id <= 0 || !in_array($direction, ['break_out', 'break_in'], true)) {
+            return false;
+        }
+
+        if (!in_array($break_type, ['paid', 'unpaid'], true)) {
+            $break_type = 'paid';
+        }
+
+        $break_table = db_prefix() . 'fs_break_sessions';
+        $active_row = $this->db
+            ->select('id, ended_at')
+            ->from($break_table)
+            ->where('staff_id', $staff_id)
+            ->where('attendance_id', $attendance_id)
+            ->where('ended_at IS NULL', null, false)
+            ->limit(1)
+            ->get()
+            ->row_array();
+
+        if ($direction === 'break_out') {
+            if (is_array($active_row) && !empty($active_row)) {
+                return false;
+            }
+
+            return (bool) $this->db->insert($break_table, [
+                'staff_id' => $staff_id,
+                'attendance_id' => $attendance_id,
+                'break_out_at' => date('Y-m-d H:i:s'),
+                'break_type' => $break_type,
+                'notes' => $notes,
+                'created_at' => date('Y-m-d H:i:s'),
+                'updated_at' => date('Y-m-d H:i:s'),
+            ]);
+        }
+
+        if (!is_array($active_row) || !isset($active_row['id'])) {
+            return false;
+        }
+
+        $this->db->where('id', (int) $active_row['id']);
+        return (bool) $this->db->update($break_table, [
+            'break_in_at' => date('Y-m-d H:i:s'),
+            'ended_at' => date('Y-m-d H:i:s'),
+            'break_type' => $break_type,
+            'notes' => $notes,
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
+    }
+
+    /**
+     * Get current active break state for a staff member.
+     *
+     * @param int $staff_id
+     *
+     * @return array
+     */
+    public function get_active_break_session($staff_id)
+    {
+        $staff_id = (int) $staff_id;
+        if ($staff_id <= 0) {
+            return [];
+        }
+
+        $break_table = db_prefix() . 'fs_break_sessions';
+        $row = $this->db
+            ->from($break_table)
+            ->where('staff_id', $staff_id)
+            ->where('ended_at IS NULL', null, false)
+            ->order_by('break_out_at', 'DESC')
+            ->limit(1)
+            ->get()
+            ->row_array();
+
+        return is_array($row) ? $row : [];
+    }
+
+    /**
+     * Return the break state for a single attendance row.
+     *
+     * @param int $staff_id
+     * @param int $attendance_id
+     *
+     * @return array
+     */
+    public function get_attendance_break_state($staff_id, $attendance_id = 0)
+    {
+        $staff_id = (int) $staff_id;
+        $attendance_id = (int) $attendance_id;
+        if ($staff_id <= 0) {
+            return [
+                'status' => 'working',
+                'active_break' => null,
+                'missing_break_in' => false,
+                'total_paid_break_seconds' => 0,
+                'total_unpaid_break_seconds' => 0,
+            ];
+        }
+
+        $break_table = db_prefix() . 'fs_break_sessions';
+        $query = $this->db
+            ->from($break_table)
+            ->where('staff_id', $staff_id)
+            ->order_by('break_out_at', 'ASC');
+
+        if ($attendance_id > 0) {
+            $query->where('attendance_id', $attendance_id);
+        }
+
+        $rows = $query->get()->result_array();
+        $rows = is_array($rows) ? $rows : [];
+
+        $active_break = null;
+        $missing_break_in = false;
+        $paid_seconds = 0.0;
+        $unpaid_seconds = 0.0;
+
+        foreach ($rows as $row) {
+            $break_out = trim((string) ($row['break_out_at'] ?? ''));
+            $break_in = trim((string) ($row['break_in_at'] ?? ''));
+            $ended_at = trim((string) ($row['ended_at'] ?? ''));
+            $break_type = strtolower(trim((string) ($row['break_type'] ?? 'paid')));
+            $duration = 0.0;
+
+            if ($break_out !== '' && $break_in !== '') {
+                $duration = $this->calculate_duration_seconds($break_out, $break_in);
+            } elseif ($break_out !== '' && $ended_at !== '') {
+                $duration = $this->calculate_duration_seconds($break_out, $ended_at);
+            }
+
+            if ($break_type === 'paid') {
+                $paid_seconds += $duration;
+            } else {
+                $unpaid_seconds += $duration;
+            }
+
+            if ($break_out !== '' && $break_in === '' && $ended_at === '') {
+                $missing_break_in = true;
+                $active_break = $row;
+            }
+        }
+
+        $status = $active_break !== null ? 'on_break' : 'working';
+
+        return [
+            'status' => $status,
+            'active_break' => $active_break,
+            'missing_break_in' => $missing_break_in,
+            'total_paid_break_seconds' => round((float) $paid_seconds, 2),
+            'total_unpaid_break_seconds' => round((float) $unpaid_seconds, 2),
+        ];
+    }
+
+    /**
+     * Get a live team monitor snapshot with working, on-break, and elapsed break state.
+     *
+     * @param int    $department_id
+     * @param string $date
+     *
+     * @return array
+     */
+    public function get_live_team_monitor($department_id = 0, $date = '')
+    {
+        $attendance_table = db_prefix() . 'fs_attendance';
+        $staff_table = db_prefix() . 'staff';
+        $break_table = db_prefix() . 'fs_break_sessions';
+        $date = trim((string) $date);
+        if ($date === '') {
+            $date = date('Y-m-d');
+        }
+
+        $sessions = $this->db
+            ->select('a.id, a.staff_id, a.date, a.clock_in, a.clock_out, a.notes, s.firstname, s.lastname, s.department_id')
+            ->from($attendance_table . ' a')
+            ->join($staff_table . ' s', 's.' . ($this->db->field_exists('staffid', $staff_table) ? 'staffid' : 'id') . ' = a.staff_id', 'left')
+            ->where('a.date', $date)
+            ->where('a.clock_out IS NULL', null, false)
+            ->order_by('a.clock_in', 'DESC')
+            ->get()
+            ->result_array();
+
+        $team = [];
+        foreach ($sessions as $session) {
+            $staff_id = (int) ($session['staff_id'] ?? 0);
+            if ($staff_id <= 0) {
+                continue;
+            }
+
+            if ($department_id > 0 && (int) ($session['department_id'] ?? 0) !== $department_id) {
+                continue;
+            }
+
+            $break_row = $this->db
+                ->select('id, break_out_at, break_in_at, break_type, ended_at')
+                ->from($break_table)
+                ->where('staff_id', $staff_id)
+                ->where('attendance_id', (int) ($session['id'] ?? 0))
+                ->where('ended_at IS NULL', null, false)
+                ->order_by('break_out_at', 'DESC')
+                ->limit(1)
+                ->get()
+                ->row_array();
+
+            $now = new DateTimeImmutable('now');
+            $elapsed_break_seconds = 0;
+            if (is_array($break_row) && isset($break_row['break_out_at']) && $break_row['break_out_at'] !== '') {
+                $break_start = new DateTimeImmutable((string) $break_row['break_out_at']);
+                $elapsed_break_seconds = max(0, $now->getTimestamp() - $break_start->getTimestamp());
+            }
+
+            $missing_break_return = is_array($break_row)
+                && !empty($break_row)
+                && trim((string) ($break_row['break_in_at'] ?? '')) === ''
+                && trim((string) ($break_row['ended_at'] ?? '')) === '';
+
+            $team[] = [
+                'staff_id' => $staff_id,
+                'name' => trim((string) ($session['firstname'] ?? '') . ' ' . (string) ($session['lastname'] ?? '')) ?: 'Staff #' . $staff_id,
+                'status' => is_array($break_row) && !empty($break_row) ? 'on_break' : 'working',
+                'missing_break_return' => $missing_break_return,
+                'clock_in' => $session['clock_in'] ?? null,
+                'current_break_type' => is_array($break_row) ? strtolower((string) ($break_row['break_type'] ?? 'paid')) : 'paid',
+                'elapsed_break_seconds' => $elapsed_break_seconds,
+                'is_active' => true,
+            ];
+        }
+
+        return $team;
+    }
+
+    /**
+     * Save one effective-dated employee policy override.
+     *
+     * @param int    $staff_id
+     * @param array  $policy_data
+     *
+     * @return bool
+     */
+    public function save_employee_policy_override($staff_id, array $policy_data)
+    {
+        $staff_id = (int) $staff_id;
+        if ($staff_id <= 0) {
+            return false;
+        }
+
+        $field_name = strtolower(trim((string) ($policy_data['field_name'] ?? '')));
+        $effective_from = trim((string) ($policy_data['effective_from'] ?? ''));
+        if ($field_name === '' || $effective_from === '') {
+            return false;
+        }
+
+        $table = db_prefix() . 'fs_policy_overrides';
+        if (!$this->db || !method_exists($this->db, 'table_exists') || !$this->db->table_exists($table)) {
+            return false;
+        }
+
+        $payload = [
+            'staff_id' => $staff_id,
+            'field_name' => $field_name,
+            'value' => is_scalar($policy_data['value'] ?? null) ? trim((string) ($policy_data['value'] ?? '')) : json_encode($policy_data['value'] ?? null, JSON_UNESCAPED_SLASHES),
+            'effective_from' => $effective_from,
+            'effective_to' => trim((string) ($policy_data['effective_to'] ?? '')) !== '' ? trim((string) $policy_data['effective_to'] ?? '') : null,
+            'source' => strtolower(trim((string) ($policy_data['source'] ?? 'manual'))),
+            'verification_status' => strtolower(trim((string) ($policy_data['verification_status'] ?? 'pending'))),
+            'notes' => trim((string) ($policy_data['notes'] ?? '')),
+            'updated_at' => date('Y-m-d H:i:s'),
+        ];
+
+        if (!in_array($payload['source'], ['manual', 'system', 'imported', 'verified'], true)) {
+            $payload['source'] = 'manual';
+        }
+
+        if (!in_array($payload['verification_status'], ['pending', 'verified', 'rejected'], true)) {
+            $payload['verification_status'] = 'pending';
+        }
+
+        $existing_rows = $this->db
+            ->from($table)
+            ->where('staff_id', $staff_id)
+            ->where('field_name', $field_name)
+            ->order_by('effective_from', 'DESC')
+            ->get()
+            ->result_array();
+        $existing_rows = is_array($existing_rows) ? $existing_rows : [];
+        foreach ($existing_rows as $existing_row) {
+            $current_effective_from = trim((string) ($existing_row['effective_from'] ?? ''));
+            if ($current_effective_from === '' || $current_effective_from >= $effective_from) {
+                continue;
+            }
+
+            $current_effective_to = trim((string) ($existing_row['effective_to'] ?? ''));
+            if ($current_effective_to !== '' && $current_effective_to < $effective_from) {
+                continue;
+            }
+
+            $this->db->where('id', (int) ($existing_row['id'] ?? 0));
+            $this->db->update($table, ['effective_to' => $effective_from]);
+        }
+
+        if (method_exists($this->db, 'where')) {
+            $existing = $this->db
+                ->select('id')
+                ->from($table)
+                ->where('staff_id', $staff_id)
+                ->where('field_name', $field_name)
+                ->where('effective_from', $effective_from)
+                ->limit(1)
+                ->get()
+                ->row_array();
+        } else {
+            $existing = null;
+        }
+
+        if (is_array($existing) && !empty($existing)) {
+            $this->db->where('id', (int) $existing['id']);
+            return (bool) $this->db->update($table, $payload);
+        }
+
+        $payload['created_at'] = date('Y-m-d H:i:s');
+
+        return (bool) $this->db->insert($table, $payload);
+    }
+
+    /**
+     * Return employee policy overrides effective on or before a target date.
+     *
+     * @param int    $staff_id
+     * @param string $as_of_date
+     *
+     * @return array
+     */
+    public function get_employee_policy_overrides($staff_id, $as_of_date = '')
+    {
+        $staff_id = (int) $staff_id;
+        if ($staff_id <= 0) {
+            return [];
+        }
+
+        $table = db_prefix() . 'fs_policy_overrides';
+        if (!$this->db || !method_exists($this->db, 'table_exists') || !$this->db->table_exists($table)) {
+            return [];
+        }
+
+        $query = $this->db
+            ->from($table)
+            ->where('staff_id', $staff_id)
+            ->order_by('effective_from', 'DESC');
+
+        if (trim((string) $as_of_date) !== '') {
+            $query->where('effective_from <=', trim((string) $as_of_date));
+            $query->group_start();
+            $query->where('effective_to IS NULL', null, false);
+            $query->or_where('effective_to >=', trim((string) $as_of_date));
+            $query->group_end();
+        }
+
+        $rows = $query->get()->result_array();
+
+        return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * Return the effective employee policy snapshot keyed by field name.
+     *
+     * @param int    $staff_id
+     * @param string $as_of_date
+     *
+     * @return array
+     */
+    public function get_employee_policy_snapshot($staff_id, $as_of_date = '')
+    {
+        $snapshot = [];
+        foreach ($this->get_employee_policy_overrides($staff_id, $as_of_date) as $row) {
+            $field_name = trim((string) ($row['field_name'] ?? ''));
+            if ($field_name === '') {
+                continue;
+            }
+
+            $snapshot[$field_name] = [
+                'field_name' => $field_name,
+                'value' => $row['value'] ?? '',
+                'source' => strtolower(trim((string) ($row['source'] ?? 'manual'))),
+                'verification_status' => strtolower(trim((string) ($row['verification_status'] ?? 'pending'))),
+                'effective_from' => $row['effective_from'] ?? '',
+                'effective_to' => $row['effective_to'] ?? null,
+                'notes' => $row['notes'] ?? '',
+            ];
+        }
+
+        return $snapshot;
+    }
+
+    /**
+     * Create an attendance correction request for a supervisor review.
+     *
+     * @param array $payload
+     *
+     * @return bool
+     */
+    public function save_attendance_correction_request(array $payload)
+    {
+        $attendance_id = (int) ($payload['attendance_id'] ?? 0);
+        $staff_id = (int) ($payload['staff_id'] ?? 0);
+        $requested_by = (int) ($payload['requested_by'] ?? 0);
+        $correction_type = trim((string) ($payload['correction_type'] ?? 'attendance'));
+        $before_value = trim((string) ($payload['before_value'] ?? ''));
+        $after_value = trim((string) ($payload['after_value'] ?? ''));
+        $reason = trim((string) ($payload['reason'] ?? ''));
+
+        if ($attendance_id <= 0 || $staff_id <= 0 || $requested_by <= 0 || $reason === '') {
+            return false;
+        }
+
+        $table = db_prefix() . 'fs_attendance_corrections';
+        if (!$this->db || !method_exists($this->db, 'table_exists') || !$this->db->table_exists($table)) {
+            return false;
+        }
+
+        $created_at = date('Y-m-d H:i:s');
+        return (bool) $this->db->insert($table, [
+            'attendance_id' => $attendance_id,
+            'staff_id' => $staff_id,
+            'requested_by' => $requested_by,
+            'correction_type' => $correction_type !== '' ? $correction_type : 'attendance',
+            'before_value' => $before_value,
+            'after_value' => $after_value,
+            'reason' => $reason,
+            'status' => 'pending',
+            'created_at' => $created_at,
+            'updated_at' => $created_at,
+        ]);
+    }
+
+    /**
+     * Approve or reject an attendance correction request.
+     *
+     * @param int    $request_id
+     * @param int    $approved_by
+     * @param string $status
+     * @param string $notes
+     *
+     * @return bool
+     */
+    public function approve_attendance_correction($request_id, $approved_by, $status, $notes = '')
+    {
+        $request_id = (int) $request_id;
+        $approved_by = (int) $approved_by;
+        $status = strtolower(trim((string) $status));
+        $notes = trim((string) $notes);
+
+        if ($request_id <= 0 || $approved_by <= 0 || !in_array($status, ['approved', 'rejected'], true)) {
+            return false;
+        }
+
+        $table = db_prefix() . 'fs_attendance_corrections';
+        if (!$this->db || !method_exists($this->db, 'table_exists') || !$this->db->table_exists($table)) {
+            return false;
+        }
+
+        $this->db->where('id', $request_id);
+        return (bool) $this->db->update($table, [
+            'status' => $status,
+            'approved_by' => $approved_by,
+            'approved_at' => date('Y-m-d H:i:s'),
+            'notes' => $notes,
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
+    }
+
+    /**
+     * Return correction requests for one attendance row or a staff member.
+     *
+     * @param int $staff_id
+     *
+     * @return array
+     */
+    public function get_attendance_correction_history($staff_id = 0)
+    {
+        $staff_id = (int) $staff_id;
+        $table = db_prefix() . 'fs_attendance_corrections';
+        if (!$this->db || !method_exists($this->db, 'table_exists') || !$this->db->table_exists($table)) {
+            return [];
+        }
+
+        $query = $this->db
+            ->from($table)
+            ->order_by('created_at', 'DESC');
+
+        if ($staff_id > 0) {
+            $query->where('staff_id', $staff_id);
+        }
+
+        return $query->get()->result_array();
+    }
+
+    /**
+     * Return a single attendance row with break totals and payable time.
+     *
+     * @param array $attendance_row
+     *
+     * @return array
+     */
+    public function summarize_attendance_record(array $attendance_row)
+    {
+        $attendance_id = (int) ($attendance_row['id'] ?? 0);
+        $clock_in = trim((string) ($attendance_row['clock_in'] ?? ''));
+        $clock_out = trim((string) ($attendance_row['clock_out'] ?? ''));
+        $break_rows = [];
+
+        if ($attendance_id > 0) {
+            $break_table = db_prefix() . 'fs_break_sessions';
+            $break_rows = $this->db
+                ->from($break_table)
+                ->where('attendance_id', $attendance_id)
+                ->order_by('break_out_at', 'ASC')
+                ->get()
+                ->result_array();
+        }
+
+        $shift_seconds = 0.0;
+        if ($clock_in !== '' && $clock_out !== '') {
+            $shift_seconds = $this->calculate_duration_seconds($clock_in, $clock_out);
+        }
+
+        $paid_break_seconds = 0.0;
+        $unpaid_break_seconds = 0.0;
+        $missing_break_in = false;
+        foreach ($break_rows as $break_row) {
+            $break_out = trim((string) ($break_row['break_out_at'] ?? ''));
+            $break_in = trim((string) ($break_row['break_in_at'] ?? ''));
+            $ended_at = trim((string) ($break_row['ended_at'] ?? ''));
+            $break_type = strtolower(trim((string) ($break_row['break_type'] ?? 'paid')));
+            $duration = 0.0;
+            if ($break_out !== '' && $break_in !== '') {
+                $duration = $this->calculate_duration_seconds($break_out, $break_in);
+            } elseif ($break_out !== '' && $ended_at !== '') {
+                $duration = $this->calculate_duration_seconds($break_out, $ended_at);
+            }
+            if ($break_type === 'paid') {
+                $paid_break_seconds += $duration;
+            } else {
+                $unpaid_break_seconds += $duration;
+            }
+
+            if ($break_out !== '' && $break_in === '' && $ended_at === '') {
+                $missing_break_in = true;
+            }
+        }
+
+        $payable_seconds = max(0.0, $shift_seconds - $unpaid_break_seconds);
+
+        return [
+            'attendance_id' => $attendance_id,
+            'shift_seconds' => round($shift_seconds, 2),
+            'paid_break_seconds' => round($paid_break_seconds, 2),
+            'unpaid_break_seconds' => round($unpaid_break_seconds, 2),
+            'payable_seconds' => round($payable_seconds, 2),
+            'missing_break_in' => $missing_break_in,
+            'status' => $missing_break_in ? 'break_return_pending' : 'closed',
+            'break_rows' => $break_rows,
+        ];
     }
 
     /**
@@ -682,6 +1440,12 @@ class Field_staff_model extends App_Model
             $current_staff_id = (int) ($row['staff_id'] ?? 0);
             $staff_row = $this->get_staff_row($current_staff_id);
             $profile = $this->get_payroll_profile($current_staff_id);
+            $snapshot = $this->get_payroll_snapshot((int) ($row['id'] ?? 0));
+            if (!empty($snapshot)) {
+                $row['gross_salary'] = isset($snapshot['totals']['gross_salary']) ? (float) $snapshot['totals']['gross_salary'] : (float) ($row['gross_salary'] ?? 0);
+                $row['net_salary'] = isset($snapshot['totals']['net_salary']) ? (float) $snapshot['totals']['net_salary'] : (float) ($row['net_salary'] ?? 0);
+                $row['payment_method'] = isset($snapshot['payment_method']) ? (string) $snapshot['payment_method'] : (string) ($row['payment_method'] ?? 'online_transfer');
+            }
             $row['worker_name'] = $this->resolve_staff_name($staff_row, $current_staff_id);
             $row['department_name'] = $this->get_department_name((int) ($profile['department_id'] ?? 0));
         }
@@ -728,8 +1492,8 @@ class Field_staff_model extends App_Model
         }
 
         $staff_row = $this->get_staff_row($row_staff_id);
-
-        return [
+        $snapshot = $this->get_payroll_snapshot($payroll_id);
+        $base = [
             'payroll_id' => $payroll_id,
             'staff_id' => $row_staff_id,
             'worker_name' => $this->resolve_staff_name($staff_row, $row_staff_id),
@@ -749,6 +1513,22 @@ class Field_staff_model extends App_Model
             'net_salary' => isset($row['net_salary']) ? (float) $row['net_salary'] : 0.0,
             'adjustments' => $this->get_payroll_adjustments($payroll_id),
         ];
+
+        if (!empty($snapshot)) {
+            $base['payment_method'] = isset($snapshot['payment_method']) ? (string) $snapshot['payment_method'] : $base['payment_method'];
+            $base['regular_hours'] = isset($snapshot['totals']['regular_hours']) ? (float) $snapshot['totals']['regular_hours'] : $base['regular_hours'];
+            $base['overtime_hours'] = isset($snapshot['totals']['ot_hours']) ? (float) $snapshot['totals']['ot_hours'] : $base['overtime_hours'];
+            $base['hourly_rate'] = isset($snapshot['rates']['hourly_rate']) ? (float) $snapshot['rates']['hourly_rate'] : $base['hourly_rate'];
+            $base['gross_salary'] = isset($snapshot['totals']['gross_salary']) ? (float) $snapshot['totals']['gross_salary'] : $base['gross_salary'];
+            $base['nib_ee'] = isset($snapshot['totals']['nib_ee']) ? (float) $snapshot['totals']['nib_ee'] : $base['nib_ee'];
+            $base['nib_er'] = isset($snapshot['totals']['nib_er']) ? (float) $snapshot['totals']['nib_er'] : $base['nib_er'];
+            $base['nhip_ee'] = isset($snapshot['totals']['nhip_ee']) ? (float) $snapshot['totals']['nhip_ee'] : $base['nhip_ee'];
+            $base['nhip_er'] = isset($snapshot['totals']['nhip_er']) ? (float) $snapshot['totals']['nhip_er'] : $base['nhip_er'];
+            $base['net_salary'] = isset($snapshot['totals']['net_salary']) ? (float) $snapshot['totals']['net_salary'] : $base['net_salary'];
+            $base['adjustments'] = isset($snapshot['adjustments']) && is_array($snapshot['adjustments']) ? $snapshot['adjustments'] : $base['adjustments'];
+        }
+
+        return $base;
     }
 
     /**
@@ -805,6 +1585,445 @@ class Field_staff_model extends App_Model
      *
      * @return array
      */
+    /**
+     * Build a versioned snapshot payload for a saved payroll row.
+     *
+     * @param int   $payroll_id
+     * @param array $master_row
+     * @param array $row
+     * @param array $profile
+     * @param array $cutoff
+     *
+     * @return array
+     */
+    public function build_payroll_snapshot_payload($payroll_id, array $master_row = [], array $row = [], array $profile = [], array $cutoff = [])
+    {
+        $payroll_id = (int) $payroll_id;
+        $staff_id = isset($master_row['staff_id']) ? (int) $master_row['staff_id'] : (int) ($row['staff_id'] ?? 0);
+        $cutoff_id = isset($master_row['cutoff_id']) ? (int) $master_row['cutoff_id'] : (int) ($row['cutoff_id'] ?? 0);
+        $status = isset($master_row['status']) ? strtolower(trim((string) $master_row['status'])) : 'draft';
+        $status = in_array($status, ['draft', 'under_review', 'approved', 'paid'], true) ? $status : 'draft';
+
+        $effective_profile = is_array($profile) ? $profile : [];
+        $effective_policy = [
+            'payroll_group' => trim((string) ($effective_profile['payroll_group'] ?? $cutoff['payroll_group'] ?? 'default')),
+            'payment_basis' => strtolower(trim((string) ($effective_profile['payment_basis'] ?? 'hourly'))),
+            'position' => trim((string) ($effective_profile['position'] ?? 'worker')),
+            'employment_arrangement' => trim((string) ($effective_profile['employment_arrangement'] ?? 'permanent')),
+            'attendance_requirement' => trim((string) ($effective_profile['attendance_requirement'] ?? 'required')),
+            'base_hourly_rate' => isset($effective_profile['base_hourly_rate']) && is_numeric($effective_profile['base_hourly_rate']) ? round((float) $effective_profile['base_hourly_rate'], 2) : 0.0,
+            'overtime_multiplier' => isset($effective_profile['overtime_multiplier']) && is_numeric($effective_profile['overtime_multiplier']) ? round((float) $effective_profile['overtime_multiplier'], 2) : 1.5,
+            'payment_method' => isset($effective_profile['payment_method']) ? (string) $effective_profile['payment_method'] : 'online_transfer',
+        ];
+
+        $rates = [
+            'hourly_rate' => isset($master_row['hourly_rate']) && is_numeric($master_row['hourly_rate']) ? round((float) $master_row['hourly_rate'], 2) : 0.0,
+            'regular_hours' => isset($master_row['regular_hours']) && is_numeric($master_row['regular_hours']) ? round((float) $master_row['regular_hours'], 2) : 0.0,
+            'ot_hours' => isset($master_row['ot_hours']) && is_numeric($master_row['ot_hours']) ? round((float) $master_row['ot_hours'], 2) : 0.0,
+            'hourly_policy_rate' => isset($effective_profile['base_hourly_rate']) && is_numeric($effective_profile['base_hourly_rate']) ? round((float) $effective_profile['base_hourly_rate'], 2) : 0.0,
+            'payment_basis' => $effective_policy['payment_basis'],
+            'overtime_multiplier' => $effective_policy['overtime_multiplier'],
+        ];
+
+        $earnings = [
+            'regular_pay' => isset($row['regular_pay']) && is_numeric($row['regular_pay']) ? round((float) $row['regular_pay'], 2) : 0.0,
+            'overtime_pay' => isset($row['overtime_pay']) && is_numeric($row['overtime_pay']) ? round((float) $row['overtime_pay'], 2) : 0.0,
+            'holiday_pay' => isset($row['holiday_pay']) && is_numeric($row['holiday_pay']) ? round((float) $row['holiday_pay'], 2) : 0.0,
+            'allowance_due' => isset($row['allowance_due']) && is_numeric($row['allowance_due']) ? round((float) $row['allowance_due'], 2) : 0.0,
+            'vacation_pay' => isset($row['vacation_pay']) && is_numeric($row['vacation_pay']) ? round((float) $row['vacation_pay'], 2) : 0.0,
+            'commission_pay' => isset($row['commission_pay']) && is_numeric($row['commission_pay']) ? round((float) $row['commission_pay'], 2) : 0.0,
+        ];
+
+        $deductions = [
+            'loan_repayment' => isset($row['loan_repayment']) && is_numeric($row['loan_repayment']) ? round((float) $row['loan_repayment'], 2) : 0.0,
+            'advance_repayment' => isset($row['advance_repayment']) && is_numeric($row['advance_repayment']) ? round((float) $row['advance_repayment'], 2) : 0.0,
+            'other_misc_deductions' => isset($row['other_misc_deductions']) && is_numeric($row['other_misc_deductions']) ? round((float) $row['other_misc_deductions'], 2) : 0.0,
+            'nib_ee' => isset($master_row['nib_ee']) && is_numeric($master_row['nib_ee']) ? round((float) $master_row['nib_ee'], 2) : 0.0,
+            'nib_er' => isset($master_row['nib_er']) && is_numeric($master_row['nib_er']) ? round((float) $master_row['nib_er'], 2) : 0.0,
+            'nhip_ee' => isset($master_row['nhip_ee']) && is_numeric($master_row['nhip_ee']) ? round((float) $master_row['nhip_ee'], 2) : 0.0,
+            'nhip_er' => isset($master_row['nhip_er']) && is_numeric($master_row['nhip_er']) ? round((float) $master_row['nhip_er'], 2) : 0.0,
+        ];
+
+        $totals = [
+            'regular_hours' => isset($master_row['regular_hours']) && is_numeric($master_row['regular_hours']) ? round((float) $master_row['regular_hours'], 2) : 0.0,
+            'ot_hours' => isset($master_row['ot_hours']) && is_numeric($master_row['ot_hours']) ? round((float) $master_row['ot_hours'], 2) : 0.0,
+            'gross_salary' => isset($master_row['gross_salary']) && is_numeric($master_row['gross_salary']) ? round((float) $master_row['gross_salary'], 2) : 0.0,
+            'nib_ee' => isset($master_row['nib_ee']) && is_numeric($master_row['nib_ee']) ? round((float) $master_row['nib_ee'], 2) : 0.0,
+            'nib_er' => isset($master_row['nib_er']) && is_numeric($master_row['nib_er']) ? round((float) $master_row['nib_er'], 2) : 0.0,
+            'nhip_ee' => isset($master_row['nhip_ee']) && is_numeric($master_row['nhip_ee']) ? round((float) $master_row['nhip_ee'], 2) : 0.0,
+            'nhip_er' => isset($master_row['nhip_er']) && is_numeric($master_row['nhip_er']) ? round((float) $master_row['nhip_er'], 2) : 0.0,
+            'net_salary' => isset($master_row['net_salary']) && is_numeric($master_row['net_salary']) ? round((float) $master_row['net_salary'], 2) : 0.0,
+        ];
+
+        $cutoff_payload = is_array($cutoff) ? $cutoff : [];
+        return [
+            'payroll_id' => $payroll_id,
+            'staff_id' => $staff_id,
+            'cutoff_id' => $cutoff_id,
+            'status' => $status,
+            'calculation_version' => '2026.10.19.payroll.v1',
+            'start_date' => isset($master_row['start_date']) ? (string) $master_row['start_date'] : '',
+            'end_date' => isset($master_row['end_date']) ? (string) $master_row['end_date'] : '',
+            'payment_method' => isset($master_row['payment_method']) ? (string) $master_row['payment_method'] : ($effective_policy['payment_method'] ?? 'online_transfer'),
+            'cutoff' => [
+                'cutoff_id' => $cutoff_id,
+                'cutoff_code' => trim((string) ($cutoff_payload['cutoff_code'] ?? '')),
+                'payroll_group' => trim((string) ($cutoff_payload['payroll_group'] ?? $effective_policy['payroll_group'] ?? 'default')),
+                'status' => trim((string) ($cutoff_payload['status'] ?? 'open')),
+            ],
+            'policies' => $effective_policy,
+            'rates' => $rates,
+            'earnings' => $earnings,
+            'deductions' => $deductions,
+            'totals' => $totals,
+            'generated_at' => date('Y-m-d H:i:s'),
+            'updated_at' => date('Y-m-d H:i:s'),
+        ];
+    }
+
+    public function save_payroll_snapshot($payroll_id, $status = 'draft', array $snapshot_payload = [])
+    {
+        $payroll_id = (int) $payroll_id;
+        $status = strtolower(trim((string) $status));
+        if (!in_array($status, ['draft', 'under_review', 'approved', 'paid'], true) || $payroll_id <= 0) {
+            return false;
+        }
+
+        $table = db_prefix() . 'fs_payroll_snapshots';
+        if (!$this->db->table_exists($table)) {
+            return false;
+        }
+
+        $payload = is_array($snapshot_payload) ? $snapshot_payload : [];
+        $payload['status'] = $status;
+        $payload['calculation_version'] = trim((string) ($payload['calculation_version'] ?? '2026.10.19.payroll.v1'));
+        if ($payload['calculation_version'] === '') {
+            $payload['calculation_version'] = '2026.10.19.payroll.v1';
+        }
+
+        $existing = $this->db
+            ->from($table)
+            ->where('payroll_id', $payroll_id)
+            ->limit(1)
+            ->get()
+            ->row_array();
+
+        $encoded = json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        $now = date('Y-m-d H:i:s');
+
+        if (is_array($existing) && !empty($existing)) {
+            $existing_status = strtolower(trim((string) ($existing['snapshot_status'] ?? 'draft')));
+            if ($existing_status === 'paid') {
+                return false;
+            }
+            if ($existing_status === 'approved' && !in_array($status, ['approved', 'paid'], true)) {
+                return false;
+            }
+
+            $this->db->where('payroll_id', $payroll_id);
+            return (bool) $this->db->update($table, [
+                'snapshot_status' => $status,
+                'calculation_version' => $payload['calculation_version'],
+                'snapshot_data' => $encoded,
+                'generated_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+
+        $master_row = $this->get_payroll_master_row($payroll_id);
+        $staff_id = isset($master_row['staff_id']) ? (int) $master_row['staff_id'] : 0;
+        $cutoff_id = isset($master_row['cutoff_id']) ? (int) $master_row['cutoff_id'] : 0;
+
+        return (bool) $this->db->insert($table, [
+            'payroll_id' => $payroll_id,
+            'staff_id' => $staff_id,
+            'cutoff_id' => $cutoff_id,
+            'calculation_version' => $payload['calculation_version'],
+            'snapshot_status' => $status,
+            'snapshot_data' => $encoded,
+            'generated_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+    }
+
+    public function get_payroll_snapshot($payroll_id)
+    {
+        $payroll_id = (int) $payroll_id;
+        if ($payroll_id <= 0) {
+            return [];
+        }
+
+        $table = db_prefix() . 'fs_payroll_snapshots';
+        if (!$this->db->table_exists($table)) {
+            return [];
+        }
+
+        $row = $this->db
+            ->from($table)
+            ->where('payroll_id', $payroll_id)
+            ->limit(1)
+            ->get()
+            ->row_array();
+
+        if (!is_array($row) || empty($row)) {
+            return [];
+        }
+
+        $payload = trim((string) ($row['snapshot_data'] ?? ''));
+        if ($payload === '') {
+            return [];
+        }
+
+        $decoded = json_decode($payload, true);
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    public function get_payroll_workflow_history($payroll_id)
+    {
+        $payroll_id = (int) $payroll_id;
+        if ($payroll_id <= 0) {
+            return [];
+        }
+
+        $table = db_prefix() . 'fs_payroll_workflow_history';
+        if (!$this->db->table_exists($table)) {
+            return [];
+        }
+
+        return $this->db
+            ->from($table)
+            ->where('payroll_id', $payroll_id)
+            ->order_by('created_at', 'ASC')
+            ->get()
+            ->result_array();
+    }
+
+    public function record_payroll_workflow_event($payroll_id, $action, $actor_staff_id = 0, array $details = [])
+    {
+        $payroll_id = (int) $payroll_id;
+        $action = strtolower(trim((string) $action));
+        if ($payroll_id <= 0 || $action === '') {
+            return false;
+        }
+
+        $table = db_prefix() . 'fs_payroll_workflow_history';
+        if (!$this->db->table_exists($table)) {
+            return false;
+        }
+
+        $payroll_row = $this->get_payroll_master_row($payroll_id);
+        $staff_id = isset($payroll_row['staff_id']) ? (int) $payroll_row['staff_id'] : 0;
+        $cutoff_id = isset($payroll_row['cutoff_id']) ? (int) $payroll_row['cutoff_id'] : 0;
+        $from_status = strtolower(trim((string) ($details['from_status'] ?? (string) ($payroll_row['status'] ?? 'draft'))));
+        $to_status = strtolower(trim((string) ($details['to_status'] ?? $from_status)));
+
+        $payload = [
+            'payroll_id' => $payroll_id,
+            'staff_id' => $staff_id,
+            'cutoff_id' => $cutoff_id,
+            'action' => $action,
+            'from_status' => $from_status,
+            'to_status' => $to_status,
+            'actor_staff_id' => (int) $actor_staff_id,
+            'notes' => isset($details['notes']) ? trim((string) $details['notes']) : '',
+            'payment_date' => isset($details['payment_date']) && trim((string) $details['payment_date']) !== '' ? trim((string) $details['payment_date']) : null,
+            'payment_method' => isset($details['payment_method']) && trim((string) $details['payment_method']) !== '' ? trim((string) $details['payment_method']) : null,
+            'payment_reference' => isset($details['payment_reference']) && trim((string) $details['payment_reference']) !== '' ? trim((string) $details['payment_reference']) : null,
+            'payment_amount' => isset($details['payment_amount']) && is_numeric($details['payment_amount']) ? round((float) $details['payment_amount'], 2) : null,
+            'snapshot_id' => isset($details['snapshot_id']) ? (int) $details['snapshot_id'] : null,
+            'created_at' => date('Y-m-d H:i:s'),
+        ];
+
+        return (bool) $this->db->insert($table, $payload);
+    }
+
+    public function has_unverified_payroll_policy($staff_id)
+    {
+        $staff_id = (int) $staff_id;
+        if ($staff_id <= 0) {
+            return false;
+        }
+
+        $table = db_prefix() . 'fs_policy_overrides';
+        if (!$this->db->table_exists($table)) {
+            return false;
+        }
+
+        $rows = $this->db
+            ->from($table)
+            ->where('staff_id', $staff_id)
+            ->get()
+            ->result_array();
+
+        foreach ($rows as $row) {
+            $status = strtolower(trim((string) ($row['verification_status'] ?? 'verified')));
+            if (in_array($status, ['pending', 'unverified', 'required'], true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function apply_payroll_workflow_action($payroll_id, $action, $actor_staff_id = 0, array $details = [])
+    {
+        $payroll_id = (int) $payroll_id;
+        $action = strtolower(trim((string) $action));
+        if ($payroll_id <= 0 || $action === '') {
+            return ['success' => false, 'message' => 'A valid payroll record and action are required.'];
+        }
+
+        $payroll_row = $this->get_payroll_master_row($payroll_id);
+        if (!is_array($payroll_row) || empty($payroll_row)) {
+            return ['success' => false, 'message' => 'The selected payroll record could not be found.'];
+        }
+
+        $current_status = strtolower(trim((string) ($payroll_row['status'] ?? 'draft')));
+        $staff_id = (int) ($payroll_row['staff_id'] ?? 0);
+        $snapshot = $this->get_payroll_snapshot($payroll_id);
+
+        switch ($action) {
+            case 'submit_for_review':
+                if (!in_array($current_status, ['draft'], true)) {
+                    return ['success' => false, 'message' => 'Only draft payroll can be submitted for review.'];
+                }
+                if (empty($snapshot)) {
+                    return ['success' => false, 'message' => 'A saved snapshot is required before payroll can be submitted for review.'];
+                }
+
+                $snapshot_payload = $this->get_payroll_snapshot($payroll_id);
+                if (!empty($snapshot_payload)) {
+                    $snapshot_payload['status'] = 'under_review';
+                    $snapshot_payload['updated_at'] = date('Y-m-d H:i:s');
+                    $snapshot_payload['generated_at'] = $snapshot_payload['generated_at'] ?? $snapshot_payload['updated_at'];
+                    $this->save_payroll_snapshot($payroll_id, 'under_review', $snapshot_payload);
+                }
+
+                $this->db->where('id', $payroll_id);
+                $updated = (bool) $this->db->update(db_prefix() . 'fs_payroll_master', ['status' => 'under_review']);
+                if (!$updated) {
+                    return ['success' => false, 'message' => 'Payroll could not be moved to under review at this time.'];
+                }
+
+                $this->record_payroll_workflow_event($payroll_id, 'submit_for_review', $actor_staff_id, [
+                    'from_status' => $current_status,
+                    'to_status' => 'under_review',
+                    'notes' => isset($details['notes']) ? (string) $details['notes'] : 'Submitted for review.',
+                ]);
+                return ['success' => true, 'message' => 'Payroll submitted for review.', 'status' => 'under_review'];
+
+            case 'return_to_draft':
+                if (!in_array($current_status, ['under_review', 'approved'], true)) {
+                    return ['success' => false, 'message' => 'Only payroll under review or already approved can be returned to draft.'];
+                }
+                $this->db->where('id', $payroll_id);
+                $updated = (bool) $this->db->update(db_prefix() . 'fs_payroll_master', ['status' => 'draft']);
+                if (!$updated) {
+                    return ['success' => false, 'message' => 'Payroll could not be returned to draft at this time.'];
+                }
+                $this->record_payroll_workflow_event($payroll_id, 'return_to_draft', $actor_staff_id, [
+                    'from_status' => $current_status,
+                    'to_status' => 'draft',
+                    'notes' => isset($details['notes']) ? (string) $details['notes'] : 'Returned to draft.',
+                ]);
+                return ['success' => true, 'message' => 'Payroll returned to draft.', 'status' => 'draft'];
+
+            case 'approve':
+                if (in_array($current_status, ['paid'], true)) {
+                    return ['success' => false, 'message' => 'Paid payroll cannot be re-approved.'];
+                }
+                if (!in_array($current_status, ['draft', 'under_review'], true)) {
+                    return ['success' => false, 'message' => 'Only draft or under-review payroll can be approved.'];
+                }
+                if (empty($snapshot)) {
+                    return ['success' => false, 'message' => 'Payroll approval requires a valid saved snapshot.'];
+                }
+                if ($this->has_unverified_payroll_policy($staff_id)) {
+                    return ['success' => false, 'message' => 'Payroll approval is blocked until the staff policy verification status is cleared.'];
+                }
+
+                $snapshot_payload = $this->get_payroll_snapshot($payroll_id);
+                if (!empty($snapshot_payload)) {
+                    $snapshot_payload['status'] = 'approved';
+                    $snapshot_payload['updated_at'] = date('Y-m-d H:i:s');
+                    $this->save_payroll_snapshot($payroll_id, 'approved', $snapshot_payload);
+                }
+
+                $this->db->where('id', $payroll_id);
+                $updated = (bool) $this->db->update(db_prefix() . 'fs_payroll_master', ['status' => 'approved']);
+                if (!$updated) {
+                    return ['success' => false, 'message' => 'Payroll could not be approved at this time.'];
+                }
+                $this->record_payroll_workflow_event($payroll_id, 'approve', $actor_staff_id, [
+                    'from_status' => $current_status,
+                    'to_status' => 'approved',
+                    'notes' => isset($details['notes']) ? (string) $details['notes'] : 'Approved payroll.',
+                    'snapshot_id' => (int) ($details['snapshot_id'] ?? 0),
+                ]);
+                return ['success' => true, 'message' => 'Payroll approved.', 'status' => 'approved'];
+
+            case 'record_payment':
+                $payment_reference = trim((string) ($details['payment_reference'] ?? ''));
+                $payment_method = trim((string) ($details['payment_method'] ?? ''));
+                $payment_date = trim((string) ($details['payment_date'] ?? ''));
+                $payment_amount = isset($details['payment_amount']) && is_numeric($details['payment_amount']) ? round((float) $details['payment_amount'], 2) : 0.0;
+                if (!in_array($current_status, ['approved'], true)) {
+                    return ['success' => false, 'message' => 'Only approved payroll can have payment recorded.'];
+                }
+                if ($payment_reference === '') {
+                    return ['success' => false, 'message' => 'A payment reference is required to record payment.'];
+                }
+                if (empty($snapshot)) {
+                    return ['success' => false, 'message' => 'A saved snapshot is required before a payment can be recorded.'];
+                }
+
+                $existing = $this->db
+                    ->from(db_prefix() . 'fs_payroll_workflow_history')
+                    ->where('payroll_id', $payroll_id)
+                    ->where('action', 'record_payment')
+                    ->where('payment_reference', $payment_reference)
+                    ->limit(1)
+                    ->get()
+                    ->row_array();
+                if (is_array($existing) && !empty($existing)) {
+                    return ['success' => false, 'message' => 'A duplicate payment record has already been recorded for this reference.'];
+                }
+
+                $snapshot_payload = $this->get_payroll_snapshot($payroll_id);
+                if (!empty($snapshot_payload)) {
+                    $snapshot_payload['status'] = 'paid';
+                    $snapshot_payload['updated_at'] = date('Y-m-d H:i:s');
+                    $snapshot_payload['payment_recorded_at'] = date('Y-m-d H:i:s');
+                    $snapshot_payload['payment_reference'] = $payment_reference;
+                    $snapshot_payload['payment_method'] = $payment_method;
+                    $snapshot_payload['payment_amount'] = $payment_amount;
+                    $snapshot_payload['payment_date'] = $payment_date;
+                    $this->save_payroll_snapshot($payroll_id, 'paid', $snapshot_payload);
+                }
+
+                $this->db->where('id', $payroll_id);
+                $updated = (bool) $this->db->update(db_prefix() . 'fs_payroll_master', ['status' => 'paid']);
+                if (!$updated) {
+                    return ['success' => false, 'message' => 'Payment could not be recorded at this time.'];
+                }
+                $this->record_payroll_workflow_event($payroll_id, 'record_payment', $actor_staff_id, [
+                    'from_status' => $current_status,
+                    'to_status' => 'paid',
+                    'notes' => isset($details['notes']) ? (string) $details['notes'] : 'Payment recorded.',
+                    'payment_date' => $payment_date,
+                    'payment_method' => $payment_method,
+                    'payment_reference' => $payment_reference,
+                    'payment_amount' => $payment_amount,
+                    'snapshot_id' => (int) ($details['snapshot_id'] ?? 0),
+                ]);
+                return ['success' => true, 'message' => 'Payment recorded.', 'status' => 'paid'];
+
+            default:
+                return ['success' => false, 'message' => 'Unsupported payroll workflow action.'];
+        }
+    }
+
     public function get_payroll_master_row($payroll_id)
     {
         $payroll_id = (int) $payroll_id;
@@ -1102,6 +2321,40 @@ class Field_staff_model extends App_Model
         return (bool) $this->db->insert($table, $payload);
     }
 
+    private function apply_saved_snapshot_to_payroll_row(array &$row)
+    {
+        $payroll_id = (int) ($row['id'] ?? 0);
+        if ($payroll_id <= 0) {
+            return;
+        }
+
+        $snapshot = $this->get_payroll_snapshot($payroll_id);
+        if (!is_array($snapshot) || empty($snapshot)) {
+            return;
+        }
+
+        $totals = is_array($snapshot['totals'] ?? null) ? $snapshot['totals'] : [];
+        $rates = is_array($snapshot['rates'] ?? null) ? $snapshot['rates'] : [];
+
+        foreach (['regular_hours', 'ot_hours', 'gross_salary', 'nib_ee', 'nib_er', 'nhip_ee', 'nhip_er', 'net_salary'] as $field_name) {
+            if (array_key_exists($field_name, $totals) && is_numeric($totals[$field_name])) {
+                $row[$field_name] = round((float) $totals[$field_name], 2);
+            }
+        }
+
+        if (array_key_exists('hourly_rate', $rates) && is_numeric($rates['hourly_rate'])) {
+            $row['hourly_rate'] = round((float) $rates['hourly_rate'], 2);
+        }
+
+        if (isset($snapshot['payment_method']) && trim((string) $snapshot['payment_method']) !== '') {
+            $row['payment_method'] = trim((string) $snapshot['payment_method']);
+        }
+
+        if (isset($snapshot['status']) && trim((string) $snapshot['status']) !== '') {
+            $row['status'] = strtolower(trim((string) $snapshot['status']));
+        }
+    }
+
     public function get_cutoff_payroll_rows($cutoff_id, $start_date = '', $end_date = '')
     {
         $cutoff_id = (int) $cutoff_id;
@@ -1132,12 +2385,23 @@ class Field_staff_model extends App_Model
             ->get()
             ->result_array();
 
+        $staff_lookup = [];
+        foreach ($rows as $row) {
+            $staff_id = (int) ($row['staff_id'] ?? 0);
+            if ($staff_id > 0 && !isset($staff_lookup[$staff_id])) {
+                $staff_lookup[$staff_id] = $this->get_staff_row($staff_id);
+            }
+        }
+
         foreach ($rows as &$row) {
-            $row['worker_name'] = $this->resolve_staff_name($this->get_staff_row((int) ($row['staff_id'] ?? 0)), (int) ($row['staff_id'] ?? 0));
+            $staff_id = (int) ($row['staff_id'] ?? 0);
+            $staff_row = $staff_id > 0 ? ($staff_lookup[$staff_id] ?? $this->get_staff_row($staff_id)) : [];
+            $row['worker_name'] = $this->resolve_staff_name($staff_row, $staff_id);
+            $this->apply_saved_snapshot_to_payroll_row($row);
         }
         unset($row);
 
-        return $rows;
+        return is_array($rows) ? $rows : [];
     }
 
     public function get_legacy_payroll_rows($start_date = '', $end_date = '')
@@ -1165,6 +2429,7 @@ class Field_staff_model extends App_Model
 
         foreach ($rows as &$row) {
             $row['worker_name'] = $this->resolve_staff_name($this->get_staff_row((int) ($row['staff_id'] ?? 0)), (int) ($row['staff_id'] ?? 0));
+            $this->apply_saved_snapshot_to_payroll_row($row);
             $row['legacy_history'] = true;
         }
         unset($row);
@@ -1665,7 +2930,7 @@ class Field_staff_model extends App_Model
      *
      * @return array
      */
-    public function get_payroll_profile($staff_id)
+    public function get_payroll_profile($staff_id, $as_of_date = '')
     {
         $staff_id = (int) $staff_id;
         if ($staff_id <= 0) {
@@ -1675,18 +2940,148 @@ class Field_staff_model extends App_Model
         $staff_row = $this->get_staff_row($staff_id);
         $profile_table = db_prefix() . 'fs_payroll_profiles';
 
-        if (!$this->db->table_exists($profile_table)) {
-            return $this->normalize_profile_row([], $staff_row);
+        $profile = [];
+        if ($this->db->table_exists($profile_table)) {
+            $profile = $this->db
+                ->from($profile_table)
+                ->where('staff_id', $staff_id)
+                ->limit(1)
+                ->get()
+                ->row_array();
+            $profile = is_array($profile) ? $profile : [];
         }
 
-        $profile = $this->db
-            ->from($profile_table)
-            ->where('staff_id', $staff_id)
-            ->limit(1)
-            ->get()
-            ->row_array();
+        $effective_date = trim((string) $as_of_date);
+        if ($effective_date === '') {
+            $effective_date = date('Y-m-d');
+        }
 
-        return $this->normalize_profile_row(is_array($profile) ? $profile : [], $staff_row);
+        $effective_profile = $this->merge_employee_policy_snapshot($profile, $staff_id, $effective_date);
+        $normalized = $this->normalize_profile_row($effective_profile, $staff_row);
+
+        return $normalized;
+    }
+
+    private function merge_employee_policy_snapshot(array $profile_row, $staff_id, $as_of_date = '')
+    {
+        $staff_id = (int) $staff_id;
+        $merged = is_array($profile_row) ? $profile_row : [];
+        if ($staff_id <= 0) {
+            return $merged;
+        }
+
+        $effective_date = trim((string) $as_of_date);
+        if ($effective_date === '') {
+            $effective_date = date('Y-m-d');
+        }
+
+        $snapshot = $this->get_employee_policy_snapshot($staff_id, $effective_date);
+        if (empty($snapshot)) {
+            return $merged;
+        }
+
+        foreach ($snapshot as $field_name => $entry) {
+            $value = $entry['value'] ?? '';
+            if (!is_scalar($value) && !is_null($value)) {
+                $value = json_encode($value, JSON_UNESCAPED_SLASHES);
+            }
+
+            $field_name = trim((string) $field_name);
+            if ($field_name === '') {
+                continue;
+            }
+
+            switch ($field_name) {
+                case 'position':
+                    $normalized = strtolower(trim((string) $value));
+                    if (in_array($normalized, ['owner', 'executive', 'manager', 'supervisor', 'worker'], true)) {
+                        $merged['position'] = $normalized;
+                    }
+                    break;
+                case 'employment_arrangement':
+                    $normalized = strtolower(trim((string) $value));
+                    if (in_array($normalized, ['permanent', 'fixed_term', 'temporary', 'casual'], true)) {
+                        $merged['employment_arrangement'] = $normalized;
+                    }
+                    break;
+                case 'payment_basis':
+                    $normalized = strtolower(trim((string) $value));
+                    if (in_array($normalized, ['salary', 'hourly', 'daily', 'per_job', 'per_unit'], true)) {
+                        $merged['payment_basis'] = $normalized;
+                    }
+                    break;
+                case 'attendance_requirement':
+                    $normalized = strtolower(trim((string) $value));
+                    if (in_array($normalized, ['required', 'optional', 'not_required'], true)) {
+                        $merged['attendance_requirement'] = $normalized;
+                    }
+                    break;
+                case 'payroll_group':
+                    $normalized = trim((string) $value);
+                    if ($normalized !== '') {
+                        $merged['payroll_group'] = $normalized;
+                    }
+                    break;
+                case 'department_id':
+                    if (is_numeric($value)) {
+                        $merged['department_id'] = (int) $value;
+                    }
+                    break;
+                case 'default_shift_id':
+                    if (is_numeric($value)) {
+                        $merged['default_shift_id'] = (int) $value;
+                    }
+                    break;
+                case 'base_hourly_rate':
+                    if (is_numeric($value)) {
+                        $merged['base_hourly_rate'] = (float) $value;
+                    }
+                    break;
+                case 'hourly_rate':
+                    if (is_numeric($value)) {
+                        $merged['hourly_rate'] = (float) $value;
+                    }
+                    break;
+                case 'overtime_multiplier':
+                    if (is_numeric($value)) {
+                        $merged['overtime_multiplier'] = (float) $value;
+                    }
+                    break;
+                case 'daily_field_allowance':
+                    if (is_numeric($value)) {
+                        $merged['daily_field_allowance'] = (float) $value;
+                    }
+                    break;
+                case 'payment_method':
+                    $normalized = strtolower(trim((string) $value));
+                    if (in_array($normalized, ['cash', 'online_transfer', 'check'], true)) {
+                        $merged['payment_method'] = $normalized;
+                    }
+                    break;
+                case 'employee_nib_rate':
+                    if (is_numeric($value)) {
+                        $merged['employee_nib_rate'] = (float) $value;
+                    }
+                    break;
+                case 'employer_nib_rate':
+                    if (is_numeric($value)) {
+                        $merged['employer_nib_rate'] = (float) $value;
+                    }
+                    break;
+                case 'employee_nhip_rate':
+                    if (is_numeric($value)) {
+                        $merged['employee_nhip_rate'] = (float) $value;
+                    }
+                    break;
+                case 'employer_nhip_rate':
+                    if (is_numeric($value)) {
+                        $merged['employer_nhip_rate'] = (float) $value;
+                    }
+                    break;
+            }
+        }
+
+        return $merged;
     }
 
     /**
@@ -2128,60 +3523,166 @@ class Field_staff_model extends App_Model
      *
      * @return array
      */
-    public function calculate_weekly_payroll($staff_id, $start_date, $end_date, $hourly_rate)
+    public function calculate_payroll_for_staff($staff_id, $start_date, $end_date, array $context = [])
     {
-        $staff_id    = (int) $staff_id;
-        $hourly_rate = (float) $hourly_rate;
+        $staff_id = (int) $staff_id;
+        $start_date = trim((string) $start_date);
+        $end_date = trim((string) $end_date);
+
+        $policy_reference_date = trim((string) ($context['policy_reference_date'] ?? $start_date));
+        if ($policy_reference_date === '') {
+            $policy_reference_date = date('Y-m-d');
+        }
+
+        $profile = $this->get_payroll_profile($staff_id, $policy_reference_date);
+        $payment_basis = strtolower(trim((string) ($context['payment_basis'] ?? $profile['payment_basis'] ?? 'hourly')));
+        if (!in_array($payment_basis, ['salary', 'hourly', 'daily', 'per_job', 'per_unit'], true)) {
+            $payment_basis = 'hourly';
+        }
+
+        $hourly_rate = isset($context['hourly_rate']) && is_numeric($context['hourly_rate'])
+            ? (float) $context['hourly_rate']
+            : (float) ($profile['base_hourly_rate'] ?? 0);
+        if ($hourly_rate < 0) {
+            $hourly_rate = 0.0;
+        }
 
         $attendance_table = db_prefix() . 'fs_attendance';
+        $attendance_rows = [];
+        if ($this->db && method_exists($this->db, 'select') && method_exists($this->db, 'from') && method_exists($this->db, 'where')) {
+            $this->db->select('*');
+            $this->db->from($attendance_table);
+            $this->db->where('staff_id', $staff_id);
+            if ($start_date !== '') {
+                $this->db->where('date >=', $start_date);
+            }
+            if ($end_date !== '') {
+                $this->db->where('date <=', $end_date);
+            }
+            $attendance_rows = $this->db->get()->result_array();
+        }
 
-        $this->db->select(
-            "COALESCE(SUM(CASE
-                WHEN clock_in IS NOT NULL
-                AND clock_out IS NOT NULL
-                AND clock_out > clock_in
-                THEN TIMESTAMPDIFF(SECOND, clock_in, clock_out)
-                ELSE 0
-            END), 0) AS total_seconds",
-            false
-        );
-        $this->db->from($attendance_table);
-        $this->db->where('staff_id', $staff_id);
-        $this->db->where('date >=', $start_date);
-        $this->db->where('date <=', $end_date);
+        $attendance_rows = is_array($attendance_rows) ? $attendance_rows : [];
+        $regular_hours = 0.0;
+        $ot_hours = 0.0;
+        $gross_salary = 0.0;
+        $has_work_rows = false;
 
-        $result        = $this->db->get()->row();
-        $total_seconds = $result ? (float) $result->total_seconds : 0.0;
-        $total_hours   = $total_seconds / 3600;
+        if (!empty($attendance_rows)) {
+            foreach ($attendance_rows as $attendance) {
+                if (!is_array($attendance)) {
+                    continue;
+                }
 
-        // Weekly statutory overtime threshold.
-        $regular_hours_cap = $this->get_regular_hours_cap();
-        $regular_hours = min($total_hours, $regular_hours_cap);
-        $ot_hours      = max($total_hours - $regular_hours_cap, 0.0);
+                $work_date = trim((string) ($attendance['date'] ?? $start_date));
+                $day_profile = $this->get_payroll_profile($staff_id, $work_date !== '' ? $work_date : $policy_reference_date);
+                $effective_base_rate = isset($context['hourly_rate']) && is_numeric($context['hourly_rate'])
+                    ? (float) $context['hourly_rate']
+                    : (float) ($day_profile['base_hourly_rate'] ?? $profile['base_hourly_rate'] ?? $hourly_rate);
+                if ($effective_base_rate < 0) {
+                    $effective_base_rate = 0.0;
+                }
 
-        $gross_salary = ($regular_hours * $hourly_rate) + ($ot_hours * $hourly_rate * 1.5);
+                $effective_ot_multiplier = isset($day_profile['overtime_multiplier']) && is_numeric($day_profile['overtime_multiplier'])
+                    ? (float) $day_profile['overtime_multiplier']
+                    : (float) ($context['overtime_multiplier'] ?? 1.5);
+                if ($effective_ot_multiplier < 1) {
+                    $effective_ot_multiplier = 1.0;
+                }
+
+                $clock_in = isset($attendance['clock_in']) ? trim((string) $attendance['clock_in']) : '';
+                $clock_out = isset($attendance['clock_out']) ? trim((string) $attendance['clock_out']) : '';
+                $seconds = 0.0;
+                if ($clock_in !== '' && $clock_out !== '' && $clock_out > $clock_in) {
+                    $seconds = max((strtotime($clock_out) - strtotime($clock_in)), 0);
+                }
+
+                $hours = $seconds / 3600;
+                if ($hours <= 0) {
+                    continue;
+                }
+
+                $has_work_rows = true;
+                $regular_hours += min($hours, (float) $this->get_regular_hours_cap());
+                $ot_hours += max($hours - (float) $this->get_regular_hours_cap(), 0.0);
+                $gross_salary += min($hours, (float) $this->get_regular_hours_cap()) * $effective_base_rate;
+                $gross_salary += max($hours - (float) $this->get_regular_hours_cap(), 0.0) * $effective_base_rate * $effective_ot_multiplier;
+            }
+        }
+
+        if (!$has_work_rows) {
+            $total_hours = 0.0;
+            $regular_hours_cap = $this->get_regular_hours_cap();
+            if ($this->db && method_exists($this->db, 'select') && method_exists($this->db, 'from') && method_exists($this->db, 'where')) {
+                $this->db->select(
+                    "COALESCE(SUM(CASE
+                        WHEN clock_in IS NOT NULL
+                        AND clock_out IS NOT NULL
+                        AND clock_out > clock_in
+                        THEN TIMESTAMPDIFF(SECOND, clock_in, clock_out)
+                        ELSE 0
+                    END), 0) AS total_seconds",
+                    false
+                );
+                $this->db->from($attendance_table);
+                $this->db->where('staff_id', $staff_id);
+                $this->db->where('date >=', $start_date);
+                $this->db->where('date <=', $end_date);
+                $result = $this->db->get()->row();
+                $total_seconds = $result ? (float) $result->total_seconds : 0.0;
+                $total_hours = $total_seconds / 3600;
+            }
+
+            $regular_hours = min($total_hours, $regular_hours_cap);
+            $ot_hours = max($total_hours - $regular_hours_cap, 0.0);
+            $gross_salary = ($regular_hours * $hourly_rate) + ($ot_hours * $hourly_rate * 1.5);
+        }
+
+        if ($payment_basis === 'salary') {
+            $gross_salary = max($gross_salary, (float) ($context['salary_amount'] ?? $gross_salary));
+        } elseif ($payment_basis === 'daily') {
+            $work_days = (float) ($context['work_days'] ?? max($regular_hours / 8.0, 0.0));
+            $gross_salary = max($gross_salary, $work_days * max($hourly_rate * 8.0, 0.0));
+        } elseif ($payment_basis === 'per_job') {
+            $job_units = isset($context['job_units']) && is_numeric($context['job_units']) ? (float) $context['job_units'] : 0.0;
+            $job_rate = isset($context['job_rate']) && is_numeric($context['job_rate']) ? (float) $context['job_rate'] : $hourly_rate;
+            $gross_salary = $job_units * max($job_rate, 0.0);
+        } elseif ($payment_basis === 'per_unit') {
+            $unit_count = isset($context['unit_count']) && is_numeric($context['unit_count']) ? (float) $context['unit_count'] : 0.0;
+            $unit_rate = isset($context['unit_rate']) && is_numeric($context['unit_rate']) ? (float) $context['unit_rate'] : $hourly_rate;
+            $gross_salary = $unit_count * max($unit_rate, 0.0);
+        }
 
         $nib_ee = $gross_salary * $this->get_nib_employee_rate();
         $nib_er = $gross_salary * $this->get_nib_employer_rate();
-
-        // NHIP monthly cap checkpoint: apply 7,800 USD monthly ceiling when monthly aggregation is available.
         $nhip_base_gross = min($gross_salary, $this->get_nhip_ceiling());
-        $nhip_ee         = $nhip_base_gross * $this->get_nhip_employee_rate();
-        $nhip_er         = $nhip_base_gross * $this->get_nhip_employer_rate();
-
+        $nhip_ee = $nhip_base_gross * $this->get_nhip_employee_rate();
+        $nhip_er = $nhip_base_gross * $this->get_nhip_employer_rate();
         $net_salary = $gross_salary - ($nib_ee + $nhip_ee);
 
         return [
+            'payment_basis' => $payment_basis,
             'regular_hours' => round($regular_hours, 2),
-            'ot_hours'      => round($ot_hours, 2),
-            'gross_salary'  => round($gross_salary, 2),
+            'ot_hours' => round($ot_hours, 2),
+            'gross_salary' => round($gross_salary, 2),
             'nhip_base_gross' => round($nhip_base_gross, 2),
-            'nib_ee'        => round($nib_ee, 2),
-            'nib_er'        => round($nib_er, 2),
-            'nhip_ee'       => round($nhip_ee, 2),
-            'nhip_er'       => round($nhip_er, 2),
-            'net_salary'    => round($net_salary, 2),
+            'nib_ee' => round($nib_ee, 2),
+            'nib_er' => round($nib_er, 2),
+            'nhip_ee' => round($nhip_ee, 2),
+            'nhip_er' => round($nhip_er, 2),
+            'net_salary' => round($net_salary, 2),
         ];
+    }
+
+    public function calculate_weekly_payroll($staff_id, $start_date, $end_date, $hourly_rate)
+    {
+        $staff_id = (int) $staff_id;
+        $profile = $this->get_payroll_profile($staff_id, trim((string) $start_date));
+        return $this->calculate_payroll_for_staff($staff_id, $start_date, $end_date, [
+            'payment_basis' => $profile['payment_basis'] ?? 'hourly',
+            'policy_reference_date' => trim((string) $start_date),
+            'hourly_rate' => (float) $hourly_rate,
+        ]);
     }
 
     /**
@@ -2241,12 +3742,23 @@ class Field_staff_model extends App_Model
             ]);
         } catch (Throwable $e) {
             $message = strtolower((string) $e->getMessage());
-            if (strpos($message, 'duplicate') !== false || strpos($message, 'exists') !== false || strpos($message, 'already exists') !== false) {
-                $this->db->where('payroll_id', $payroll_id)
-                    ->where('attribute_id', $attribute_id)
-                    ->limit(1)
-                    ->update($values_table, ['value' => $value]);
-                return true;
+            $is_duplicate = strpos($message, 'duplicate') !== false || strpos($message, 'already exists') !== false;
+            if (!$is_duplicate) {
+                return false;
+            }
+
+            $existing_row = $this->db
+                ->select('id')
+                ->from($values_table)
+                ->where('payroll_id', $payroll_id)
+                ->where('attribute_id', $attribute_id)
+                ->limit(1)
+                ->get()
+                ->row_array();
+
+            if (is_array($existing_row) && isset($existing_row['id'])) {
+                $this->db->where('id', (int) $existing_row['id']);
+                return (bool) $this->db->update($values_table, ['value' => $value]);
             }
 
             return false;

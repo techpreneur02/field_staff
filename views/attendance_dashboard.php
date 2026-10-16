@@ -19,6 +19,7 @@ $save_leave_request_url    = isset($save_leave_request_url) ? (string) $save_lea
 $get_payslip_statement_url = isset($get_payslip_statement_url) ? (string) $get_payslip_statement_url : field_staff_admin_url('field_staff/get_employee_payslip_statement');
 $download_payslip_url = isset($download_payslip_url) ? (string) $download_payslip_url : field_staff_admin_url('field_staff/download_payslip_statement');
 $clock_action_url = isset($clock_action_url) ? (string) $clock_action_url : field_staff_admin_url('field_staff/clock_action');
+$team_monitor_url = field_staff_admin_url('field_staff/get_team_monitor');
 ?>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 <style>
@@ -277,6 +278,25 @@ $clock_action_url = isset($clock_action_url) ? (string) $clock_action_url : fiel
                                                             <button type="button" id="clock-out-btn" class="btn btn-warning" <?php echo !$is_clocked_in ? 'disabled' : ''; ?>>Clock Out</button>
                                                         </div>
                                                     </div>
+                                                    <div class="mtop15">
+                                                        <label for="break-type-select" class="control-label">Break Type</label>
+                                                        <select id="break-type-select" class="form-control">
+                                                            <option value="paid">Paid break</option>
+                                                            <option value="unpaid">Unpaid break</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="btn-group btn-group-justified mtop15" role="group">
+                                                        <div class="btn-group" role="group">
+                                                            <button type="button" id="break-out-btn" class="btn btn-info">Break Out</button>
+                                                        </div>
+                                                        <div class="btn-group" role="group">
+                                                            <button type="button" id="break-in-btn" class="btn btn-default">Break In</button>
+                                                        </div>
+                                                    </div>
+                                                    <div class="mtop10">
+                                                        <button type="button" id="reconcile-attendance-btn" class="btn btn-link btn-xs hidden">Refresh latest status</button>
+                                                        <div id="attendance-state-message" class="text-muted small hidden"></div>
+                                                    </div>
                                                 </form>
                                             </div>
                                         </div>
@@ -290,6 +310,20 @@ $clock_action_url = isset($clock_action_url) ? (string) $clock_action_url : fiel
                                             <div class="panel-body" id="attendance-map-panel">
                                                 <div id="attendance-live-map" class="fs-attendance-map"></div>
                                                 <p id="map-status" class="fs-attendance-meta mbot0">Map is tracking your latest GPS position and attendance event.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="row mtop20">
+                                    <div class="col-md-12">
+                                        <div class="panel panel-default">
+                                            <div class="panel-heading clearfix">
+                                                <strong class="pull-left">Live Team Monitor</strong>
+                                                <button type="button" id="refresh-team-monitor-btn" class="btn btn-default btn-xs pull-right">Refresh</button>
+                                            </div>
+                                            <div class="panel-body">
+                                                <div id="team-monitor-list" class="fs-statement-grid"></div>
                                             </div>
                                         </div>
                                     </div>
@@ -512,6 +546,7 @@ $clock_action_url = isset($clock_action_url) ? (string) $clock_action_url : fiel
             var saveLeaveRequestUrl = <?php echo json_encode($save_leave_request_url); ?>;
             var getPayslipStatementUrl = <?php echo json_encode($get_payslip_statement_url); ?>;
             var clockActionUrl = <?php echo json_encode($clock_action_url); ?>;
+            var attendanceStateUrl = <?php echo json_encode($attendance_state_url ?? field_staff_admin_url('field_staff/get_attendance_state')); ?>;
             var TAB_STORAGE_KEY = 'fs_portal_active_tab';
             var map = null;
             var mapMarker = null;
@@ -628,15 +663,154 @@ $clock_action_url = isset($clock_action_url) ? (string) $clock_action_url : fiel
                 }
             }
 
+            var teamMonitorUrl = <?php echo json_encode($team_monitor_url); ?>;
+
+            function renderTeamMonitor(rows) {
+                var $list = $('#team-monitor-list');
+                if (!Array.isArray(rows) || !rows.length) {
+                    $list.html('<div class="col-md-12 text-muted">No active team members are on shift right now.</div>');
+                    return;
+                }
+
+                var html = '';
+                rows.forEach(function(row) {
+                    var status = (row && row.status) || 'working';
+                    var isOnBreak = status === 'on_break';
+                    var needsReturn = !!(row && row.missing_break_return);
+                    var label = isOnBreak ? (needsReturn ? 'Break return pending' : 'On break') : 'Working';
+                    var elapsedBreak = Number(row && row.elapsed_break_seconds || 0);
+                    var elapsed = elapsedBreak > 0 ? Math.round(elapsedBreak / 60) + ' min' : '0 min';
+                    html += '<div class="col-md-4 mtop10">' +
+                        '<div class="fs-statement-card">' +
+                        '<h5>' + escapeHtml(row && row.name ? row.name : 'Employee') + '</h5>' +
+                        '<p class="mbot5"><strong>Status:</strong> ' + escapeHtml(label) + '</p>' +
+                        '<p class="mbot5"><strong>Break:</strong> ' + escapeHtml(row && row.current_break_type ? row.current_break_type : 'paid') + '</p>' +
+                        '<p class="mbot0"><strong>Elapsed:</strong> ' + escapeHtml(elapsed) + '</p>' +
+                        (needsReturn ? '<p class="text-warning mbot0"><strong>Action:</strong> Missing break return must be reconciled before the next clock-out.</p>' : '') +
+                        '</div>' +
+                        '</div>';
+                });
+
+                $list.html(html);
+            }
+
+            function refreshTeamMonitor() {
+                $.get(teamMonitorUrl, { date: '<?php echo date('Y-m-d'); ?>' }).done(function(response) {
+                    if (response && response.success && Array.isArray(response.team)) {
+                        renderTeamMonitor(response.team);
+                    }
+                }).fail(function() {
+                    $('#team-monitor-list').html('<div class="col-md-12 text-muted">Team monitor is temporarily unavailable.</div>');
+                });
+            }
+
+            var pendingClockRequests = {};
+            var attendanceActionButtons = ['#clock-in-btn', '#clock-out-btn', '#break-out-btn', '#break-in-btn'];
+
+            function disableAttendanceActions() {
+                attendanceActionButtons.forEach(function(selector) {
+                    var $button = $(selector);
+                    if ($button.length) {
+                        $button.prop('disabled', true).addClass('disabled');
+                    }
+                });
+            }
+
+            function applyAttendanceActionState(state) {
+                var clockedIn = !!(state && state.clocked_in);
+                var onBreak = !!(state && state.on_break);
+                var pendingAction = state && state.pending_action ? state.pending_action : '';
+
+                $('#clock-in-btn').prop('disabled', clockedIn || onBreak || pendingAction === 'clock_in').toggleClass('disabled', clockedIn || onBreak || pendingAction === 'clock_in');
+                $('#clock-out-btn').prop('disabled', !clockedIn || onBreak || pendingAction === 'clock_out').toggleClass('disabled', !clockedIn || onBreak || pendingAction === 'clock_out');
+                $('#break-out-btn').prop('disabled', !clockedIn || onBreak || pendingAction === 'break_out').toggleClass('disabled', !clockedIn || onBreak || pendingAction === 'break_out');
+                $('#break-in-btn').prop('disabled', !onBreak || pendingAction === 'break_in').toggleClass('disabled', !onBreak || pendingAction === 'break_in');
+            }
+
+            function syncPortalCsrf(responseCsrf) {
+                if (!responseCsrf || !responseCsrf.name || !responseCsrf.hash) {
+                    return;
+                }
+                $('#portal-csrf-name').val(responseCsrf.name);
+                $('#portal-csrf-hash').val(responseCsrf.hash);
+            }
+
+            function setAttendanceStateMessage(message, isError) {
+                var $msg = $('#attendance-state-message');
+                if (!message) {
+                    $msg.addClass('hidden').text('');
+                    return;
+                }
+                $msg.removeClass('hidden');
+                $msg.text(message);
+                $msg.removeClass('text-success text-warning text-danger');
+                $msg.addClass(isError ? 'text-warning' : 'text-success');
+            }
+
+            function refreshAttendanceState() {
+                disableAttendanceActions();
+                $('#reconcile-attendance-btn').addClass('hidden');
+                setAttendanceStateMessage('Refreshing latest attendance state...', false);
+                return $.ajax({
+                    url: attendanceStateUrl,
+                    method: 'GET',
+                    dataType: 'json',
+                    cache: false
+                }).done(function(response) {
+                    if (response && response.csrf) {
+                        syncPortalCsrf(response.csrf);
+                    }
+                    var state = response && response.state ? response.state : {};
+                    var clockedIn = !!state.clocked_in;
+                    var onBreak = !!state.on_break;
+                    $('#clock-status-badge')
+                        .removeClass('bg-success bg-secondary')
+                        .addClass(clockedIn ? 'bg-success' : 'bg-secondary')
+                        .text(clockedIn ? 'Clocked In' : 'Clocked Out');
+                    applyAttendanceActionState(state);
+                    setAttendanceStateMessage('Attendance state refreshed.', false);
+                }).fail(function(xhr) {
+                    var response = xhr && xhr.responseJSON ? xhr.responseJSON : {};
+                    var message = 'Attendance status could not be refreshed. Reconcile the latest status before continuing.';
+                    if (response && response.reference_id) {
+                        message += ' Reference ID: ' + response.reference_id;
+                    }
+                    setAttendanceStateMessage(message, true);
+                    $('#reconcile-attendance-btn').removeClass('hidden');
+                });
+            }
+
+            $('#reconcile-attendance-btn').on('click', function() {
+                refreshAttendanceState();
+            });
+
             function postClock(actionKey) {
-                var $btn = actionKey === 'clock_in' ? $('#clock-in-btn') : $('#clock-out-btn');
+                var $btn = actionKey === 'clock_in' ? $('#clock-in-btn') : actionKey === 'clock_out' ? $('#clock-out-btn') : actionKey === 'break_out' ? $('#break-out-btn') : $('#break-in-btn');
+                if (!($btn && $btn.length)) {
+                    return;
+                }
+
+                if (pendingClockRequests[actionKey]) {
+                    return;
+                }
+
+                pendingClockRequests[actionKey] = true;
+                disableAttendanceActions();
                 $btn.prop('disabled', true);
+
+                var releaseBtn = function() {
+                    delete pendingClockRequests[actionKey];
+                    refreshAttendanceState();
+                };
+
+                var breakType = $('#break-type-select').val() || 'paid';
                 getGeo(
                     function(lat, lng) {
                         $('#gps-preview').text('GPS: ' + lat.toFixed(6) + ', ' + lng.toFixed(6));
-                        updateMapPosition(lat, lng, actionKey === 'clock_in' ? 'Clock In location captured' : 'Clock Out location captured');
+                        updateMapPosition(lat, lng, actionKey === 'clock_in' ? 'Clock In location captured' : actionKey === 'clock_out' ? 'Clock Out location captured' : actionKey === 'break_out' ? 'Break Out captured' : 'Break In captured');
                         var payload = appendPortalCsrf({
                             action: actionKey,
+                            break_type: breakType,
                             latitude: lat,
                             longitude: lng,
                             notes: $('#attendance_notes').val() || ''
@@ -650,31 +824,44 @@ $clock_action_url = isset($clock_action_url) ? (string) $clock_action_url : fiel
                             .done(function(r) {
                                 if (r && r.success) {
                                     showMessage(r.message || 'Attendance recorded.');
-                                    var clocked = (actionKey === 'clock_in');
-                                    $('#clock-in-btn').prop('disabled', clocked);
-                                    $('#clock-out-btn').prop('disabled', !clocked);
-                                    $('#clock-status-badge')
-                                        .removeClass('bg-success bg-secondary')
-                                        .addClass(clocked ? 'bg-success' : 'bg-secondary')
-                                        .text(clocked ? 'Clocked In' : 'Clocked Out');
-                                    $('.fs-portal-badge')
-                                        .removeClass('on off')
-                                        .addClass(clocked ? 'on' : 'off')
-                                        .text(clocked ? 'Clocked In' : 'Clocked Out');
                                     refreshAttendanceView(900);
-                                } else {
-                                    showMessage(r && r.message ? r.message : 'Could not save attendance.');
-                                    $btn.prop('disabled', false);
+                                    refreshTeamMonitor();
+                                    return;
                                 }
+
+                                var message = r && r.message ? r.message : 'Could not save attendance.';
+                                if (r && r.reason === 'invalid_transition') {
+                                    message = 'This attendance action is not valid for the current state. Refresh and check the latest status before retrying.';
+                                } else if (r && r.reason === 'not_authorized') {
+                                    message = 'Your session is no longer authorized to record attendance.';
+                                }
+                                if (r && r.reference_id) {
+                                    message += ' Reference ID: ' + r.reference_id;
+                                }
+                                showMessage(message);
                             })
-                            .fail(function() {
-                                showMessage('Server error while saving attendance.');
-                                $btn.prop('disabled', false);
+                            .fail(function(xhr) {
+                                var response = xhr && xhr.responseJSON ? xhr.responseJSON : {};
+                                var message = 'Server error while saving attendance.';
+                                if (response.reason === 'invalid_transition') {
+                                    message = 'This attendance action is not valid for the current state. Refresh and check the latest status before retrying.';
+                                } else if (response.reason === 'not_authorized') {
+                                    message = 'Your session is no longer authorized to record attendance.';
+                                } else if (response.message) {
+                                    message = response.message;
+                                }
+                                if (response.reference_id) {
+                                    message += ' Reference ID: ' + response.reference_id;
+                                }
+                                showMessage(message);
+                            })
+                            .always(function() {
+                                releaseBtn();
                             });
                     },
                     function(errMsg) {
                         showMessage(errMsg);
-                        $btn.prop('disabled', false);
+                        releaseBtn();
                     }
                 );
             }
@@ -686,6 +873,14 @@ $clock_action_url = isset($clock_action_url) ? (string) $clock_action_url : fiel
             $('#clock-out-btn').click(function(e) {
                 e.preventDefault();
                 postClock('clock_out');
+            });
+            $('#break-out-btn').click(function(e) {
+                e.preventDefault();
+                postClock('break_out');
+            });
+            $('#break-in-btn').click(function(e) {
+                e.preventDefault();
+                postClock('break_in');
             });
 
             restoreActiveTab();
@@ -705,6 +900,7 @@ $clock_action_url = isset($clock_action_url) ? (string) $clock_action_url : fiel
                 }
             });
             persistActiveTab();
+            refreshTeamMonitor();
 
             // Prefetch GPS to show coordinates early
             if (navigator.geolocation) {
@@ -725,10 +921,15 @@ $clock_action_url = isset($clock_action_url) ? (string) $clock_action_url : fiel
                 }
             });
 
+            $('#refresh-team-monitor-btn').on('click', function() {
+                refreshTeamMonitor();
+            });
+
             // Keep attendance view fresh so clock updates appear quickly.
             window.setInterval(function() {
                 if (document.visibilityState === 'visible' && activeTabHref() === '#tab-my-daily-logs') {
                     refreshAttendanceView(0);
+                    refreshTeamMonitor();
                 }
             }, 30000);
 

@@ -2,8 +2,14 @@
  * Erpxolluxn field_staff mobile attendance handler.
  * Captures geolocation and submits attendance actions through secure AJAX.
  */
-(function ($) {
+(function (global) {
     'use strict';
+
+    if (!global.jQuery || !global.jQuery.fn) {
+        return;
+    }
+
+    var $ = global.jQuery;
 
     var selectors = {
         form: '#attendance-form',
@@ -218,4 +224,4 @@
         event.preventDefault();
         submitClockAction('out');
     });
-})(jQuery);
+})(window);
