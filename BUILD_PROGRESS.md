@@ -222,3 +222,9 @@ Remaining items:
 - The live deployment issue has been repaired and the correct module assets are now being served from the hosted demo.
 - Live Perfex/runtime verification remains the remaining gate for final production confidence on the HR settings, attendance workflows, and end-to-end exports.
 - The review ZIP is generated from the current source-only module and does not include deployment artifacts.
+
+## Verified live checkpoint
+- Resolved the live payroll navigation trap caused by a generic in-page click handler and the empty payroll table DataTables crash.
+- Verified the live page at `https://demo.erpxolluxn.com/admin/field_staff/payroll` can navigate out of payroll and open other sidebar sections without being trapped on the page.
+- Core module files were synced to the final live deployment state and kept in the source workspace: `field_staff.php`, `views/hr_management.php`, `views/payroll_report.php`, `assets/css/field_staff.css`, and `assets/js/field_staff.js`.
+- The module source is now captured in the Git checkpoint `checkpoint/live-nav-ui-review` and aligned with the working deployed fix.
