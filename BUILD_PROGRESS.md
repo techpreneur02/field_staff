@@ -1,8 +1,8 @@
 # Field Staff Module Build Progress
 
-## Current source root and record
+## Current source root and checkpoint
 - Source root: `d:\October projects\field_staff\field_staff`
-- Git checkout is not available in this workspace; there is no active repository metadata to create or update a commit/checkpoint from this environment.
+- Git checkpoint created: branch `checkpoint/live-nav-ui-review`, commit `7ba9f3f`
 - Local backups and package artifacts remain under `d:\October projects\field_staff\_module_backups` and the parent project directory.
 - Clean package output created for this final reconciliation: `d:\October projects\field_staff\field_staff_synced_20261016.zip`
 
