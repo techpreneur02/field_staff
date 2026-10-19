@@ -499,11 +499,19 @@ class Field_staff_model extends App_Model
             $status = 'on_break';
         }
 
+        $has_unresolved_breaks = $has_invalid_timestamp || $missing_break_in;
+        $unresolved_break_ids = array_values(array_map(function ($entry) {
+            return isset($entry['id']) ? (int) $entry['id'] : 0;
+        }, $invalid_breaks));
+
         return [
             'status' => $status,
             'active_break' => $active_break,
             'missing_break_in' => $missing_break_in,
             'has_invalid_timestamp' => $has_invalid_timestamp,
+            'has_unresolved_breaks' => $has_unresolved_breaks,
+            'invalid_break_count' => count($invalid_breaks),
+            'unresolved_break_ids' => $unresolved_break_ids,
             'invalid_breaks' => $invalid_breaks,
             'total_paid_break_seconds' => round((float) $paid_seconds, 2),
             'total_unpaid_break_seconds' => round((float) $unpaid_seconds, 2),
@@ -968,6 +976,11 @@ class Field_staff_model extends App_Model
             $status = 'break_return_pending';
         }
 
+        $has_unresolved_breaks = $has_invalid_timestamp || $missing_break_in;
+        $unresolved_break_ids = array_values(array_map(function ($entry) {
+            return isset($entry['id']) ? (int) $entry['id'] : 0;
+        }, $invalid_breaks));
+
         return [
             'attendance_id' => $attendance_id,
             'shift_seconds' => round($shift_seconds, 2),
@@ -976,6 +989,9 @@ class Field_staff_model extends App_Model
             'payable_seconds' => round($payable_seconds, 2),
             'missing_break_in' => $missing_break_in,
             'has_invalid_timestamp' => $has_invalid_timestamp,
+            'has_unresolved_breaks' => $has_unresolved_breaks,
+            'invalid_break_count' => count($invalid_breaks),
+            'unresolved_break_ids' => $unresolved_break_ids,
             'invalid_breaks' => $invalid_breaks,
             'status' => $status,
             'break_rows' => $break_rows,

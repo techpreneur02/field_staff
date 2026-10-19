@@ -682,6 +682,18 @@ if (($invalid_summary['status'] ?? '') !== 'timestamp_issue') {
     fwrite(STDERR, "Malformed timestamps should be marked as unresolved rather than closed or on-break.\n");
     exit(1);
 }
+if (($invalid_summary['has_unresolved_breaks'] ?? false) !== true) {
+    fwrite(STDERR, "The attendance summary should expose unresolved break data when a timestamp is malformed.\n");
+    exit(1);
+}
+if (($invalid_summary['invalid_break_count'] ?? 0) !== 2) {
+    fwrite(STDERR, "The invalid-break count should reflect each malformed break row rather than collapsing the issue.\n");
+    exit(1);
+}
+if (!in_array(77, $invalid_summary['unresolved_break_ids'] ?? [], true) || !in_array(78, $invalid_summary['unresolved_break_ids'] ?? [], true)) {
+    fwrite(STDERR, "The unresolved break IDs should remain visible for supervisor review and correction flows.\n");
+    exit(1);
+}
 
 $original_rate = 25.0;
 $original_policy = [

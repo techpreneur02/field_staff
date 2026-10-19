@@ -1,5 +1,8 @@
 ﻿# Field Staff Module Build Progress
 
+## Latest milestone
+Milestone: exposed unresolved break metadata and validated the next local attendance workflow without assuming the next host-side fix. The model now returns explicit `has_unresolved_breaks`, `invalid_break_count`, and `unresolved_break_ids` when malformed break timestamps or open-return exceptions remain. The runtime harness verifies the same contract for multiple malformed break rows so the payroll and attendance views can surface the issue instead of silently treating unresolved timestamps as valid time.
+
 ## Current phase
 Phase: recovered local source validated and review package prepared; live demo verification is paused because the browser-controlled cPanel session in this tool is not authenticated, so the remote backup/deploy gate cannot proceed
 
