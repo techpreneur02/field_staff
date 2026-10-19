@@ -889,4 +889,29 @@ if (($model->get_payroll_snapshot(89)['status'] ?? '') !== 'approved') {
     exit(1);
 }
 
+$parse_method = $reflect->getMethod('parse_datetime_or_null');
+$parse_method->setAccessible(true);
+if ($parse_method->invoke($model, '2026-10-18 08:30:00') === null) {
+    fwrite(STDERR, "Valid timestamps should parse into a DateTimeImmutable object.\n");
+    exit(1);
+}
+if ($parse_method->invoke($model, '0000-00-00 00:00:00') !== null) {
+    fwrite(STDERR, "Zero-date placeholders should be treated as invalid timestamps.\n");
+    exit(1);
+}
+if ($parse_method->invoke($model, 'not-a-date') !== null) {
+    fwrite(STDERR, "Malformed timestamps should not crash the model and should resolve to null.\n");
+    exit(1);
+}
+$duration_method = $reflect->getMethod('calculate_duration_seconds');
+$duration_method->setAccessible(true);
+if (abs((float) $duration_method->invoke($model, '2026-10-18 08:00:00', '2026-10-18 09:30:00') - 5400.0) > 0.01) {
+    fwrite(STDERR, "Valid time windows should calculate elapsed seconds without relying on unsafe strtotime assumptions.\n");
+    exit(1);
+}
+if (abs((float) $duration_method->invoke($model, 'not-a-date', '2026-10-18 09:30:00')) > 0.01) {
+    fwrite(STDERR, "Invalid timestamps should produce a zero duration instead of a crash.\n");
+    exit(1);
+}
+
 echo "runtime checks passed\n";

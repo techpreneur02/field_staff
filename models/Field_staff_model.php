@@ -553,7 +553,7 @@ class Field_staff_model extends App_Model
                 }
             }
 
-            $now = new DateTimeImmutable('now');
+            $now = new DateTimeImmutable('now', $this->resolve_business_timezone());
             $elapsed_break_seconds = 0;
             if (is_array($break_row) && isset($break_row['break_out_at']) && trim((string) $break_row['break_out_at']) !== '') {
                 $break_start = $this->parse_datetime_or_null((string) $break_row['break_out_at']);
@@ -4106,15 +4106,36 @@ class Field_staff_model extends App_Model
      *
      * @return DateTimeImmutable|null
      */
+    private function resolve_business_timezone()
+    {
+        $timezone = 'UTC';
+        if (defined('FS_BUSINESS_TIMEZONE') && trim((string) FS_BUSINESS_TIMEZONE) !== '') {
+            $timezone = trim((string) FS_BUSINESS_TIMEZONE);
+        } elseif (function_exists('date_default_timezone_get') && trim((string) date_default_timezone_get()) !== '') {
+            $timezone = trim((string) date_default_timezone_get());
+        }
+
+        try {
+            return new DateTimeZone($timezone);
+        } catch (Throwable $e) {
+            return new DateTimeZone('UTC');
+        }
+    }
+
     private function parse_datetime_or_null($value)
     {
+        if (is_array($value) || is_object($value) && !method_exists($value, '__toString')) {
+            return null;
+        }
+
         $value = trim((string) $value);
-        if ($value === '') {
+        $normalized = strtolower($value);
+        if ($value === '' || in_array($normalized, ['null', 'none', 'n/a', 'na', '0000-00-00', '0000-00-00 00:00:00', '0000-00-00 00:00:00.000000'], true)) {
             return null;
         }
 
         try {
-            $date = new DateTimeImmutable($value);
+            $date = new DateTimeImmutable($value, $this->resolve_business_timezone());
             return $date->getTimestamp() > 0 ? $date : null;
         } catch (Throwable $e) {
             return null;
@@ -4138,13 +4159,13 @@ class Field_staff_model extends App_Model
             return 0.0;
         }
 
-        $clock_in_ts = strtotime($clock_in);
-        $clock_out_ts = strtotime($clock_out);
-        if ($clock_in_ts === false || $clock_out_ts === false || $clock_out_ts <= $clock_in_ts) {
+        $clock_in_dt = $this->parse_datetime_or_null($clock_in);
+        $clock_out_dt = $this->parse_datetime_or_null($clock_out);
+        if ($clock_in_dt === null || $clock_out_dt === null || $clock_out_dt <= $clock_in_dt) {
             return 0.0;
         }
 
-        return (float) ($clock_out_ts - $clock_in_ts);
+        return (float) ($clock_out_dt->getTimestamp() - $clock_in_dt->getTimestamp());
     }
 
     private function get_regular_hours_cap()
