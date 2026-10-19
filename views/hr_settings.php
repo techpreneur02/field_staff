@@ -534,6 +534,14 @@ $allowlist_lookup = array_flip(array_map('intval', $hr_payroll_staff_ids));
 <?php init_tail(); ?>
 <script>
 $(function() {
+    function notify(type, message) {
+        if (typeof alert_float === 'function') {
+            alert_float(type, message);
+        } else {
+            window.alert(message);
+        }
+    }
+
     function escapeHtml(value) {
         return String(value || '')
             .replace(/&/g, '&amp;')

@@ -1,0 +1,14 @@
+backups/
+logs/
+*.log
+*.log.*
+*.tmp
+*.bak
+*.zip
+*.tar
+*.gz
+*.7z
+*.rar
+.env
+.env.*
+*.pem

@@ -16,6 +16,22 @@ It provides:
 - Project assignment controls with strict role-ID allowlist gating
 - CSV exports for reporting workflows
 
+## Current status
+
+Build status: continuing; source validated locally, live admin verification remains the final dependency.
+
+- PHP lint passed across all module PHP files.
+- Runtime checks passed for cutoff isolation, snapshot totals, attendance transition safety, and effective-dated policy overrides.
+- A clean review ZIP was generated locally with a single top-level `field_staff/` folder and verified against a manifest after excluding logs, backups, and temp artifacts.
+- The local module remains the authority for implemented source changes.
+- The remaining dependency is live verification in the authenticated Perfex demo for attendance/break flows, payroll approval, export parity, cutoff isolation, and unauthorized access rejection.
+- Live cPanel backup/deploy remains blocked until the browser-controlled session is signed in to the authenticated File Manager; the current tool session is returning the cPanel login page instead of an active host session.
+- Review package path: `D:\October projects\field_staff\field_staff_review_package_20261019.zip`
+
+Live verification target: https://demo.erpxolluxn.com/admin
+
+The working source is ready for final admin/browser confirmation in that environment. Until the hosted app confirms the exact payroll, break, and export behaviors under real data, the module stays in a validated-source / live-verification-pending state rather than a completed sign-off state.
+
 ## Documentation Map
 
 Use the split documentation set for role-specific usage:

@@ -5,6 +5,7 @@
 - Recoverable Git checkpoint created: branch `checkpoint/pre-full-build`
 - Timestamped backup created outside the module: `d:\October projects\field_staff\_module_backups\field_staff_backup_20261014_223943.zip`
 - Module boundaries preserved: no Perfex core files modified; all implementation remains within the `field_staff` module folder.
+- Current live-validation status: browser session is active; the module UI loads in the hosted demo, but final workflow acceptance remains pending on the live app.
 
 ## Operating principles
 - Preserve existing data and compatibility with Perfex.

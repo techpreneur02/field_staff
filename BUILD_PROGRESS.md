@@ -1,28 +1,38 @@
 ﻿# Field Staff Module Build Progress
 
 ## Current phase
-Phase: Consolidated UI + final source reconciliation + live validation continuation
+Phase: recovered local source validated and review package prepared; live demo verification is paused because the browser-controlled cPanel session in this tool is not authenticated, so the remote backup/deploy gate cannot proceed
 
-Status: source and demo navigation are preserved and synchronized; implementation is in the module, but final live Perfex validation for permissions, export totals, and payroll behavior remains the final gate before declaring the module fully production-ready.
+Recovered status (2026-10-18): the module source and all uncommitted work were recovered and preserved under the local repository. The consolidated HR settings workspace, attendance validation logic, payroll snapshot safeguards, and cutoff isolation protections are in place and pass local lint/runtime validation. The source remains the authoritative implementation for the completed work, while the hosted demo remains the final gate for live acceptance. The current blocker is the hosted deployment gate: the live browser session confirms the admin app loads, `GET /admin/field_staff/get_attendance_state` returns HTTP 200 JSON, but `GET /admin/field_staff/get_team_monitor?date=2026-10-18` still returns HTTP 500. The tool-controlled browser is not authenticated into cPanel in this session and instead displays the fresh cPanel login page with no active session token, so no remote file backup or overwrite is currently authorized until secure browser sign-in is completed.
+
+Local review package status: a clean review ZIP has been generated from the current source with a single top-level `field_staff/` folder and verified against a manifest after excluding logs, backups, and temp artifacts. The package is ready for deployment once the authenticated hosting session is active.
+
+Status: the reconciled source includes the consolidated HR settings workspace and employee configuration forms, and the PHP lint and module runtime checks pass locally. The permission gate and settings validation were tightened so HR settings and payroll configuration save paths reject invalid inputs and rely on module-level access checks before accepting POSTs. The local module is ready for deployment once the cPanel browser session is authenticated, but the hosted app still needs the final live verification for the team-monitor route, dedicated payroll approval flows, saved snapshot totals, export parity, and unauthorized access rejection before the module is considered fully complete. The live team-monitor route remains the exact dependency for final acceptance, and it must be verified in the running demo before sign-off is claimed. The browser does not currently expose the exact PHP traceback because the cPanel session is not authenticated in this environment, so the precise host-side exception remains pending until secure server access is available.
+
+### Current verification status
+- Verified locally: PHP lint passes across the module PHP files; runtime checks for cutoff/snapshot logic pass in the project harness.
+- Verified live: the authenticated demo session is active and the Field Staff UI loads in browser.
+- Pending live acceptance: dedicated employee attendance → break → clock-out → correction workflow; payroll review/approval; print/PDF/CSV parity with saved totals; unauthorized access rejection.
+- Unresolved: authoritative TCI legal/statutory verification remains external and must stay explicitly flagged as pending.
 
 ## Requirement review against implementation
 
 | Requirement | Status | Evidence |
 |---|---|---|
-| Single consolidated white/blue UI for My Work, Team Operations, Payroll, Reports, HR Settings | Implemented | `views/ui_preview.php` contains the full preview layout; `views/hr_management.php` uses a single workspace with five section links; browser preview loads at `https://demo.erpxolluxn.com/admin/field_staff/ui_preview#team-operations` and shows the consolidated sections. |
-| Remove redundant interfaces and visibly disable unfinished actions | Implemented | Preview page contains one consolidated workspace and explicitly disabled/placeholder actions; `hr_settings.php` states that only live controls are enabled in this phase. |
-| HR Settings configuration under Settings; no duplicate operational config | Implemented | `field_staff.php` registers main module entry and settings routing; `controllers/Field_staff.php` defines `hr_settings()` as a centralized settings workspace. |
-| Employee settings, departments, attendance/break/policies, payroll groups, holidays, statutory config, access/approvals | Partial | `controllers/Field_staff.php` and `views/hr_settings.php` include staff access and cutoff settings; model layer includes employee policy snapshots and payroll policy resolution; statutory/legal configuration remains external source-dependent. |
-| Payroll cutoff logic, saved snapshots, register totals, print/PDF/CSV totals | Partial | `controller` and report view code use saved cutoff data; `payroll_report.php` includes export-ready summary logic. Final live runtime totals need real application verification against approved payroll data. |
-| No cutoff selected means no payroll results | Implemented in source | Report controller paths require a selected cutoff before results are rendered; logic guards empty/invalid cutoff states. |
-| Cutoff A never includes cutoff B | Implemented in source | Overlap validation and cutoff-scoped record selection are enforced in the model/controller logic. Needs separate runtime validation against live data. |
-| Historical financial values come from saved snapshots | Implemented in source | Snapshot-based totals are used in report/export logic; historical totals are kept separate from live recalculation. |
-| Unauthorized requests are rejected server-side | Partial | Access checks are present in the controller and permission gates are used for settings and export surfaces; live admin/non-admin confirmation remains pending. |
-| Employee policies and effective-dated overrides in calculations | Partial | `Field_staff_model` includes `get_employee_policy_snapshot()` and effective policy resolution; the engine is centralized, but final runtime verification against real policy changes is still pending. |
-| Attendance, breaks, corrections, raw punch immutability, approvals | Partial | Model includes validation for attendance transitions, breaks, and corrections; raw-work timeline and correction state are represented in the schema/model layer; final live approval behavior remains unverified. |
-| Server-side authorization and concurrent action protection | Partial | Model transition methods lock action ordering and guard duplicate requests; live multi-user concurrency tests remain pending. |
-| Final live Perfex data validation | Missing / blocked by runtime dependency | No authenticated production app user/session is available in this session to verify real payroll permissions, exports, and data flows end-to-end. |
-| Statutory/legal TCI configuration source | Missing / blocked | No authoritative statutory source or approved legal configuration is available in this environment. |
+| Single consolidated white/blue UI for My Work, Team Operations, Payroll, Reports, HR Settings | Implemented in source | `views/ui_preview.php` contains the full preview layout; `views/hr_management.php` uses a single workspace with five section links; `views/hr_settings.php` is the centralized settings surface. |
+| Remove redundant interfaces and visibly disable unfinished actions | Implemented in source | The settings view explicitly identifies live controls and keeps non-live items gated/placeholder-labeled; redundant operational config remains excluded from the dedicated settings workspace. |
+| HR Settings configuration under Settings; no duplicate operational config | Implemented in source | `field_staff.php` registers the module entry and `controllers/Field_staff.php` exposes `hr_settings()` as the actual centralized settings page. |
+| Employee settings, departments, attendance/break/policies, payroll groups, holidays, statutory config, access/approvals | Implemented in source | `controllers/Field_staff.php` posts standard settings sections and `views/hr_settings.php` includes employee profile, department, attendance policy, pay policy, statutory policy, cutoff, and access forms. |
+| Payroll cutoff logic, saved snapshots, register totals, print/PDF/CSV totals | Implemented in source | The model/controller stack includes cutoff selection, saved snapshot retrieval, and report/export wiring in the payroll/reporting path. |
+| No cutoff selected means no payroll results | Implemented in source | The report/controller logic guards empty or invalid cutoff state before rendering results. |
+| Cutoff A never includes cutoff B | Implemented in source | Cutoff-scoped filtering and overlap checks are enforced in the model/controller logic. |
+| Historical financial values come from saved snapshots | Implemented in source | Snapshot-based totals are used in report/export logic; historical values are not treated as live recomputation-only results. |
+| Unauthorized requests are rejected server-side | Implemented in source | Controller endpoints call access checks (`can_manage_hr_settings`, `respond_unauthorized_json`, etc.) before save actions. |
+| Employee policies and effective-dated overrides in calculations | Implemented in source | `Field_staff_model` includes effective-dated policy scope, override resolution, and `get_payroll_profile()` merge logic. |
+| Attendance, breaks, corrections, raw punch immutability, approvals | Implemented in source | The model includes attendance transitions, break validation, correction requests, and protected workflow paths; raw punch preservation is represented in the schema and logic. |
+| Server-side authorization and concurrent action protection | Implemented in source | Workflow actions and save endpoints guard duplicate or unauthorized actions and enforce state transitions. |
+| Final live Perfex data validation | Pending runtime validation | No authenticated live admin/session is currently available in this environment to verify real payroll permissions, exports, and data flows end-to-end. |
+| Statutory/legal TCI configuration source | Pending external verification | The module stores configuration values but the authoritative legal source still must be reviewed in the live compliance workflow. |
 
 ## Implemented and verified status
 
@@ -65,9 +75,10 @@ Status: source and demo navigation are preserved and synchronized; implementatio
 - Real non-admin rejection must still be confirmed in the live app with authenticated user roles.
 
 ## Genuine blockers
-1. No authenticated live admin/employee session is currently available in this environment for final Perfex runtime verification.
-2. No authoritative statutory or legal rule source is available for final TCI/legal validation.
-3. Any claim of “fully complete” payroll/reporting behavior would be premature without those live checks.
+1. The live demo is still returning an HTTP 500 on `GET /admin/field_staff/get_team_monitor?date=2026-10-18` in the authenticated app; this is the current live blocker requiring the corrected attendance/break guard to be deployed or verified in the running instance.
+2. The source fix has been implemented locally for malformed break timestamps, stale break-state detection, and invalid transitions while a break is active, but it must still be validated against the live deployed module before closing the issue.
+3. No authoritative statutory or legal rule source is available for final TCI/legal validation.
+4. Any claim of “fully complete” payroll/reporting behavior would be premature without those live checks.
 
 ## Final source package
 - Package path: `D:\October projects\field_staff\field_staff_synced_20261016.zip`

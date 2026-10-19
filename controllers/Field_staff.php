@@ -2800,6 +2800,10 @@ class Field_staff extends AdminController
 
     private function can_manage_hr_settings()
     {
+        if (function_exists('field_staff_can_manage_settings')) {
+            return (bool) field_staff_can_manage_settings();
+        }
+
         if ($this->is_admin_user()) {
             return true;
         }
@@ -2829,22 +2833,22 @@ class Field_staff extends AdminController
 
     private function can_access_pay_setup_tab()
     {
-        return $this->can_access_hr_payroll_workspace();
+        return $this->can_manage_hr_settings();
     }
 
     private function can_access_operations_tab()
     {
-        return $this->can_access_hr_payroll_workspace();
+        return $this->can_manage_hr_settings();
     }
 
     private function can_access_reporting_tab()
     {
-        return $this->can_access_hr_payroll_workspace();
+        return $this->can_manage_hr_settings();
     }
 
     private function can_access_project_assignment_tab()
     {
-        return $this->can_access_hr_payroll_workspace();
+        return $this->can_manage_hr_settings();
     }
 
     private function respond_unauthorized_json($message = 'Authorization denied.')

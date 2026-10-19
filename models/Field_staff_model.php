@@ -162,12 +162,14 @@ class Field_staff_model extends App_Model
             ->limit(1)
             ->count_all_results();
 
+        $has_active_break = $this->has_active_break_session($staff_id);
+
         if ($requested_action === 'clock_in') {
             return !$has_open_record;
         }
 
         if ($requested_action === 'clock_out') {
-            return $has_open_record;
+            return $has_open_record && !$has_active_break;
         }
 
         return false;
@@ -191,8 +193,6 @@ class Field_staff_model extends App_Model
         }
 
         $attendance_table = db_prefix() . 'fs_attendance';
-        $break_table = db_prefix() . 'fs_break_sessions';
-
         if (!$this->db || !method_exists($this->db, 'table_exists') || !$this->db->table_exists($attendance_table)) {
             return false;
         }
@@ -204,18 +204,7 @@ class Field_staff_model extends App_Model
             ->limit(1)
             ->count_all_results();
 
-        $has_active_break = false;
-        if ($this->db->table_exists($break_table)) {
-            $break_row = $this->db
-                ->from($break_table)
-                ->where('staff_id', $staff_id)
-                ->where('ended_at IS NULL', null, false)
-                ->limit(1)
-                ->get()
-                ->row_array();
-
-            $has_active_break = is_array($break_row) && !empty($break_row);
-        }
+        $has_active_break = $this->has_active_break_session($staff_id);
 
         if ($requested_status === 'clock_in') {
             return !$has_open_record;
@@ -360,7 +349,64 @@ class Field_staff_model extends App_Model
             ->get()
             ->row_array();
 
-        return is_array($row) ? $row : [];
+        if (!is_array($row) || empty($row)) {
+            return [];
+        }
+
+        $attendance_id = (int) ($row['attendance_id'] ?? 0);
+        if ($attendance_id > 0) {
+            $open_attendance_id = $this->get_open_attendance_id($staff_id);
+            if ($open_attendance_id !== $attendance_id) {
+                return [];
+            }
+        }
+
+        $break_out_at = trim((string) ($row['break_out_at'] ?? ''));
+        if ($break_out_at !== '' && $this->parse_datetime_or_null($break_out_at) === null) {
+            return [];
+        }
+
+        return $row;
+    }
+
+    private function has_active_break_session($staff_id)
+    {
+        $staff_id = (int) $staff_id;
+        if ($staff_id <= 0 || !$this->db || !method_exists($this->db, 'table_exists')) {
+            return false;
+        }
+
+        $break_table = db_prefix() . 'fs_break_sessions';
+        if (!$this->db->table_exists($break_table)) {
+            return false;
+        }
+
+        $row = $this->db
+            ->from($break_table)
+            ->where('staff_id', $staff_id)
+            ->where('ended_at IS NULL', null, false)
+            ->limit(1)
+            ->get()
+            ->row_array();
+
+        if (!is_array($row) || empty($row)) {
+            return false;
+        }
+
+        $attendance_id = (int) ($row['attendance_id'] ?? 0);
+        if ($attendance_id > 0) {
+            $open_attendance_id = $this->get_open_attendance_id($staff_id);
+            if ($open_attendance_id !== $attendance_id) {
+                return false;
+            }
+        }
+
+        $break_out_at = trim((string) ($row['break_out_at'] ?? ''));
+        if ($break_out_at !== '' && $this->parse_datetime_or_null($break_out_at) === null) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -409,6 +455,10 @@ class Field_staff_model extends App_Model
             $ended_at = trim((string) ($row['ended_at'] ?? ''));
             $break_type = strtolower(trim((string) ($row['break_type'] ?? 'paid')));
             $duration = 0.0;
+
+            if ($break_out !== '' && $this->parse_datetime_or_null($break_out) === null) {
+                continue;
+            }
 
             if ($break_out !== '' && $break_in !== '') {
                 $duration = $this->calculate_duration_seconds($break_out, $break_in);
@@ -489,11 +539,27 @@ class Field_staff_model extends App_Model
                 ->get()
                 ->row_array();
 
+            if (is_array($break_row) && !empty($break_row)) {
+                $break_out_at = trim((string) ($break_row['break_out_at'] ?? ''));
+                $break_in_at = trim((string) ($break_row['break_in_at'] ?? ''));
+                $ended_at = trim((string) ($break_row['ended_at'] ?? ''));
+
+                if ($break_out_at === '' || $this->parse_datetime_or_null($break_out_at) === null) {
+                    $break_row = [];
+                } elseif ($break_in_at !== '' && $this->parse_datetime_or_null($break_in_at) === null) {
+                    $break_row = [];
+                } elseif ($ended_at !== '' && $this->parse_datetime_or_null($ended_at) === null) {
+                    $break_row = [];
+                }
+            }
+
             $now = new DateTimeImmutable('now');
             $elapsed_break_seconds = 0;
-            if (is_array($break_row) && isset($break_row['break_out_at']) && $break_row['break_out_at'] !== '') {
-                $break_start = new DateTimeImmutable((string) $break_row['break_out_at']);
-                $elapsed_break_seconds = max(0, $now->getTimestamp() - $break_start->getTimestamp());
+            if (is_array($break_row) && isset($break_row['break_out_at']) && trim((string) $break_row['break_out_at']) !== '') {
+                $break_start = $this->parse_datetime_or_null((string) $break_row['break_out_at']);
+                if ($break_start !== null) {
+                    $elapsed_break_seconds = max(0, $now->getTimestamp() - $break_start->getTimestamp());
+                }
             }
 
             $missing_break_return = is_array($break_row)
@@ -4031,6 +4097,28 @@ class Field_staff_model extends App_Model
             'payment_method' => $payment_method,
             'bank_account_info' => isset($profile_row['bank_account_info']) ? trim((string) $profile_row['bank_account_info']) : '',
         ];
+    }
+
+    /**
+     * Parse a database datetime string into DateTimeImmutable without throwing on malformed values.
+     *
+     * @param string|null $value
+     *
+     * @return DateTimeImmutable|null
+     */
+    private function parse_datetime_or_null($value)
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        try {
+            $date = new DateTimeImmutable($value);
+            return $date->getTimestamp() > 0 ? $date : null;
+        } catch (Throwable $e) {
+            return null;
+        }
     }
 
     /**
