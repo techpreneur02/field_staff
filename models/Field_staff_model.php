@@ -448,6 +448,8 @@ class Field_staff_model extends App_Model
         $missing_break_in = false;
         $paid_seconds = 0.0;
         $unpaid_seconds = 0.0;
+        $has_invalid_timestamp = false;
+        $invalid_breaks = [];
 
         foreach ($rows as $row) {
             $break_out = trim((string) ($row['break_out_at'] ?? ''));
@@ -455,8 +457,20 @@ class Field_staff_model extends App_Model
             $ended_at = trim((string) ($row['ended_at'] ?? ''));
             $break_type = strtolower(trim((string) ($row['break_type'] ?? 'paid')));
             $duration = 0.0;
+            $invalid_fields = [];
 
-            if ($break_out !== '' && $this->parse_datetime_or_null($break_out) === null) {
+            foreach (['break_out_at' => $break_out, 'break_in_at' => $break_in, 'ended_at' => $ended_at] as $field_name => $field_value) {
+                if ($field_value !== '' && $this->parse_datetime_or_null($field_value) === null) {
+                    $invalid_fields[] = $field_name;
+                }
+            }
+
+            if (!empty($invalid_fields)) {
+                $has_invalid_timestamp = true;
+                $invalid_breaks[] = [
+                    'id' => isset($row['id']) ? (int) $row['id'] : 0,
+                    'invalid_fields' => $invalid_fields,
+                ];
                 continue;
             }
 
@@ -478,12 +492,19 @@ class Field_staff_model extends App_Model
             }
         }
 
-        $status = $active_break !== null ? 'on_break' : 'working';
+        $status = 'working';
+        if ($has_invalid_timestamp) {
+            $status = 'timestamp_issue';
+        } elseif ($active_break !== null) {
+            $status = 'on_break';
+        }
 
         return [
             'status' => $status,
             'active_break' => $active_break,
             'missing_break_in' => $missing_break_in,
+            'has_invalid_timestamp' => $has_invalid_timestamp,
+            'invalid_breaks' => $invalid_breaks,
             'total_paid_break_seconds' => round((float) $paid_seconds, 2),
             'total_unpaid_break_seconds' => round((float) $unpaid_seconds, 2),
         ];
@@ -539,10 +560,19 @@ class Field_staff_model extends App_Model
                 ->get()
                 ->row_array();
 
+            $has_invalid_break_timestamp = false;
+            $invalid_break_fields = [];
             if (is_array($break_row) && !empty($break_row)) {
                 $break_out_at = trim((string) ($break_row['break_out_at'] ?? ''));
                 $break_in_at = trim((string) ($break_row['break_in_at'] ?? ''));
                 $ended_at = trim((string) ($break_row['ended_at'] ?? ''));
+
+                foreach (['break_out_at' => $break_out_at, 'break_in_at' => $break_in_at, 'ended_at' => $ended_at] as $field_name => $field_value) {
+                    if ($field_value !== '' && $this->parse_datetime_or_null($field_value) === null) {
+                        $has_invalid_break_timestamp = true;
+                        $invalid_break_fields[] = $field_name;
+                    }
+                }
 
                 if ($break_out_at === '' || $this->parse_datetime_or_null($break_out_at) === null) {
                     $break_row = [];
@@ -567,11 +597,20 @@ class Field_staff_model extends App_Model
                 && trim((string) ($break_row['break_in_at'] ?? '')) === ''
                 && trim((string) ($break_row['ended_at'] ?? '')) === '';
 
+            $status = 'working';
+            if ($has_invalid_break_timestamp) {
+                $status = 'timestamp_issue';
+            } elseif (is_array($break_row) && !empty($break_row)) {
+                $status = 'on_break';
+            }
+
             $team[] = [
                 'staff_id' => $staff_id,
                 'name' => trim((string) ($session['firstname'] ?? '') . ' ' . (string) ($session['lastname'] ?? '')) ?: 'Staff #' . $staff_id,
-                'status' => is_array($break_row) && !empty($break_row) ? 'on_break' : 'working',
-                'missing_break_return' => $missing_break_return,
+                'status' => $status,
+                'missing_break_return' => $missing_break_return && !$has_invalid_break_timestamp,
+                'unresolved_timestamp' => $has_invalid_break_timestamp,
+                'invalid_break_fields' => $invalid_break_fields,
                 'clock_in' => $session['clock_in'] ?? null,
                 'current_break_type' => is_array($break_row) ? strtolower((string) ($break_row['break_type'] ?? 'paid')) : 'paid',
                 'elapsed_break_seconds' => $elapsed_break_seconds,
@@ -860,8 +899,9 @@ class Field_staff_model extends App_Model
         $clock_in = trim((string) ($attendance_row['clock_in'] ?? ''));
         $clock_out = trim((string) ($attendance_row['clock_out'] ?? ''));
         $break_rows = [];
-
-        if ($attendance_id > 0) {
+        if (isset($attendance_row['break_rows']) && is_array($attendance_row['break_rows'])) {
+            $break_rows = $attendance_row['break_rows'];
+        } elseif ($attendance_id > 0) {
             $break_table = db_prefix() . 'fs_break_sessions';
             $break_rows = $this->db
                 ->from($break_table)
@@ -879,12 +919,31 @@ class Field_staff_model extends App_Model
         $paid_break_seconds = 0.0;
         $unpaid_break_seconds = 0.0;
         $missing_break_in = false;
+        $has_invalid_timestamp = false;
+        $invalid_breaks = [];
         foreach ($break_rows as $break_row) {
             $break_out = trim((string) ($break_row['break_out_at'] ?? ''));
             $break_in = trim((string) ($break_row['break_in_at'] ?? ''));
             $ended_at = trim((string) ($break_row['ended_at'] ?? ''));
             $break_type = strtolower(trim((string) ($break_row['break_type'] ?? 'paid')));
             $duration = 0.0;
+            $invalid_fields = [];
+
+            foreach (['break_out_at' => $break_out, 'break_in_at' => $break_in, 'ended_at' => $ended_at] as $field_name => $field_value) {
+                if ($field_value !== '' && $this->parse_datetime_or_null($field_value) === null) {
+                    $invalid_fields[] = $field_name;
+                }
+            }
+
+            if (!empty($invalid_fields)) {
+                $has_invalid_timestamp = true;
+                $invalid_breaks[] = [
+                    'id' => isset($break_row['id']) ? (int) $break_row['id'] : 0,
+                    'invalid_fields' => $invalid_fields,
+                ];
+                continue;
+            }
+
             if ($break_out !== '' && $break_in !== '') {
                 $duration = $this->calculate_duration_seconds($break_out, $break_in);
             } elseif ($break_out !== '' && $ended_at !== '') {
@@ -902,6 +961,12 @@ class Field_staff_model extends App_Model
         }
 
         $payable_seconds = max(0.0, $shift_seconds - $unpaid_break_seconds);
+        $status = 'closed';
+        if ($has_invalid_timestamp) {
+            $status = 'timestamp_issue';
+        } elseif ($missing_break_in) {
+            $status = 'break_return_pending';
+        }
 
         return [
             'attendance_id' => $attendance_id,
@@ -910,7 +975,9 @@ class Field_staff_model extends App_Model
             'unpaid_break_seconds' => round($unpaid_break_seconds, 2),
             'payable_seconds' => round($payable_seconds, 2),
             'missing_break_in' => $missing_break_in,
-            'status' => $missing_break_in ? 'break_return_pending' : 'closed',
+            'has_invalid_timestamp' => $has_invalid_timestamp,
+            'invalid_breaks' => $invalid_breaks,
+            'status' => $status,
             'break_rows' => $break_rows,
         ];
     }

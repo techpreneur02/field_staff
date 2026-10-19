@@ -665,6 +665,24 @@ if ((float) $summary['payable_seconds'] <= 0) {
     exit(1);
 }
 
+$invalid_summary = $model->summarize_attendance_record([
+    'id' => 11,
+    'clock_in' => '2026-10-18 08:00:00',
+    'clock_out' => '2026-10-18 17:00:00',
+    'break_rows' => [
+        ['id' => 77, 'break_out_at' => '0000-00-00 00:00:00', 'break_in_at' => '2026-10-18 10:10:00', 'ended_at' => '', 'break_type' => 'paid'],
+        ['id' => 78, 'break_out_at' => '2026-10-18 09:00:00', 'break_in_at' => 'bad-date', 'ended_at' => '', 'break_type' => 'unpaid'],
+    ],
+]);
+if (($invalid_summary['has_invalid_timestamp'] ?? false) !== true) {
+    fwrite(STDERR, "A malformed break timestamp should be surfaced instead of silently treated as valid time.\n");
+    exit(1);
+}
+if (($invalid_summary['status'] ?? '') !== 'timestamp_issue') {
+    fwrite(STDERR, "Malformed timestamps should be marked as unresolved rather than closed or on-break.\n");
+    exit(1);
+}
+
 $original_rate = 25.0;
 $original_policy = [
     'payroll_group' => 'field_ops',
