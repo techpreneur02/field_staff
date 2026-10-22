@@ -210,12 +210,14 @@ class Field_staff_model extends App_Model
             return !$has_open_record;
         }
 
+        $has_pending_break = $this->has_pending_break_return($staff_id);
+
         if ($requested_status === 'break_out') {
-            return $has_open_record && !$has_active_break;
+            return $has_open_record && !$has_active_break && !$has_pending_break;
         }
 
         if ($requested_status === 'break_in') {
-            return $has_open_record && $has_active_break;
+            return $has_open_record && ($has_active_break || $has_pending_break);
         }
 
         if ($requested_status === 'working') {
@@ -286,7 +288,7 @@ class Field_staff_model extends App_Model
 
         $break_table = db_prefix() . 'fs_break_sessions';
         $active_row = $this->db
-            ->select('id, ended_at')
+            ->select('id, ended_at, break_in_at, break_out_at')
             ->from($break_table)
             ->where('staff_id', $staff_id)
             ->where('attendance_id', $attendance_id)
@@ -294,6 +296,19 @@ class Field_staff_model extends App_Model
             ->limit(1)
             ->get()
             ->row_array();
+
+        if (!is_array($active_row) || empty($active_row)) {
+            $active_row = $this->db
+                ->select('id, ended_at, break_in_at, break_out_at')
+                ->from($break_table)
+                ->where('staff_id', $staff_id)
+                ->where('attendance_id', $attendance_id)
+                ->where('break_in_at IS NULL', null, false)
+                ->where('break_out_at IS NOT NULL', null, false)
+                ->limit(1)
+                ->get()
+                ->row_array();
+        }
 
         if ($direction === 'break_out') {
             if (is_array($active_row) && !empty($active_row)) {
@@ -402,11 +417,53 @@ class Field_staff_model extends App_Model
         }
 
         $break_out_at = trim((string) ($row['break_out_at'] ?? ''));
+        $break_in_at = trim((string) ($row['break_in_at'] ?? ''));
         if ($break_out_at !== '' && $this->parse_datetime_or_null($break_out_at) === null) {
             return false;
         }
 
-        return true;
+        if ($break_in_at !== '' && $this->parse_datetime_or_null($break_in_at) === null) {
+            return false;
+        }
+
+        return $break_out_at !== '' && ($break_in_at === '' || $this->parse_datetime_or_null($break_in_at) !== null);
+    }
+
+    private function has_pending_break_return($staff_id)
+    {
+        $staff_id = (int) $staff_id;
+        if ($staff_id <= 0 || !$this->db || !method_exists($this->db, 'table_exists')) {
+            return false;
+        }
+
+        $break_table = db_prefix() . 'fs_break_sessions';
+        if (!$this->db->table_exists($break_table)) {
+            return false;
+        }
+
+        $row = $this->db
+            ->from($break_table)
+            ->where('staff_id', $staff_id)
+            ->where('break_in_at IS NULL', null, false)
+            ->where('ended_at IS NULL', null, false)
+            ->limit(1)
+            ->get()
+            ->row_array();
+
+        if (!is_array($row) || empty($row)) {
+            return false;
+        }
+
+        $attendance_id = (int) ($row['attendance_id'] ?? 0);
+        if ($attendance_id > 0) {
+            $open_attendance_id = $this->get_open_attendance_id($staff_id);
+            if ($open_attendance_id !== $attendance_id) {
+                return false;
+            }
+        }
+
+        $break_out_at = trim((string) ($row['break_out_at'] ?? ''));
+        return $break_out_at !== '' && $this->parse_datetime_or_null($break_out_at) !== null;
     }
 
     /**
@@ -536,8 +593,13 @@ class Field_staff_model extends App_Model
             $date = date('Y-m-d');
         }
 
+        $select_fields = 'a.id, a.staff_id, a.date, a.clock_in, a.clock_out, a.notes, s.firstname, s.lastname';
+        if ($this->db && method_exists($this->db, 'field_exists') && $this->db->field_exists('department_id', $staff_table)) {
+            $select_fields .= ', s.department_id';
+        }
+
         $sessions = $this->db
-            ->select('a.id, a.staff_id, a.date, a.clock_in, a.clock_out, a.notes, s.firstname, s.lastname, s.department_id')
+            ->select($select_fields)
             ->from($attendance_table . ' a')
             ->join($staff_table . ' s', 's.' . ($this->db->field_exists('staffid', $staff_table) ? 'staffid' : 'id') . ' = a.staff_id', 'left')
             ->where('a.date', $date)
@@ -553,7 +615,15 @@ class Field_staff_model extends App_Model
                 continue;
             }
 
-            if ($department_id > 0 && (int) ($session['department_id'] ?? 0) !== $department_id) {
+            $session_department_id = 0;
+            if ($this->db && method_exists($this->db, 'field_exists') && $this->db->field_exists('department_id', $staff_table)) {
+                $session_department_id = (int) ($session['department_id'] ?? 0);
+            } else {
+                $profile = $this->get_payroll_profile($staff_id);
+                $session_department_id = (int) ($profile['department_id'] ?? 0);
+            }
+
+            if ($department_id > 0 && $session_department_id !== $department_id) {
                 continue;
             }
 
@@ -892,6 +962,68 @@ class Field_staff_model extends App_Model
         }
 
         return $query->get()->result_array();
+    }
+
+    /**
+     * Return true when a staff member has unresolved attendance or a pending correction in the selected period.
+     *
+     * @param int    $staff_id
+     * @param string $start_date
+     * @param string $end_date
+     *
+     * @return bool
+     */
+    public function has_unresolved_attendance_for_staff($staff_id, $start_date = null, $end_date = null)
+    {
+        $staff_id = (int) $staff_id;
+        if ($staff_id <= 0) {
+            return false;
+        }
+
+        $attendance_table = db_prefix() . 'fs_attendance';
+        if ($this->db && method_exists($this->db, 'table_exists') && $this->db->table_exists($attendance_table)) {
+            $query = $this->db
+                ->from($attendance_table)
+                ->where('staff_id', $staff_id);
+
+            if ($start_date !== null && $start_date !== '') {
+                $query->where('date >=', trim((string) $start_date));
+            }
+            if ($end_date !== null && $end_date !== '') {
+                $query->where('date <=', trim((string) $end_date));
+            }
+
+            $attendance_rows = $query->get()->result_array();
+            foreach ($attendance_rows as $attendance_row) {
+                $summary = $this->summarize_attendance_record($attendance_row);
+                $status = strtolower(trim((string) ($summary['status'] ?? '')));
+                if (in_array($status, ['timestamp_issue', 'break_return_pending'], true) || !empty($summary['has_unresolved_breaks'])) {
+                    return true;
+                }
+            }
+        }
+
+        $correction_table = db_prefix() . 'fs_attendance_corrections';
+        if ($this->db && method_exists($this->db, 'table_exists') && $this->db->table_exists($correction_table)) {
+            $query = $this->db
+                ->from($correction_table)
+                ->where('staff_id', $staff_id)
+                ->where('status', 'pending');
+
+            if ($start_date !== null && $start_date !== '') {
+                $query->where('created_at >=', trim((string) $start_date));
+            }
+            if ($end_date !== null && $end_date !== '') {
+                $query->where('created_at <=', trim((string) $end_date));
+            }
+
+            $pending = $query->get()->result_array();
+            if (is_array($pending) && !empty($pending)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -2091,6 +2223,9 @@ class Field_staff_model extends App_Model
                 if ($this->has_unverified_payroll_policy($staff_id)) {
                     return ['success' => false, 'message' => 'Payroll approval is blocked until the staff policy verification status is cleared.'];
                 }
+                if ($this->has_unresolved_attendance_for_staff($staff_id, $payroll_row['start_date'] ?? null, $payroll_row['end_date'] ?? null)) {
+                    return ['success' => false, 'message' => 'Payroll approval is blocked until open attendance corrections or unresolved timestamps are resolved for this period.'];
+                }
 
                 $snapshot_payload = $this->get_payroll_snapshot($payroll_id);
                 if (!empty($snapshot_payload)) {
@@ -2310,6 +2445,158 @@ class Field_staff_model extends App_Model
             'created_at' => $timestamp,
             'updated_at' => $timestamp,
         ]);
+    }
+
+    public function save_statutory_scope_setting(array $input)
+    {
+        $scope = strtolower(trim((string) ($input['scope'] ?? 'global')));
+        $scope = in_array($scope, ['global', 'department', 'group', 'staff'], true) ? $scope : 'global';
+
+        $base = [
+            'employee_nib_rate' => isset($input['employee_nib_rate']) ? (float) $input['employee_nib_rate'] : 5.5,
+            'employer_nib_rate' => isset($input['employer_nib_rate']) ? (float) $input['employer_nib_rate'] : 6.5,
+            'employee_nhip_rate' => isset($input['employee_nhip_rate']) ? (float) $input['employee_nhip_rate'] : 3.0,
+            'employer_nhip_rate' => isset($input['employer_nhip_rate']) ? (float) $input['employer_nhip_rate'] : 3.0,
+        ];
+
+        $scope_key = 'global';
+        if ($scope === 'department') {
+            $scope_key = 'department:' . (int) ($input['department_id'] ?? 0);
+        } elseif ($scope === 'group') {
+            $scope_key = 'group:' . strtolower(trim((string) ($input['payroll_group'] ?? '')));
+        } elseif ($scope === 'staff') {
+            $scope_key = 'staff:' . (int) ($input['staff_id'] ?? 0);
+        }
+
+        if (($scope === 'department' && (int) ($input['department_id'] ?? 0) <= 0)
+            || ($scope === 'group' && trim((string) ($input['payroll_group'] ?? '')) === '')
+            || ($scope === 'staff' && (int) ($input['staff_id'] ?? 0) <= 0)) {
+            return false;
+        }
+
+        $raw_settings = $this->get_module_setting('field_staff_statutory_rates', '{}');
+        $settings = json_decode($raw_settings, true);
+        if (!is_array($settings)) {
+            $settings = [];
+        }
+
+        $settings[$scope_key] = $base;
+        return (bool) $this->save_module_setting('field_staff_statutory_rates', json_encode($settings, JSON_UNESCAPED_SLASHES));
+    }
+
+    public function parse_statutory_rate($value, $default_value = 0.0)
+    {
+        if (is_numeric($value)) {
+            return (float) $value;
+        }
+
+        if (is_string($value)) {
+            $candidate = trim($value);
+            if ($candidate === '') {
+                return (float) $default_value;
+            }
+
+            $normalized = strtolower($candidate);
+            if (substr($normalized, -1) === '%') {
+                $candidate = substr($candidate, 0, -1);
+            }
+
+            $candidate = trim(str_replace(',', '', $candidate));
+            if ($candidate !== '' && is_numeric($candidate)) {
+                return (float) $candidate;
+            }
+        }
+
+        return (float) $default_value;
+    }
+
+    public function get_statutory_rates_for_staff($staff_id = 0, $department_id = 0, $payroll_group = '')
+    {
+        $global_settings = [
+            'employee_nib_rate' => $this->parse_statutory_rate($this->get_module_setting('field_staff_nib_employee_rate', '5.5')),
+            'employer_nib_rate' => $this->parse_statutory_rate($this->get_module_setting('field_staff_nib_employer_rate', '6.5')),
+            'employee_nhip_rate' => $this->parse_statutory_rate($this->get_module_setting('field_staff_nhip_employee_rate', '3.0')),
+            'employer_nhip_rate' => $this->parse_statutory_rate($this->get_module_setting('field_staff_nhip_employer_rate', '3.0')),
+        ];
+
+        $raw_settings = $this->get_module_setting('field_staff_statutory_rates', '{}');
+        $settings = json_decode($raw_settings, true);
+        if (!is_array($settings)) {
+            $settings = [];
+        }
+
+        $candidate_keys = [];
+        $staff_id = (int) $staff_id;
+        $department_id = (int) $department_id;
+        $payroll_group = trim((string) $payroll_group);
+
+        if ($staff_id > 0) {
+            $candidate_keys[] = 'staff:' . $staff_id;
+        }
+        if ($department_id > 0) {
+            $candidate_keys[] = 'department:' . $department_id;
+        }
+        if ($payroll_group !== '') {
+            $candidate_keys[] = 'group:' . strtolower($payroll_group);
+        }
+        $candidate_keys[] = 'global';
+
+        foreach ($candidate_keys as $candidate_key) {
+            if (!isset($settings[$candidate_key]) || !is_array($settings[$candidate_key])) {
+                continue;
+            }
+            foreach ($global_settings as $rate_key => $rate_value) {
+                $candidate_value = $settings[$candidate_key][$rate_key] ?? null;
+                if (is_numeric($candidate_value)) {
+                    $global_settings[$rate_key] = $this->parse_statutory_rate((float) $candidate_value);
+                }
+            }
+        }
+
+        return $global_settings;
+    }
+
+    public function is_overtime_enabled_for_staff($staff_id = 0, $department_id = 0, $payroll_group = '')
+    {
+        $staff_id = (int) $staff_id;
+        $department_id = (int) $department_id;
+        $payroll_group = trim((string) $payroll_group);
+
+        $candidate_keys = [];
+        if ($staff_id > 0) {
+            $candidate_keys[] = 'staff:' . $staff_id;
+        }
+        if ($department_id > 0) {
+            $candidate_keys[] = 'department:' . $department_id;
+        }
+        if ($payroll_group !== '') {
+            $candidate_keys[] = 'group:' . strtolower($payroll_group);
+        }
+        $candidate_keys[] = 'global';
+
+        foreach ($candidate_keys as $candidate_key) {
+            $raw_override = $this->get_module_setting('field_staff_overtime_settings_override', '{}');
+            $settings = json_decode($raw_override, true);
+            if (is_array($settings) && isset($settings[$candidate_key]) && is_scalar($settings[$candidate_key])) {
+                $value = strtolower(trim((string) $settings[$candidate_key]));
+                if (in_array($value, ['1', 'true', 'yes', 'on'], true)) {
+                    return true;
+                }
+                if (in_array($value, ['0', 'false', 'no', 'off'], true)) {
+                    return false;
+                }
+            }
+        }
+
+        $value = strtolower(trim((string) $this->get_module_setting('field_staff_overtime_enabled', '1')));
+        if (in_array($value, ['1', 'true', 'yes', 'on'], true)) {
+            return true;
+        }
+        if (in_array($value, ['0', 'false', 'no', 'off'], true)) {
+            return false;
+        }
+
+        return true;
     }
 
     public function get_payroll_cutoff_by_id($cutoff_id)
@@ -2708,6 +2995,53 @@ class Field_staff_model extends App_Model
     }
 
     /**
+     * Apply the configured attendance policy to a punched timestamp.
+     *
+     * @param string $date
+     * @param string $datetime
+     * @param string $direction
+     *
+     * @return string
+     */
+    public function apply_working_time_policy($date, $datetime, $direction = 'in')
+    {
+        $date = trim((string) $date);
+        $datetime = trim((string) $datetime);
+        $direction = strtolower(trim((string) $direction));
+        if ($date === '' || $datetime === '') {
+            return $datetime;
+        }
+
+        $parsed = $this->parse_datetime_or_null($datetime);
+        if ($parsed === null) {
+            return $datetime;
+        }
+
+        $normalized = $parsed;
+        $rounding_mode = strtolower(trim((string) $this->get_module_setting('field_staff_attendance_rounding', 'nearest_30')));
+        if (in_array($rounding_mode, ['nearest_15', 'nearest_30'], true)) {
+            $increment = $rounding_mode === 'nearest_15' ? 15 : 30;
+            $minutes_since_midnight = ((int) $normalized->format('G') * 60) + (int) $normalized->format('i');
+            $rounded_minutes = (int) round($minutes_since_midnight / $increment) * $increment;
+            $rounded_minutes = ((($rounded_minutes % 1440) + 1440) % 1440);
+            $date_start = new DateTimeImmutable($date . ' 00:00:00', $this->resolve_business_timezone());
+            $normalized = $date_start->modify('+' . $rounded_minutes . ' minutes');
+        }
+
+        if ($direction === 'in' && $this->get_module_setting('field_staff_fixed_start_time_enabled', '0') === '1') {
+            $fixed_start = trim((string) $this->get_module_setting('field_staff_fixed_start_time', '07:00'));
+            if ($fixed_start !== '') {
+                $fixed_dt = $this->parse_datetime_or_null($date . ' ' . $fixed_start);
+                if ($fixed_dt !== null && $normalized < $fixed_dt) {
+                    $normalized = $fixed_dt;
+                }
+            }
+        }
+
+        return $normalized->format('Y-m-d H:i:s');
+    }
+
+    /**
      * Insert or correct a manual attendance record.
      *
      * @param array $data
@@ -2730,8 +3064,8 @@ class Field_staff_model extends App_Model
         $payload = [
             'staff_id' => $staff_id,
             'date' => $date,
-            'clock_in' => $this->compose_datetime($date, $clock_in),
-            'clock_out' => $this->compose_datetime($date, $clock_out),
+            'clock_in' => $this->apply_working_time_policy($date, $clock_in, 'in'),
+            'clock_out' => $this->apply_working_time_policy($date, $clock_out, 'out'),
             'tracking_mode' => 'free-form',
             'notes' => $notes,
         ];
@@ -3732,10 +4066,16 @@ class Field_staff_model extends App_Model
                     $effective_base_rate = 0.0;
                 }
 
+                $overtime_enabled = $this->is_overtime_enabled_for_staff((int) $staff_id, (int) ($day_profile['department_id'] ?? 0), (string) ($day_profile['payroll_group'] ?? $profile['payroll_group'] ?? ''));
                 $effective_ot_multiplier = isset($day_profile['overtime_multiplier']) && is_numeric($day_profile['overtime_multiplier'])
                     ? (float) $day_profile['overtime_multiplier']
-                    : (float) ($context['overtime_multiplier'] ?? 1.5);
+                    : (float) ($context['overtime_multiplier'] ?? $this->get_overtime_multiplier_for_staff((int) $staff_id, (int) ($day_profile['department_id'] ?? 0), (string) ($day_profile['payroll_group'] ?? $profile['payroll_group'] ?? '')));
                 if ($effective_ot_multiplier < 1) {
+                    $effective_ot_multiplier = 1.0;
+                }
+
+                $overtime_multiplier_setting = $this->get_module_setting('field_staff_overtime_multiplier', '1.5');
+                if (!$overtime_enabled && is_numeric($overtime_multiplier_setting)) {
                     $effective_ot_multiplier = 1.0;
                 }
 
@@ -3782,9 +4122,11 @@ class Field_staff_model extends App_Model
                 $total_hours = $total_seconds / 3600;
             }
 
+            $overtime_enabled = $this->is_overtime_enabled_for_staff((int) $staff_id, (int) ($profile['department_id'] ?? 0), (string) ($profile['payroll_group'] ?? ''));
+            $overtime_multiplier = $this->get_overtime_multiplier_for_staff((int) $staff_id, (int) ($profile['department_id'] ?? 0), (string) ($profile['payroll_group'] ?? ''));
             $regular_hours = min($total_hours, $regular_hours_cap);
             $ot_hours = max($total_hours - $regular_hours_cap, 0.0);
-            $gross_salary = ($regular_hours * $hourly_rate) + ($ot_hours * $hourly_rate * 1.5);
+            $gross_salary = ($regular_hours * $hourly_rate) + (($overtime_enabled ? $ot_hours : 0.0) * $hourly_rate * $overtime_multiplier);
         }
 
         if ($payment_basis === 'salary') {
@@ -3802,11 +4144,11 @@ class Field_staff_model extends App_Model
             $gross_salary = $unit_count * max($unit_rate, 0.0);
         }
 
-        $nib_ee = $gross_salary * $this->get_nib_employee_rate();
-        $nib_er = $gross_salary * $this->get_nib_employer_rate();
+        $nib_ee = $gross_salary * $this->get_statutory_rates_for_staff($staff_id, (int) ($profile['department_id'] ?? 0), (string) ($profile['payroll_group'] ?? ''))['employee_nib_rate'] / 100;
+        $nib_er = $gross_salary * $this->get_statutory_rates_for_staff($staff_id, (int) ($profile['department_id'] ?? 0), (string) ($profile['payroll_group'] ?? ''))['employer_nib_rate'] / 100;
         $nhip_base_gross = min($gross_salary, $this->get_nhip_ceiling());
-        $nhip_ee = $nhip_base_gross * $this->get_nhip_employee_rate();
-        $nhip_er = $nhip_base_gross * $this->get_nhip_employer_rate();
+        $nhip_ee = $nhip_base_gross * $this->get_statutory_rates_for_staff($staff_id, (int) ($profile['department_id'] ?? 0), (string) ($profile['payroll_group'] ?? ''))['employee_nhip_rate'] / 100;
+        $nhip_er = $nhip_base_gross * $this->get_statutory_rates_for_staff($staff_id, (int) ($profile['department_id'] ?? 0), (string) ($profile['payroll_group'] ?? ''))['employer_nhip_rate'] / 100;
         $net_salary = $gross_salary - ($nib_ee + $nhip_ee);
 
         return [
@@ -3941,10 +4283,12 @@ class Field_staff_model extends App_Model
 
         $attendance_table = db_prefix() . 'fs_attendance';
 
+        $normalized_datetime = $this->apply_working_time_policy($date, $datetime, 'in');
+
         return (bool) $this->db->insert($attendance_table, [
             'staff_id'      => $staff_id,
             'date'          => $date,
-            'clock_in'      => $datetime,
+            'clock_in'      => $normalized_datetime,
             'in_latitude'   => $latitude,
             'in_longitude'  => $longitude,
             'tracking_mode' => 'free-form',
@@ -3995,8 +4339,10 @@ class Field_staff_model extends App_Model
 
         $this->db->where('id', (int) $open_record->id);
 
+        $normalized_datetime = $this->apply_working_time_policy(date('Y-m-d', strtotime($datetime)), $datetime, 'out');
+
         return (bool) $this->db->update($attendance_table, [
-            'clock_out'     => $datetime,
+            'clock_out'     => $normalized_datetime,
             'out_latitude'  => $latitude,
             'out_longitude' => $longitude,
             'notes'         => $merged_notes,
@@ -4258,7 +4604,56 @@ class Field_staff_model extends App_Model
 
     private function get_default_overtime_multiplier()
     {
+        $configured = trim((string) $this->get_module_setting('field_staff_overtime_multiplier', '1.5'));
+        if ($configured !== '' && is_numeric($configured)) {
+            $value = (float) $configured;
+            if ($value > 0) {
+                return $value;
+            }
+        }
+
         return defined('FS_OT_MULTIPLIER') ? (float) FS_OT_MULTIPLIER : 1.5;
+    }
+
+    public function get_overtime_multiplier_for_staff($staff_id = 0, $department_id = 0, $payroll_group = '')
+    {
+        $staff_id = (int) $staff_id;
+        $department_id = (int) $department_id;
+        $payroll_group = trim((string) $payroll_group);
+
+        $raw_settings = $this->get_module_setting('field_staff_statutory_rates', '{}');
+        $settings = json_decode($raw_settings, true);
+        $candidate_keys = [];
+        if ($staff_id > 0) {
+            $candidate_keys[] = 'staff:' . $staff_id;
+        }
+        if ($department_id > 0) {
+            $candidate_keys[] = 'department:' . $department_id;
+        }
+        if ($payroll_group !== '') {
+            $candidate_keys[] = 'group:' . strtolower($payroll_group);
+        }
+        $candidate_keys[] = 'global';
+
+        foreach ($candidate_keys as $candidate_key) {
+            if (!isset($settings[$candidate_key]) || !is_array($settings[$candidate_key])) {
+                continue;
+            }
+            $candidate_value = $settings[$candidate_key]['overtime_multiplier'] ?? null;
+            if (is_numeric($candidate_value)) {
+                return (float) $candidate_value;
+            }
+        }
+
+        $configured = trim((string) $this->get_module_setting('field_staff_overtime_multiplier', '1.5'));
+        if ($configured !== '' && is_numeric($configured)) {
+            $value = (float) $configured;
+            if ($value > 0) {
+                return $value;
+            }
+        }
+
+        return $this->get_default_overtime_multiplier();
     }
 
     private function get_nib_employee_rate()

@@ -396,13 +396,13 @@ $allowlist_lookup = array_flip(array_map('intval', $hr_payroll_staff_ids));
                     <div class="panel-body">
                         <form id="attendance-policy-form">
                             <div class="row">
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <div class="form-group">
                                         <label class="control-label" for="attendance-grace-period">Grace Period (mins)</label>
                                         <input type="number" min="0" step="1" id="attendance-grace-period" class="form-control" value="<?php echo field_staff_settings_escape((string) ($policy_settings['grace_period_mins'] ?? '10')); ?>">
                                     </div>
                                 </div>
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <div class="form-group">
                                         <label class="control-label" for="attendance-rounding">Rounding</label>
                                         <select id="attendance-rounding" class="form-control">
@@ -410,6 +410,23 @@ $allowlist_lookup = array_flip(array_map('intval', $hr_payroll_staff_ids));
                                                 <option value="<?php echo $option; ?>" <?php echo ($policy_settings['attendance_rounding'] ?? 'nearest_15') === $option ? 'selected' : ''; ?>><?php echo ucfirst(str_replace('_', ' ', $option)); ?></option>
                                             <?php } ?>
                                         </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label class="control-label" for="fixed-start-time-enabled">Fixed Start Time</label>
+                                        <div class="checkbox checkbox-primary mt-10">
+                                            <input type="checkbox" id="fixed-start-time-enabled" value="1" <?php echo !empty($policy_settings['fixed_start_time_enabled']) ? 'checked' : ''; ?>>
+                                            <label for="fixed-start-time-enabled">Enable</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <div class="form-group">
+                                        <label class="control-label" for="fixed-start-time">Fixed Start Time</label>
+                                        <input type="time" id="fixed-start-time" class="form-control" value="<?php echo field_staff_settings_escape((string) ($policy_settings['fixed_start_time'] ?? '07:00')); ?>">
                                     </div>
                                 </div>
                             </div>
@@ -445,13 +462,22 @@ $allowlist_lookup = array_flip(array_map('intval', $hr_payroll_staff_ids));
                     <div class="panel-body">
                         <form id="pay-policy-form">
                             <div class="row">
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <div class="form-group">
                                         <label class="control-label" for="pay-regular-hours-cap">Regular Hours Cap</label>
                                         <input type="number" min="0" step="0.5" id="pay-regular-hours-cap" class="form-control" value="<?php echo field_staff_settings_escape((string) ($policy_settings['regular_hours_cap'] ?? '44')); ?>">
                                     </div>
                                 </div>
-                                <div class="col-md-6">
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label class="control-label" for="pay-overtime-enabled">Overtime</label>
+                                        <div class="checkbox checkbox-primary mt-10">
+                                            <input type="checkbox" id="pay-overtime-enabled" value="1" <?php echo !empty($policy_settings['overtime_enabled']) ? 'checked' : ''; ?>>
+                                            <label for="pay-overtime-enabled">Apply Overtime</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
                                     <div class="form-group">
                                         <label class="control-label" for="pay-overtime-multiplier">Overtime Multiplier</label>
                                         <input type="number" min="0" step="0.1" id="pay-overtime-multiplier" class="form-control" value="<?php echo field_staff_settings_escape((string) ($policy_settings['overtime_multiplier'] ?? '1.5')); ?>">
@@ -749,6 +775,8 @@ $(function() {
         submitSettingsSection('attendance_policy', {
             grace_period_mins: $('#attendance-grace-period').val(),
             attendance_rounding: $('#attendance-rounding').val(),
+            fixed_start_time_enabled: $('#fixed-start-time-enabled').is(':checked') ? '1' : '0',
+            fixed_start_time: $('#fixed-start-time').val(),
             break_policy: $('#break-policy').val(),
             break_duration_limit_mins: $('#break-duration-limit').val(),
         }, $('#save-attendance-policy-btn'));
@@ -757,6 +785,7 @@ $(function() {
     $('#save-pay-policy-btn').on('click', function() {
         submitSettingsSection('pay_policy', {
             regular_hours_cap: $('#pay-regular-hours-cap').val(),
+            overtime_enabled: $('#pay-overtime-enabled').is(':checked') ? '1' : '0',
             overtime_multiplier: $('#pay-overtime-multiplier').val(),
             daily_field_allowance: $('#pay-daily-field-allowance').val(),
         }, $('#save-pay-policy-btn'));

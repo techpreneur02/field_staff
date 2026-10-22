@@ -50,9 +50,12 @@ class Field_staff extends AdminController
         $data['policy_settings'] = [
             'grace_period_mins' => $this->field_staff_model->get_module_setting('field_staff_grace_period_mins', '10'),
             'attendance_rounding' => $this->field_staff_model->get_module_setting('field_staff_attendance_rounding', 'nearest_15'),
+            'fixed_start_time_enabled' => $this->field_staff_model->get_module_setting('field_staff_fixed_start_time_enabled', '0'),
+            'fixed_start_time' => $this->field_staff_model->get_module_setting('field_staff_fixed_start_time', '07:00'),
             'break_policy' => $this->field_staff_model->get_module_setting('field_staff_break_policy', 'paid'),
             'break_duration_limit_mins' => $this->field_staff_model->get_module_setting('field_staff_break_duration_limit_mins', '60'),
             'regular_hours_cap' => $this->field_staff_model->get_module_setting('field_staff_regular_hours_cap', '44'),
+            'overtime_enabled' => $this->field_staff_model->get_module_setting('field_staff_overtime_enabled', '1'),
             'overtime_multiplier' => $this->field_staff_model->get_module_setting('field_staff_overtime_multiplier', '1.5'),
             'daily_field_allowance' => $this->field_staff_model->get_module_setting('field_staff_daily_field_allowance', '0'),
             'employee_nib_rate' => $this->field_staff_model->get_module_setting('field_staff_nib_employee_rate', '5.5'),
@@ -210,6 +213,8 @@ class Field_staff extends AdminController
                     $settings = [
                         'field_staff_grace_period_mins' => (string) $this->input->post('grace_period_mins', true),
                         'field_staff_attendance_rounding' => (string) $this->input->post('attendance_rounding', true),
+                        'field_staff_fixed_start_time_enabled' => (string) $this->input->post('fixed_start_time_enabled', true),
+                        'field_staff_fixed_start_time' => (string) $this->input->post('fixed_start_time', true),
                         'field_staff_break_policy' => (string) $this->input->post('break_policy', true),
                         'field_staff_break_duration_limit_mins' => (string) $this->input->post('break_duration_limit_mins', true),
                     ];
@@ -241,6 +246,7 @@ class Field_staff extends AdminController
                 case 'pay_policy':
                     $settings = [
                         'field_staff_regular_hours_cap' => (string) $this->input->post('regular_hours_cap', true),
+                        'field_staff_overtime_enabled' => (string) $this->input->post('overtime_enabled', true),
                         'field_staff_overtime_multiplier' => (string) $this->input->post('overtime_multiplier', true),
                         'field_staff_daily_field_allowance' => (string) $this->input->post('daily_field_allowance', true),
                     ];
@@ -1862,13 +1868,20 @@ class Field_staff extends AdminController
         $csrf_name = isset($this->security) && method_exists($this->security, 'get_csrf_token_name') ? (string) $this->security->get_csrf_token_name() : '';
         $csrf_hash = isset($this->security) && method_exists($this->security, 'get_csrf_hash') ? (string) $this->security->get_csrf_hash() : '';
 
+        $is_on_break = is_array($active_break) && !empty($active_break);
+        $status = 'clocked_out';
+        if ($open_attendance > 0) {
+            $status = $is_on_break ? 'on_break' : 'working';
+        }
+
         $this->respond_json([
             'success' => true,
             'state' => [
                 'staff_id' => $staff_id,
                 'clocked_in' => $open_attendance > 0,
-                'on_break' => is_array($active_break) && !empty($active_break),
-                'break_type' => is_array($active_break) && !empty($active_break) ? strtolower(trim((string) ($active_break['break_type'] ?? 'paid'))) : null,
+                'on_break' => $is_on_break,
+                'status' => $status,
+                'break_type' => $is_on_break ? strtolower(trim((string) ($active_break['break_type'] ?? 'paid'))) : null,
                 'pending_action' => null,
                 'last_updated' => date('c'),
             ],

@@ -260,6 +260,10 @@ $team_monitor_url = field_staff_admin_url('field_staff/get_team_monitor');
                                                 <span id="clock-status-badge" class="badge pull-right <?php echo $is_clocked_in ? 'bg-success' : 'bg-secondary'; ?>"><?php echo $is_clocked_in ? 'Clocked In' : 'Clocked Out'; ?></span>
                                             </div>
                                             <div class="panel-body">
+                                                <div id="employee-status-strip" class="mbot10">
+                                                    <span id="employee-status-badge" class="label label-default">Employee status: Working</span>
+                                                    <small id="employee-status-detail" class="text-muted">Waiting for live status.</small>
+                                                </div>
                                                 <?php if (isset($this->security) && method_exists($this->security, 'get_csrf_token_name') && method_exists($this->security, 'get_csrf_hash')) { ?>
                                                     <input type="hidden" id="portal-csrf-name" value="<?php echo fs_portal_escape($this->security->get_csrf_token_name()); ?>">
                                                     <input type="hidden" id="portal-csrf-hash" value="<?php echo fs_portal_escape($this->security->get_csrf_hash()); ?>">
@@ -716,6 +720,30 @@ $team_monitor_url = field_staff_admin_url('field_staff/get_team_monitor');
                 });
             }
 
+            function updateEmployeeStatus(state) {
+                var clockedIn = !!(state && state.clocked_in);
+                var onBreak = !!(state && state.on_break);
+                var statusText = 'Clocked out';
+                var detailText = 'No active attendance record.';
+                var badgeClass = 'label-default';
+
+                if (clockedIn && onBreak) {
+                    statusText = 'On break';
+                    detailText = 'Employee is currently on a break.';
+                    badgeClass = 'label-info';
+                } else if (clockedIn) {
+                    statusText = 'Working';
+                    detailText = 'Employee is on shift and actively working.';
+                    badgeClass = 'label-success';
+                }
+
+                $('#employee-status-badge')
+                    .removeClass('label-default label-info label-success label-warning')
+                    .addClass(badgeClass)
+                    .text('Employee status: ' + statusText);
+                $('#employee-status-detail').text(detailText);
+            }
+
             function applyAttendanceActionState(state) {
                 var clockedIn = !!(state && state.clocked_in);
                 var onBreak = !!(state && state.on_break);
@@ -725,6 +753,7 @@ $team_monitor_url = field_staff_admin_url('field_staff/get_team_monitor');
                 $('#clock-out-btn').prop('disabled', !clockedIn || onBreak || pendingAction === 'clock_out').toggleClass('disabled', !clockedIn || onBreak || pendingAction === 'clock_out');
                 $('#break-out-btn').prop('disabled', !clockedIn || onBreak || pendingAction === 'break_out').toggleClass('disabled', !clockedIn || onBreak || pendingAction === 'break_out');
                 $('#break-in-btn').prop('disabled', !onBreak || pendingAction === 'break_in').toggleClass('disabled', !onBreak || pendingAction === 'break_in');
+                updateEmployeeStatus(state);
             }
 
             function syncPortalCsrf(responseCsrf) {

@@ -48,6 +48,7 @@ class FakeDb
     private $snapshots = [];
     private $workflowHistory = [];
     private $attendanceRows = [];
+    private $correctionRows = [];
     private $policyOverrides = [];
     private $schemaMigrations = [];
     private $createdTables = [];
@@ -356,6 +357,17 @@ class FakeDb
             return new FakeDbResult($filtered, $row);
         }
 
+        if (str_ends_with($this->currentTable, 'fs_attendance_corrections')) {
+            $filtered = [];
+            foreach ($this->correctionRows as $row) {
+                if ($this->matchesQueryConditions($row)) {
+                    $filtered[] = $row;
+                }
+            }
+            $row = !empty($filtered) ? $filtered[0] : null;
+            return new FakeDbResult($filtered, $row);
+        }
+
         if (str_ends_with($this->currentTable, 'fs_payroll_snapshots')) {
             $filtered = [];
             foreach ($this->snapshots as $row) {
@@ -424,6 +436,14 @@ class FakeDb
             }
         }
 
+        if (str_ends_with($table, 'fs_attendance_corrections')) {
+            $correctionId = (int) ($payload['id'] ?? 0);
+            if ($correctionId <= 0) {
+                $correctionId = count($this->correctionRows) + 1;
+            }
+            $this->correctionRows[$correctionId] = array_merge(['id' => $correctionId], $payload);
+        }
+
         if (str_ends_with($table, 'fs_payroll_snapshots')) {
             $this->snapshots[(int) $payload['payroll_id']] = $payload;
         }
@@ -482,6 +502,25 @@ class FakeDb
             foreach ($selectedIds as $selectedId) {
                 $current = $rows[$selectedId] ?? ['id' => $selectedId];
                 $this->policyOverrides[$selectedId] = array_merge($current, $payload, ['id' => $selectedId]);
+            }
+        }
+
+        if (str_ends_with($table, 'fs_attendance_corrections')) {
+            $targetCorrectionId = isset($payload['id']) ? (int) $payload['id'] : 0;
+            if ($targetCorrectionId <= 0) {
+                $conditions = $this->queryConditions[$table] ?? [];
+                foreach ($conditions as [$field, $value]) {
+                    if (trim((string) $field) === 'id') {
+                        $targetCorrectionId = (int) $value;
+                        break;
+                    }
+                }
+            }
+            if ($targetCorrectionId <= 0) {
+                $targetCorrectionId = (int) array_key_last($this->correctionRows);
+            }
+            if ($targetCorrectionId > 0 && isset($this->correctionRows[$targetCorrectionId])) {
+                $this->correctionRows[$targetCorrectionId] = array_merge($this->correctionRows[$targetCorrectionId], $payload, ['id' => $targetCorrectionId]);
             }
         }
 
@@ -779,6 +818,37 @@ if (($model->get_payroll_snapshot(88)['status'] ?? '') !== 'under_review') {
 $approval_result = $model->apply_payroll_workflow_action(88, 'approve', 7, ['notes' => 'Approved']);
 if ($approval_result['success'] !== true) {
     fwrite(STDERR, "Payroll workflow should approve a valid review record with a saved snapshot.\n");
+    exit(1);
+}
+
+$unresolved_attendance_block = $model->has_unresolved_attendance_for_staff(21, '2026-01-01', '2026-01-15');
+if ($unresolved_attendance_block !== false) {
+    fwrite(STDERR, "The payroll approval gate should not block a clean attendance set without unresolved exceptions.\n");
+    exit(1);
+}
+
+$correctionId = 1;
+$model->db->insert('fs_attendance_corrections', [
+    'id' => $correctionId,
+    'attendance_id' => 99,
+    'staff_id' => 21,
+    'requested_by' => 7,
+    'correction_type' => 'attendance',
+    'before_value' => '2026-01-15 08:05:00',
+    'after_value' => '2026-01-15 08:15:00',
+    'reason' => 'Clock-in correction',
+    'status' => 'pending',
+    'created_at' => '2026-01-10 08:00:00',
+    'updated_at' => '2026-01-10 08:00:00',
+]);
+if ($model->has_unresolved_attendance_for_staff(21, '2026-01-01', '2026-01-15') !== true) {
+    fwrite(STDERR, "Pending attendance corrections should block payroll approval until the unresolved issue is closed.\n");
+    exit(1);
+}
+
+$model->db->update('fs_attendance_corrections', ['id' => $correctionId, 'status' => 'approved']);
+if ($model->has_unresolved_attendance_for_staff(21, '2026-01-01', '2026-01-15') !== false) {
+    fwrite(STDERR, "Approved attendance corrections should not keep the staff in an unresolved attendance state.\n");
     exit(1);
 }
 

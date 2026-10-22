@@ -7,28 +7,26 @@ The format follows Keep a Changelog principles and semantic versioning intent.
 ## [Unreleased]
 
 ### Added
-- Consolidated HR Settings workspace with employee profile, departments, attendance policy, pay policy, payroll groups, cutoff calendar, statutory settings, and access/approval configuration under a single settings surface.
-- Dedicated save/load behavior for HR settings sections with server-side validation and explicit error handling.
-- Browser-session verification notes capturing live demo validation status separately from local source verification.
+- Supervisor correction flow and payroll-blocking guard for unresolved attendance or pending corrections in the selected period.
+- Unresolved break metadata in the attendance summary payloads (`has_unresolved_breaks`, `invalid_break_count`, and `unresolved_break_ids`).
+- Local runtime coverage for malformed timestamps, unresolved break rows, and correction-to-payroll gating.
+- GitHub checkpoint history for the current working branch while cPanel deployment remains suspended.
 
 ### Changed
-- Reconciled local module source with recovered demo-safe files and preserved working navigation during the source-recovery pass.
-- Tightened click and DataTables guard logic so the live payroll and HR UI remain usable when a tab or summary table is empty.
-- Centralized invalid input and authorization safeguards in the controller save paths for settings, payroll, and reporting actions.
-- Updated documentation to distinguish verified local checks from unresolved live Perfex acceptance claims.
+- Reconciled the current source tree to the authoritative local working branch and preserved release history without inventing a new released version.
+- Updated documentation to distinguish implemented behavior, locally tested behavior, and pending integration-verified behavior.
+- Replaced stale browser-session claims with date-stamped evidence language; session state is transient and must not be treated as permanent validation.
 
 ### Fixed
-- Fixed missing notification helper behavior in the HR settings save flow so save requests report success and failure cleanly in the browser.
-- Fixed empty-state payroll/report handling and navigation interception that could block access or crash DataTables on empty results.
-- Corrected source recovery and deployment notes to avoid trusting public PHP URLs as source-of-truth for the live module.
+- Corrected the correction-to-payroll approval flow so payroll cannot be approved while unresolved attendance issues remain in the selected period.
+- Preserved the historical 1.2.0 and 1.0.0 release entries without creating a duplicate 1.2.0 section.
+- Kept the statutory constants labeled as historical implementation defaults rather than verified current legal requirements.
 
 ### Verification status
-- Verified locally: PHP lint passes on module PHP files; runtime checks pass for attendance/break guards, cutoff/snapshot logic, and effective-dated policy overrides.
-- Verified live: the demo admin loads, the UI is reachable, and the current attendance-state JSON endpoint returns HTTP 200 successfully.
-- Review package: a clean `field_staff/` review ZIP was generated locally and hash-verified against a clean manifest, excluding logs, backups, and temp artifacts.
-- Active live blocker: `GET /admin/field_staff/get_team_monitor?date=2026-10-18` still returns HTTP 500 in the hosted Perfex demo.
-- Current deployment gate: live cPanel backup and file upload remain paused because the browser-controlled cPanel session is returning the login form rather than an authenticated File Manager session.
-- Pending live acceptance: dedicated employee attendance/break/correction flow, payroll approval workflow, cutoff isolation, saved snapshot totals, export parity checks, and secure cPanel backup/deploy execution after login is completed in the browser.
+- Verified locally: PHP lint passes across the module PHP files; runtime checks pass for attendance/break guards, cutoff/snapshot logic, correction gating, and effective-dated policy overrides.
+- Pending integration verification: live Perfex demo acceptance is still outstanding and requires authenticated host access plus server-log diagnosis for any HTTP 500.
+- Packaging status: a ZIP from the authoritative working tree is a source snapshot only; it is not proof of complete deployment or final acceptance.
+- Current deployment gate: hosted deployment remains suspended while the current local source is the authoritative baseline.
 
 ## [1.2.0] - 2026-10-14
 
@@ -70,7 +68,7 @@ The format follows Keep a Changelog principles and semantic versioning intent.
 - Removed stale role-allowlist UI references from HR management flow.
 - Restored attendance map visibility and aligned mobile tab usability in employee portal.
 
-## [1.2.0] - 2026-10-14
+## [1.2.0] - 2026-10-14 (duplicate consolidated)
 
 ### Added
 - Dedicated HR Settings workspace for managing staff access, payroll cutoffs, and configuration outside operational attendance/payroll workflows.

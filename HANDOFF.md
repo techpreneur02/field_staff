@@ -5,14 +5,14 @@
 - Source path: D:\October projects\field_staff\field_staff
 - Branch: checkpoint/live-nav-ui-review
 - GitHub remote: https://github.com/techpreneur02/field_staff.git
-- Commit: c31e40a ("Harden unresolved break visibility")
+- Commit: d79d57f ("Record milestone handoff")
 
 ## Code changes delivered
-- Hardened the attendance and team monitor summaries in `models/Field_staff_model.php` to surface unresolved break conditions instead of silently treating malformed dates as valid work time.
-- Added `has_unresolved_breaks`, `invalid_break_count`, and `unresolved_break_ids` to the returned summary payloads for both attendance break state and monitored attendance rows.
-- Kept the existing `timestamp_issue` status visible while retaining the missing-break-return exception path where appropriate.
-- Expanded the local runtime checks in `tests/field_staff_runtime_checks.php` to cover multiple malformed break rows, unresolved ids, and summary visibility checks for correction workflows.
-- Updated `BUILD_PROGRESS.md` to record the new milestone and current blocker status.
+- Hardened attendance and team-monitor summaries in `models/Field_staff_model.php` to surface unresolved break conditions instead of silently treating malformed records as valid work time.
+- Added `has_unresolved_breaks`, `invalid_break_count`, and `unresolved_break_ids` to summary payloads used by the attendance and monitoring flows.
+- Kept `timestamp_issue` visible while preserving defensive handling for incomplete break returns and invalid break timestamps.
+- Expanded local validation in `tests/field_staff_runtime_checks.php` for malformed timestamps, multiple invalid break rows, and unresolved correction/payroll gating.
+- Updated the project tracking docs to distinguish implemented behavior from pending hosted verification.
 
 ## Validation results
 - Command run: `php tests\field_staff_runtime_checks.php`
@@ -22,10 +22,9 @@
   - `runtime checks passed`
 
 ## Remaining work
-- Resolve the live team-monitor HTTP 500 with authenticated host logs; local validation is complete but live demo acceptance remains pending.
-- Continue the next attendance workflow with multiple breaks, corrections, and unresolved timestamp visibility checks.
-- Keep payroll and report acceptance paths aligned to the same rule: unresolved timestamps must be visible and excluded from safe payroll totals until reviewed.
-- Continue Git checkpointing and push each tested milestone without resetting history.
+- Continue the next local attendance correction and payroll workflow using the same unresolved-timestamp contract.
+- Keep the hosted team-monitor HTTP 500 as a pending external validation gate until authenticated server-side logs confirm the root cause and fix.
+- Maintain Git checkpointing and local source integrity while keeping cPanel deployment suspended.
 
 ## Next task
-- Complete the next local attendance correction workflow and payroll/report validation using the same unresolved-timestamp contract before the next deploy/test cycle is attempted.
+- Finish the local correction-to-payroll acceptance path and regenerate the checked source snapshot after the latest validation pass.
