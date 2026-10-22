@@ -40,6 +40,13 @@ Phase: local payroll remediation and release checkpoint; controlled deployment b
 
 Release artifact: `D:\October projects\field_staff\field_staff.zip`, one top-level `field_staff/`, excluding Git, backups, logs, credentials, temporary files and nested archives. Rebuild/extract/hash comparison is required after the final source checkpoint.
 
+### Checkpoint and package evidence
+- Implementation checkpoint `39857630830f11e9cfff4746ceb576ea54ee1391` was pushed to the existing `origin/checkpoint/live-nav-ui-review` branch; `git ls-remote` returned the same hash and the working tree was clean afterward.
+- PHP lint passed for all **12** non-backup PHP files; both local suites passed.
+- The clean package contains **39 files**. Candidate extraction matched every included source file by SHA-256, with zero missing, extra or mismatched files. Both regression suites passed again from the extracted package.
+- This documentation is a follow-up checkpoint. The final consolidated ZIP is rebuilt and compared again after committing it; use `git log -1` for the final source revision and the delivered ZIP's SHA-256 for artifact identity.
+- Hosted status has not changed: backup/deployment and deployed hash checks remain blocked; the live HTTP 500 and real Perfex/MySQL/PDF/role acceptance remain unresolved.
+
 ## Historical progress below (superseded by the milestone above)
 
 The following sections record earlier implementation claims and pending checks. They are not current live acceptance evidence.

@@ -1,12 +1,13 @@
 # Field Staff Module Handoff
 
 ## Current phase - 2026-10-22 UTC
-Local payroll remediation implemented and regression-tested; Git/release checkpoint preparation completed in this working tree. Controlled demo deployment is blocked before overwrite by host file-operation verification and an incomplete backup. This is not full module/live acceptance.
+Local payroll remediation implemented, regression-tested and pushed to the existing remote. Controlled demo deployment is blocked before overwrite by host file-operation verification and an incomplete backup. This is not full module/live acceptance.
 
 - Source root: `D:\October projects\field_staff\field_staff`
 - Branch: `checkpoint/live-nav-ui-review`
 - Authorized remote: `https://github.com/techpreneur02/field_staff.git`
 - Resumed base: `012587b` (one existing unpushed checkpoint was preserved).
+- Implementation checkpoint: `39857630830f11e9cfff4746ceb576ea54ee1391`, pushed and verified with `git ls-remote`. This handoff is committed in a follow-up documentation checkpoint.
 - Current source/checkpoint identity: use `git log -1` and `git status`; no self-referential commit hash is embedded here.
 
 ## Delivered implementation
@@ -32,7 +33,7 @@ php tests\payroll_regression_checks.php
 php tests\field_staff_runtime_checks.php
 ```
 
-Both pass. All non-backup module PHP files pass `php -l`.
+Both pass. All **12** non-backup module PHP files pass `php -l`. Both suites also pass from the extracted 39-file clean package; SHA-256 comparison found zero missing, extra or mismatched included source files. The final ZIP is rebuilt after this documentation checkpoint.
 
 Numerical evidence: five ten-hour shifts at a configured 44-hour cap produce **44 regular + 6 overtime**, gross **1060** at fixture hourly rate 20 / multiplier 1.5, net **932.80** at fixture-only statutory percentages. Split cutoffs produce **40/0 + 4/6**. Two weeks produce **88/12**. Paid/unpaid one-hour daily breaks yield **50/45 payable hours**. Tests also exercise actual controller saves, snapshot parity, explicit adjustments, missing payment inputs, late corrections, raw-punch immutability, authorization, rollback and workflow UI gating.
 

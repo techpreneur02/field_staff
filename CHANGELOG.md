@@ -16,6 +16,7 @@ The format follows Keep a Changelog principles and semantic versioning intent.
 - Added numerical and actual-controller subprocess regressions covering 44/6 hours, paid/unpaid breaks, crossing cutoffs, multiple workweeks, configured start days, explicit payment inputs and adjustments, late corrections, immutable raw punches, endpoint/snapshot parity, authorization and rollback. Added rendered workflow-control assertions.
 - Local regression suites and all-module PHP lint pass. Live evidence remains separate: authenticated team-monitor request returned HTTP 500; outside-public-root backup was partial/permission-denied and the controlled retry received a host verification page. No live files/data/schema were overwritten by this remediation.
 - Consolidated release artifact is `..\field_staff.zip`; package integrity must be verified by extraction and SHA-256 comparison after the final checkpoint.
+- Pushed implementation checkpoint `3985763` to the existing branch and verified remote identity. The 39-file clean candidate passed full extraction/source SHA-256 comparison and both regression suites from its extracted contents; final packaging is repeated after the documentation checkpoint.
 
 ### Added
 - Supervisor correction flow and payroll-blocking guard for unresolved attendance or pending corrections in the selected period.
