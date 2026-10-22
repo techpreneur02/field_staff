@@ -414,6 +414,8 @@ function field_staff_run_pending_migrations()
                     && $enum_value_exists($prefix . 'fs_payroll_snapshots', 'snapshot_status', 'under_review');
             case '2026_10_20_payroll_workflow_history':
                 return $table_exists($prefix . 'fs_payroll_workflow_history');
+            case '2026_10_22_payroll_work_records':
+                return $table_exists($prefix . 'fs_payroll_work_records');
             default:
                 return true;
         }
@@ -596,6 +598,26 @@ function field_staff_run_pending_migrations()
                 KEY `idx_fs_payroll_workflow_cutoff_id` (`cutoff_id`)
             ) ENGINE=InnoDB;",
         ],
+    ];
+
+    $migrations['2026_10_22_payroll_work_records'] = [
+        "CREATE TABLE IF NOT EXISTS `{$prefix}fs_payroll_work_records` (
+            `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `staff_id` INT UNSIGNED NOT NULL,
+            `cutoff_id` INT UNSIGNED NOT NULL,
+            `payment_basis` VARCHAR(20) NOT NULL,
+            `start_date` DATE NOT NULL,
+            `end_date` DATE NOT NULL,
+            `quantity` DECIMAL(12,4) NOT NULL,
+            `rate` DECIMAL(12,4) NOT NULL,
+            `reference` VARCHAR(120) NOT NULL,
+            `status` VARCHAR(20) NOT NULL DEFAULT 'approved',
+            `approved_by` INT UNSIGNED NOT NULL,
+            `approved_at` DATETIME NOT NULL,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uq_fs_work_reference` (`staff_id`, `cutoff_id`, `reference`),
+            KEY `idx_fs_work_period` (`staff_id`, `start_date`, `end_date`)
+        ) ENGINE=InnoDB;"
     ];
 
     foreach ($migrations as $migration_name => $statement_set) {

@@ -464,7 +464,7 @@ $allowlist_lookup = array_flip(array_map('intval', $hr_payroll_staff_ids));
                             <div class="row">
                                 <div class="col-md-4">
                                     <div class="form-group">
-                                        <label class="control-label" for="pay-regular-hours-cap">Regular Hours Cap</label>
+                                        <label class="control-label" for="pay-regular-hours-cap">Weekly Regular Hours Cap</label>
                                         <input type="number" min="0" step="0.5" id="pay-regular-hours-cap" class="form-control" value="<?php echo field_staff_settings_escape((string) ($policy_settings['regular_hours_cap'] ?? '44')); ?>">
                                     </div>
                                 </div>
@@ -485,10 +485,52 @@ $allowlist_lookup = array_flip(array_map('intval', $hr_payroll_staff_ids));
                                 </div>
                             </div>
                             <div class="form-group">
+                                <label for="pay-workweek-start">Workweek starts on</label>
+                                <select id="pay-workweek-start" class="form-control">
+                                    <?php foreach (['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as $day => $label) { ?>
+                                        <option value="<?php echo $day; ?>" <?php echo (string) ($policy_settings['workweek_start_day'] ?? '1') === (string) $day ? 'selected' : ''; ?>><?php echo $label; ?></option>
+                                    <?php } ?>
+                                </select>
+                                <p class="text-muted">A fixed seven-day workweek, independent of cutoff boundaries. Confirm this policy before payroll review.</p>
+                            </div>
+                            <div class="form-group">
+                                <label for="pay-holiday-multiplier">Configured Holiday Multiplier</label>
+                                <input type="number" min="1" step="0.01" id="pay-holiday-multiplier" class="form-control" value="<?php echo field_staff_settings_escape((string) ($policy_settings['holiday_multiplier'] ?? '')); ?>">
+                                <p class="text-muted">Required when hourly work falls on a configured holiday. No legal multiplier is inferred.</p>
+                            </div>
+                            <div class="form-group">
                                 <label class="control-label" for="pay-daily-field-allowance">Daily Field Allowance</label>
                                 <input type="number" min="0" step="0.01" id="pay-daily-field-allowance" class="form-control" value="<?php echo field_staff_settings_escape((string) ($policy_settings['daily_field_allowance'] ?? '0')); ?>">
                             </div>
                             <button type="button" id="save-pay-policy-btn" class="btn btn-primary"><i class="fa fa-save"></i> Save Pay Policy</button>
+                        </form>
+                        <hr>
+                        <h4>Approve non-hourly work inputs</h4>
+                        <p class="text-muted">Salary: one complete-cutoff amount, quantity 1. Daily: one work date, quantity 1 and daily rate. Job/unit: approved quantity and explicit rate. Records are append-only; check the source reference and values before approval.</p>
+                        <form id="payroll-work-record-form">
+                            <div class="form-group"><label for="work-staff-id">Employee</label>
+                                <select id="work-staff-id" name="staff_id" class="form-control">
+                                    <option value="">Select employee</option>
+                                    <?php foreach ($staff_directory as $employee) { ?>
+                                        <option value="<?php echo (int) $employee['staff_id']; ?>"><?php echo field_staff_settings_escape($employee['worker_name']); ?></option>
+                                    <?php } ?>
+                                </select>
+                            </div>
+                            <div class="form-group"><label for="work-cutoff-id">Cutoff</label>
+                                <select id="work-cutoff-id" name="cutoff_id" class="form-control">
+                                    <option value="">Select cutoff</option>
+                                    <?php foreach ($cutoffs as $work_cutoff) { ?>
+                                        <option value="<?php echo (int) $work_cutoff['id']; ?>"><?php echo field_staff_settings_escape($work_cutoff['cutoff_code']); ?></option>
+                                    <?php } ?>
+                                </select>
+                            </div>
+                            <div class="form-group"><label for="work-start-date">Work / salary period start</label><input id="work-start-date" type="date" name="start_date" class="form-control" required></div>
+                            <div class="form-group"><label for="work-end-date">Work / salary period end</label><input id="work-end-date" type="date" name="end_date" class="form-control" required></div>
+                            <div class="form-group"><label for="work-quantity">Approved quantity</label><input id="work-quantity" type="number" min="0.0001" step="0.0001" name="quantity" class="form-control" required></div>
+                            <div class="form-group"><label for="work-rate">Rate / complete-cutoff salary amount</label><input id="work-rate" type="number" min="0.0001" step="0.0001" name="rate" class="form-control" required></div>
+                            <div class="form-group"><label for="work-reference">Unique approved source reference</label><input id="work-reference" name="reference" maxlength="120" class="form-control" required></div>
+                            <label><input type="checkbox" name="attest_approved" value="1" required> I am authorized and have verified these work inputs against the source record.</label>
+                            <button type="submit" class="btn btn-primary">Save approved work inputs</button>
                         </form>
                     </div>
                 </div>
@@ -784,11 +826,25 @@ $(function() {
 
     $('#save-pay-policy-btn').on('click', function() {
         submitSettingsSection('pay_policy', {
+            workweek_start_day: $('#pay-workweek-start').val(),
+            holiday_multiplier: $('#pay-holiday-multiplier').val(),
             regular_hours_cap: $('#pay-regular-hours-cap').val(),
             overtime_enabled: $('#pay-overtime-enabled').is(':checked') ? '1' : '0',
             overtime_multiplier: $('#pay-overtime-multiplier').val(),
             daily_field_allowance: $('#pay-daily-field-allowance').val(),
         }, $('#save-pay-policy-btn'));
+    });
+
+    $('#payroll-work-record-form').on('submit', function(event) {
+        event.preventDefault();
+        var $button = $(this).find('button');
+        $button.prop('disabled', true);
+        $.post('<?php echo field_staff_settings_escape(field_staff_admin_url('field_staff/save_payroll_work_record')); ?>', $(this).serialize())
+            .done(function(response) {
+                notify(response && response.success ? 'success' : 'danger', response && response.message ? response.message : 'Work record could not be saved.');
+            })
+            .fail(function() { notify('danger', 'Work record could not be saved.'); })
+            .always(function() { $button.prop('disabled', false); });
     });
 
     $('#save-statutory-policy-btn').on('click', function() {

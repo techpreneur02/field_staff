@@ -18,15 +18,16 @@ It provides:
 
 ## Current status
 
-Build status: continuing; source validated locally, live admin verification remains the final dependency.
+Build status (2026-10-22 UTC): payroll remediation implemented and tested locally; deployment and live acceptance remain blocked.
 
 - PHP lint passed across all module PHP files.
 - Runtime checks passed for cutoff isolation, snapshot totals, attendance transition safety, and effective-dated policy overrides.
+- Numerical and actual-controller regression checks pass for configured workweeks (44 regular + 6 overtime for five ten-hour shifts), paid/unpaid breaks, earlier-cutoff consumption, explicit non-hourly work inputs, corrections, preview/save/snapshot parity, workflow authorization and transaction rollback.
 - A clean review ZIP was generated locally with a single top-level `field_staff/` folder and verified against a manifest after excluding logs, backups, and temp artifacts.
 - The local module remains the authority for implemented source changes.
 - The remaining dependency is live verification in the authenticated Perfex demo for attendance/break flows, payroll approval, export parity, cutoff isolation, and unauthorized access rejection.
-- Live cPanel backup/deploy remains blocked until the browser-controlled session is signed in to the authenticated File Manager; the current tool session is returning the cPanel login page instead of an active host session.
-- Review package path: `D:\October projects\field_staff\field_staff_review_package_20261019.zip`
+- cPanel and the demo were authenticated, but the outside-public-root backup returned Permission denied/partial copy, and the controlled retry received a host request-verification page. No deployed files were overwritten. The pre-deployment team-monitor request still returned HTTP 500.
+- Consolidated package path: `D:\October projects\field_staff\field_staff.zip` (one top-level folder, extracted/hash-compared against the current source).
 
 Live verification target: https://demo.erpxolluxn.com/admin
 
@@ -52,13 +53,23 @@ Envato readiness documents:
 
 The module is built for PHP MVC deployments with a MySQL backend and a jQuery + Bootstrap admin UI.
 
-Primary business rules implemented:
-- Weekly regular hours cap: 44.00
-- Overtime rate: 1.5x for hours above 44.00
-- NIB split: 5.5% employee, 6.5% employer
-- NHIP split: 3.0% employee, 3.0% employer
-- NHIP monthly ceiling: 7800.00
-- Payroll additions/deductions via EAV attributes
+Primary payroll behavior:
+- Configured seven-day workweek and weekly regular-hours cap, independent of payroll cutoff boundaries; compatibility defaults are Monday and 44 hours.
+- Effective-dated hourly rates and configured overtime multiplier; paid breaks remain payable, validated unpaid breaks are deducted, and approved corrections overlay raw punches.
+- Explicit approved cutoff work inputs for salary/daily/job/unit pay; no inferred eight-hour days, quantities or substitute hourly rates.
+- One calculation result for preview, individual/bulk saves and saved snapshot evidence. Saved register exports do not recompute historical finances.
+- Review-only approval, statutory verification and stale-calculation gates; approved/paid history cannot be silently overwritten or reopened.
+- Existing statutory/default constants (including historical NIB/NHIP rates and ceiling) are not authoritative legal verification. No legal rate is inferred; configured holidays require an explicit premium multiplier.
+- Payroll additions/deductions use the existing EAV attributes and immutable financial snapshots.
+
+Local checks:
+
+```powershell
+php tests\payroll_regression_checks.php
+php tests\field_staff_runtime_checks.php
+```
+
+Run module activation/upgrade migrations before using the new HR Settings work-input form. See [workflow details](docs/WORKFLOWS.md) and [API fields](docs/API_ENDPOINTS.md). These local checks use fixtures; hosted MySQL, real roles and PDF output still require dedicated demo acceptance.
 
 ## 2. Architecture Overview
 

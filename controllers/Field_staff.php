@@ -55,6 +55,8 @@ class Field_staff extends AdminController
             'break_policy' => $this->field_staff_model->get_module_setting('field_staff_break_policy', 'paid'),
             'break_duration_limit_mins' => $this->field_staff_model->get_module_setting('field_staff_break_duration_limit_mins', '60'),
             'regular_hours_cap' => $this->field_staff_model->get_module_setting('field_staff_regular_hours_cap', '44'),
+            'workweek_start_day' => $this->field_staff_model->get_module_setting('field_staff_workweek_start_day', '1'),
+            'holiday_multiplier' => $this->field_staff_model->get_module_setting('field_staff_holiday_multiplier', ''),
             'overtime_enabled' => $this->field_staff_model->get_module_setting('field_staff_overtime_enabled', '1'),
             'overtime_multiplier' => $this->field_staff_model->get_module_setting('field_staff_overtime_multiplier', '1.5'),
             'daily_field_allowance' => $this->field_staff_model->get_module_setting('field_staff_daily_field_allowance', '0'),
@@ -244,7 +246,20 @@ class Field_staff extends AdminController
                     break;
 
                 case 'pay_policy':
+                    $week_start = (string) $this->input->post('workweek_start_day', true);
+                    $weekly_cap = $this->input->post('regular_hours_cap', true);
+                    $ot_multiplier = $this->input->post('overtime_multiplier', true);
+                    $holiday_multiplier = trim((string) $this->input->post('holiday_multiplier', true));
+                    $allowance = $this->input->post('daily_field_allowance', true);
+                    if (!preg_match('/^[0-6]$/', $week_start) || !is_numeric($weekly_cap) || (float) $weekly_cap <= 0 || (float) $weekly_cap > 168
+                        || !is_numeric($ot_multiplier) || (float) $ot_multiplier < 1
+                        || ($holiday_multiplier !== '' && (!is_numeric($holiday_multiplier) || (float) $holiday_multiplier < 1))
+                        || !is_numeric($allowance) || (float) $allowance < 0) {
+                        $this->respond_json(['success' => false, 'message' => 'Enter a valid workweek, weekly cap, multipliers and non-negative allowance.']);
+                    }
                     $settings = [
+                        'field_staff_workweek_start_day' => $week_start,
+                        'field_staff_holiday_multiplier' => $holiday_multiplier,
                         'field_staff_regular_hours_cap' => (string) $this->input->post('regular_hours_cap', true),
                         'field_staff_overtime_enabled' => (string) $this->input->post('overtime_enabled', true),
                         'field_staff_overtime_multiplier' => (string) $this->input->post('overtime_multiplier', true),
@@ -1314,7 +1329,15 @@ class Field_staff extends AdminController
             ]);
         }
 
-        $statement = $this->field_staff_model->generate_payrun_statement($start_date, $end_date, $selected_staff_id, $selected_department_id, $cutoff);
+        try {
+            $context = $this->read_payroll_adjustment_context();
+            if (!empty($context) && $selected_staff_id <= 0) {
+                throw new DomainException('Select one employee before previewing explicit payroll adjustments.');
+            }
+            $statement = $this->field_staff_model->generate_payrun_statement($start_date, $end_date, $selected_staff_id, $selected_department_id, $cutoff, $context);
+        } catch (DomainException $e) {
+            $this->respond_json(['success' => false, 'message' => $e->getMessage()]);
+        }
         $statement['cutoff_id'] = (int) $cutoff_id;
         $statement['cutoff_code'] = trim((string) ($cutoff['cutoff_code'] ?? ''));
         $statement['payroll_group'] = $group;
@@ -1359,6 +1382,40 @@ class Field_staff extends AdminController
         ]);
     }
 
+    public function save_payroll_work_record()
+    {
+        if (!$this->can_manage_hr_settings()) {
+            $this->respond_unauthorized_json();
+        }
+        if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST'
+            || (string) $this->input->post('attest_approved', true) !== '1') {
+            $this->respond_json(['success' => false, 'message' => 'An authorized approval attestation is required.']);
+        }
+        $input = [];
+        foreach (['staff_id', 'cutoff_id', 'start_date', 'end_date', 'quantity', 'rate', 'reference'] as $key) {
+            $input[$key] = $this->input->post($key, true);
+        }
+        $this->db->trans_begin();
+        try {
+            if (!$this->lock_payroll_cutoff_for_update((int) $input['cutoff_id'])) {
+                throw new DomainException('The selected cutoff could not be locked.');
+            }
+            if (!$this->field_staff_model->save_approved_payroll_work_record($input, $this->resolve_session_staff_id())
+                || $this->db->trans_status() === false) {
+                throw new RuntimeException('Work record persistence failed.');
+            }
+            $this->db->trans_commit();
+        } catch (DomainException $e) {
+            $this->db->trans_rollback();
+            $this->respond_json(['success' => false, 'message' => $e->getMessage()]);
+        } catch (Throwable $e) {
+            $this->db->trans_rollback();
+            log_message('error', 'Field Staff work record save: ' . $e->getMessage());
+            $this->respond_json(['success' => false, 'message' => 'Work record could not be saved; the transaction was rolled back.']);
+        }
+        $this->respond_json(['success' => true, 'message' => 'Approved work record saved with actor and source reference. Recalculate any existing draft payroll.']);
+    }
+
     /**
      * Apply (save/issue) payrun to create individual payslip records in the database.
      */
@@ -1367,7 +1424,6 @@ class Field_staff extends AdminController
         if (!$this->can_manage_hr_settings()) {
             $this->respond_unauthorized_json();
         }
-
         if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
             $this->respond_json([
                 'success' => false,
@@ -1448,13 +1504,17 @@ class Field_staff extends AdminController
                 }
             }
 
-            $statement = $this->field_staff_model->generate_payrun_statement($start_date, $end_date, 0, 0, $cutoff);
             $statement_rows = [];
-            foreach ($statement['rows'] as $row) {
-                $row_staff_id = isset($row['staff_id']) ? (int) $row['staff_id'] : 0;
-                if (in_array($row_staff_id, $selected_staff_ids, true)) {
-                    $statement_rows[] = $row;
+            $context = $this->read_payroll_adjustment_context();
+            if (!empty($context) && count($selected_staff_ids) !== 1) {
+                throw new DomainException('Explicit adjustments require a single selected employee.');
+            }
+            foreach ($selected_staff_ids as $selected_id) {
+                $statement = $this->field_staff_model->generate_payrun_statement($start_date, $end_date, $selected_id, 0, $cutoff, $context);
+                if (count($statement['rows']) !== 1) {
+                    throw new DomainException('Every selected employee must have one valid payroll calculation.');
                 }
+                $statement_rows[] = $statement['rows'][0];
             }
 
             if (empty($statement_rows)) {
@@ -1472,7 +1532,7 @@ class Field_staff extends AdminController
                     continue;
                 }
 
-                $profile = $this->field_staff_model->get_payroll_profile($staff_id);
+                $profile = $this->field_staff_model->get_payroll_profile($staff_id, $start_date);
                 $payment_method = isset($profile['payment_method']) ? $profile['payment_method'] : 'online_transfer';
                 $payload = [
                     'staff_id' => $staff_id,
@@ -1558,8 +1618,12 @@ class Field_staff extends AdminController
                 'message' => sprintf('Payrun applied successfully. %d payroll rows saved.', $saved_count),
                 'saved_count' => $saved_count,
             ]);
+        } catch (DomainException $e) {
+            $this->db->trans_rollback();
+            $this->respond_json(['success' => false, 'message' => $e->getMessage()]);
         } catch (Throwable $e) {
             $this->db->trans_rollback();
+            log_message('error', 'Field Staff payrun save: ' . $e->getMessage());
             $this->respond_json([
                 'success' => false,
                 'message' => 'Payrun could not be saved due to a duplicate or database conflict.',
@@ -1643,6 +1707,7 @@ class Field_staff extends AdminController
             ]);
         } catch (Throwable $e) {
             $this->db->trans_rollback();
+            log_message('error', 'Field Staff payroll workflow: ' . $e->getMessage());
             $this->respond_json([
                 'success' => false,
                 'message' => 'Payroll workflow action could not be completed due to a database conflict.',
@@ -2082,7 +2147,7 @@ class Field_staff extends AdminController
                 ]);
             }
 
-            $payroll_profile = $this->field_staff_model->get_payroll_profile($staff_id);
+            $payroll_profile = $this->field_staff_model->get_payroll_profile($staff_id, $start_date);
             $employee_group = trim((string) ($payroll_profile['payroll_group'] ?? ''));
             if ($employee_group !== '' && $employee_group !== $cutoff_group) {
                 $this->db->trans_rollback();
@@ -2092,53 +2157,18 @@ class Field_staff extends AdminController
                 ]);
             }
 
-            $hourly_rate = $this->resolve_hourly_rate($staff_row);
-            $baseline = $this->field_staff_model->calculate_weekly_payroll(
-                $staff_id,
-                $start_date,
-                $end_date,
-                $hourly_rate
-            );
-
-            $adjustment_map = [
-                'loan_adjustment' => 0.00,
-                'advance' => 0.00,
-                'commission' => 0.00,
-                'vacation_pay' => 0.00,
-            ];
-            $provided_adjustments = [];
-
-            foreach ($adjustment_map as $code => $default_value) {
-                $raw_value = $this->input->post($code, true);
-                if ($raw_value === null || trim((string) $raw_value) === '') {
-                    continue;
-                }
-
-                if (!is_numeric($raw_value)) {
-                    continue;
-                }
-
-                $parsed_value = round((float) $raw_value, 2);
-                $adjustment_map[$code] = $parsed_value;
-                $provided_adjustments[$code] = $parsed_value;
-            }
-
-            $gross_salary = isset($baseline['gross_salary']) ? (float) $baseline['gross_salary'] : 0.00;
+            $context = $this->read_payroll_adjustment_context();
+            $baseline = $this->field_staff_model->calculate_payroll_for_staff($staff_id, $start_date, $end_date, $context);
+            $hourly_rate = $baseline['base_hourly_rate'];
+            $gross_salary = (float) $baseline['gross_salary'];
             $regular_hours = isset($baseline['regular_hours']) ? (float) $baseline['regular_hours'] : 0.00;
             $ot_hours = isset($baseline['ot_hours']) ? (float) $baseline['ot_hours'] : 0.00;
 
-            $taxable_additions = $adjustment_map['commission'] + $adjustment_map['vacation_pay'];
-            $employee_deductions = $adjustment_map['loan_adjustment'] + $adjustment_map['advance'];
-            if (!empty($provided_adjustments)) {
-                $gross_salary = round($gross_salary + $taxable_additions, 2);
-            }
-
-            $nib_ee = $gross_salary * 0.055;
-            $nib_er = $gross_salary * 0.065;
-            $nhip_base_gross = min($gross_salary, 7800.00);
-            $nhip_ee = $nhip_base_gross * 0.03;
-            $nhip_er = $nhip_base_gross * 0.03;
-            $net_salary = $gross_salary - ($nib_ee + $nhip_ee) - $employee_deductions;
+            $nib_ee = $baseline['nib_ee'];
+            $nib_er = $baseline['nib_er'];
+            $nhip_ee = $baseline['nhip_ee'];
+            $nhip_er = $baseline['nhip_er'];
+            $net_salary = $baseline['net_salary'];
 
             $master_table = db_prefix() . 'fs_payroll_master';
             $payload = [
@@ -2195,23 +2225,8 @@ class Field_staff extends AdminController
                 ]);
             }
 
-            foreach ($provided_adjustments as $attribute_code => $value) {
-                $this->field_staff_model->add_eav_payroll_value($payroll_id, $attribute_code, $value);
-            }
-
-            $snapshot_row = [
-                'regular_pay' => round($regular_hours * (float) $hourly_rate, 2),
-                'overtime_pay' => round($ot_hours * (float) $hourly_rate * 1.5, 2),
-                'holiday_pay' => 0.0,
-                'allowance_due' => 0.0,
-                'vacation_pay' => round((float) ($adjustment_map['vacation_pay'] ?? 0.0), 2),
-                'commission_pay' => round((float) ($adjustment_map['commission'] ?? 0.0), 2),
-                'loan_repayment' => round((float) ($adjustment_map['loan_adjustment'] ?? 0.0), 2),
-                'advance_repayment' => round((float) ($adjustment_map['advance'] ?? 0.0), 2),
-                'other_misc_deductions' => 0.0,
-                'total_deductions' => round(((float) ($adjustment_map['loan_adjustment'] ?? 0.0) + (float) ($adjustment_map['advance'] ?? 0.0) + $nib_ee + $nhip_ee), 2),
-                'net_pay' => round($net_salary, 2),
-            ];
+            $snapshot_row = $baseline;
+            $this->persist_payroll_components($payroll_id, $snapshot_row);
             $snapshot_payload = $this->field_staff_model->build_payroll_snapshot_payload($payroll_id, $payload, $snapshot_row, $payroll_profile, $cutoff);
             if (!$this->field_staff_model->save_payroll_snapshot($payroll_id, $status, $snapshot_payload)) {
                 $this->db->trans_rollback();
@@ -2235,8 +2250,12 @@ class Field_staff extends AdminController
                 'payroll_id' => $payroll_id,
                 'message' => 'Weekly payroll has been saved successfully.',
             ]);
+        } catch (DomainException $e) {
+            $this->db->trans_rollback();
+            $this->respond_json(['success' => false, 'message' => $e->getMessage()]);
         } catch (Throwable $e) {
             $this->db->trans_rollback();
+            log_message('error', 'Field Staff individual payroll save: ' . $e->getMessage());
             $this->respond_json([
                 'success' => false,
                 'message' => 'Weekly payroll could not be saved due to a duplicate or database conflict.',
@@ -2468,6 +2487,22 @@ class Field_staff extends AdminController
      *
      * @return bool
      */
+    private function read_payroll_adjustment_context()
+    {
+        $context = [];
+        foreach (['commission' => 'commission_pay', 'vacation_pay' => 'vacation_pay', 'loan_adjustment' => 'loan_repayment', 'advance' => 'advance_repayment'] as $input => $component) {
+            $value = $this->input->post($input, true);
+            if ($value === null || $value === '') {
+                continue;
+            }
+            if (!is_numeric($value) || !is_finite((float) $value) || (float) $value < 0) {
+                throw new DomainException('Payroll adjustments must be explicit non-negative numbers.');
+            }
+            $context[$component] = round((float) $value, 2);
+        }
+        return $context;
+    }
+
     private function persist_payroll_components($payroll_id, array $row)
     {
         $payroll_id = (int) $payroll_id;
@@ -2476,26 +2511,16 @@ class Field_staff extends AdminController
         }
 
         $components = [
-            'regular_pay' => (float) ($row['regular_pay'] ?? 0),
-            'overtime_pay' => (float) ($row['overtime_pay'] ?? 0),
-            'holiday_pay' => (float) ($row['holiday_pay'] ?? 0),
-            'allowance_due' => (float) ($row['allowance_due'] ?? 0),
             'vacation_pay' => (float) ($row['vacation_pay'] ?? 0),
-            'commission_pay' => (float) ($row['commission_pay'] ?? 0),
-            'gross_pay' => (float) ($row['gross_pay'] ?? 0),
-            'nib_ee' => (float) ($row['nib_ee'] ?? 0),
-            'nib_er' => (float) ($row['nib_er'] ?? 0),
-            'nhip_ee' => (float) ($row['nhip_ee'] ?? 0),
-            'nhip_er' => (float) ($row['nhip_er'] ?? 0),
-            'loan_repayment' => (float) ($row['loan_repayment'] ?? 0),
-            'advance_repayment' => (float) ($row['advance_repayment'] ?? 0),
-            'other_misc_deductions' => (float) ($row['other_misc_deductions'] ?? 0),
-            'total_deductions' => (float) ($row['total_deductions'] ?? 0),
-            'net_pay' => (float) ($row['net_pay'] ?? 0),
+            'commission' => (float) ($row['commission_pay'] ?? 0),
+            'loan_adjustment' => (float) ($row['loan_repayment'] ?? 0),
+            'advance' => (float) ($row['advance_repayment'] ?? 0),
         ];
 
         foreach ($components as $attribute_code => $value) {
-            $this->field_staff_model->add_eav_payroll_value($payroll_id, $attribute_code, $value);
+            if (!$this->field_staff_model->add_eav_payroll_value($payroll_id, $attribute_code, $value)) {
+                throw new RuntimeException('Payroll component could not be persisted: ' . $attribute_code);
+            }
         }
 
         return true;

@@ -1,9 +1,50 @@
 ﻿# Field Staff Module Build Progress
 
-## Latest milestone
-Milestone: completed the supervisor correction-to-payroll gate locally and preserved the checkpoint without changing the current cPanel deployment policy. The model now blocks payroll approval when there are unresolved attendance corrections or invalid timestamps in the selected period, while allowing approval to proceed once the correction is resolved. The runtime harness verifies the rejection-before-correction and approval-after-resolution transitions so the payroll flow stays safe before host-side integration is available.
+## Latest milestone - 2026-10-22 UTC
 
-## Current phase
+Authoritative source: `D:\October projects\field_staff\field_staff`, branch `checkpoint/live-nav-ui-review`, existing remote `https://github.com/techpreneur02/field_staff.git`. Resumed from clean checkpoint `012587b`; no existing work was reset.
+
+### Implemented
+- One versioned calculation result now feeds preview, individual save, selected-employee bulk payrun, earnings/deductions and saved snapshots. Both profile defaults and explicit employee adjustments use the same rounding and configured statutory rates.
+- Weekly overtime accumulates by configured seven-day workweek, with earlier attendance in the first workweek loaded even when it belongs to the preceding cutoff. Only attendance work dates in the selected cutoff are paid. Multiple workweeks reset independently. Monday remains the compatibility default; HR Settings exposes the start day and weekly cap.
+- Payroll consumes validated payable duration, deducts unpaid breaks only, rejects unresolved/malformed/reversed/out-of-shift/overlapping breaks and open attendance, and overlays approved clock/break corrections without rewriting raw punches.
+- Pending corrections block the affected attendance/work-date cutoff, not their submission-date cutoff. Conflicting or invalid approved corrections fail closed.
+- Salary/daily/job/unit pay requires explicit, approved, source-referenced cutoff work inputs; no hourly-rate, eight-hour-day, inferred quantity or maximum-of-two-pay fallback. Daily records cover every completed work date; salary requires exactly one complete-cutoff amount. Authorized HR work-input approval records actor/time/reference. Inputs are append-only and cannot replace approved/paid payroll.
+- Direct draft approval is disabled. Review is mandatory, statutory verification remains mandatory, stale v2 inputs block approval until recalculation, and legacy drafts must be recalculated before approval. Already approved/paid history is not recalculated or reopened.
+- Snapshot, component and audit-write failures reject/roll back controller transactions. Approved snapshot finances cannot be overwritten. Payroll register exposes valid review/payment actions and saved CSV/print/PDF links; headings no longer claim fixed statutory percentages.
+- Holiday premium requires an explicit configured multiplier; no new legal rate was supplied. Existing statutory defaults are historical configuration, not verified legal advice.
+
+### Locally tested
+Commands: `php tests\payroll_regression_checks.php`, `php tests\field_staff_runtime_checks.php`, and PHP lint for every non-backup module PHP file.
+
+The numerical/controller suite passes: five ten-hour shifts = **44 regular + 6 overtime**, gross **1060**, net **932.80** at deliberately configured fixture-only rates; cutoff split **40/0 + 4/6**; two workweeks **88/12**; paid versus unpaid breaks **50 versus 45 payable hours**; overtime-disabled base pay retains all hours; configured Wednesday workweek; all four non-hourly bases and missing/duplicate/unapproved inputs; late clock/break corrections; raw-punch immutability; preview/individual/bulk/snapshot parity with profile and explicit adjustments; permission rejection; component/snapshot/audit rollback; protected paid history; invalid/stale approval transitions; rendered workflow/export controls.
+
+These are local PHP/query-builder fixtures, not a real hosted MySQL/Perfex integration run.
+
+### Current phase and hosted evidence
+Phase: local payroll remediation and release checkpoint; controlled deployment blocked before overwrite.
+
+- Authenticated demo and cPanel/File Manager were accessible in this session.
+- `GET /admin/field_staff/get_team_monitor?date=2026-10-21` returned **HTTP 500** with an empty body before deployment. No authenticated server exception establishing the root cause was obtained.
+- A whole-module copy to `/home/erpxolluxn/field_staff_pre_payroll_v2_20261022_0328/` returned **Permission denied** and left a partial backup. It must not be used as a verified rollback set.
+- A subsequent controlled affected-file backup retry, after normal browser verification, received the host HTML **"One moment, please... request is being verified"** instead of an API result.
+- No deployed files were overwritten, no schema migration was run on the demo, and no live payroll or staff records were created/changed. No other site, Perfex core or host security setting was modified.
+- Deployment target remains `/home/erpxolluxn/demo.erpxolluxn.com/modules/field_staff/`. Verify a complete outside-public-root backup before any overwrite, then deploy/check SHA-256 hashes and run dedicated-record acceptance.
+
+### Remaining acceptance
+1. Resolve normal host file-operation verification/permission failures; obtain and hash-verify the complete affected-file backup.
+2. Deploy the checkpoint, run the idempotent module activation/upgrade migrations (including `2026_10_22_payroll_work_records`), and compare deployed SHA-256 hashes.
+3. Diagnose and resolve the live team-monitor HTTP 500 using authenticated server-side evidence.
+4. Run dedicated staff attendance/break/correction/payroll review/payment scenarios against real Perfex/MySQL, CSV/print/PDF saved-snapshot parity, and non-admin rejection. Do not alter existing payroll history.
+5. Obtain authoritative statutory/legal verification; never mark rates verified solely to make a demo approval succeed.
+
+Release artifact: `D:\October projects\field_staff\field_staff.zip`, one top-level `field_staff/`, excluding Git, backups, logs, credentials, temporary files and nested archives. Rebuild/extract/hash comparison is required after the final source checkpoint.
+
+## Historical progress below (superseded by the milestone above)
+
+The following sections record earlier implementation claims and pending checks. They are not current live acceptance evidence.
+
+## Previous phase
 Phase: local feature completion and GitHub checkpointing; hosted deployment remains suspended until authenticated host-side evidence is available.
 
 Recovered status (2026-10-18): the module source and all working changes were preserved under the local repository. The consolidated HR settings workspace, attendance validation logic, payroll snapshot safeguards, cutoff isolation checks, and correction-to-payroll gate are all in place and pass local lint/runtime validation. The source remains the authoritative implementation for the completed work, while the hosted demo remains the final gate for live acceptance. The current blocker is the hosted validation gate: the live browser session is not a reliable source of evidence because session lifetime is transient, and any cPanel or demo access must be treated as a dated, expiring verification event rather than a permanent status signal.

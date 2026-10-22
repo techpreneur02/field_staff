@@ -874,11 +874,27 @@ class Field_staff_model extends App_Model
         $staff_id = (int) ($payload['staff_id'] ?? 0);
         $requested_by = (int) ($payload['requested_by'] ?? 0);
         $correction_type = trim((string) ($payload['correction_type'] ?? 'attendance'));
+        if ($correction_type === '') {
+            $correction_type = 'attendance';
+        }
         $before_value = trim((string) ($payload['before_value'] ?? ''));
         $after_value = trim((string) ($payload['after_value'] ?? ''));
         $reason = trim((string) ($payload['reason'] ?? ''));
 
         if ($attendance_id <= 0 || $staff_id <= 0 || $requested_by <= 0 || $reason === '') {
+            return false;
+        }
+        $attendance = $this->db->from(db_prefix() . 'fs_attendance')->where('id', $attendance_id)
+            ->where('staff_id', $staff_id)->get()->row_array();
+        if (!$attendance || $this->parse_datetime_or_null($after_value) === null) {
+            return false;
+        }
+        try {
+            $this->resolve_payroll_attendance($attendance, [[
+                'id' => PHP_INT_MAX, 'correction_type' => $correction_type, 'before_value' => $before_value,
+                'after_value' => $after_value, 'approved_by' => $requested_by,
+            ]]);
+        } catch (DomainException $e) {
             return false;
         }
 
@@ -928,14 +944,31 @@ class Field_staff_model extends App_Model
             return false;
         }
 
-        $this->db->where('id', $request_id);
-        return (bool) $this->db->update($table, [
+        $request = $this->db->from($table)->where('id', $request_id)->where('status', 'pending')->get()->row_array();
+        if (!$request) {
+            return false;
+        }
+        if ($status === 'approved') {
+            $attendance = $this->db->from(db_prefix() . 'fs_attendance')->where('id', (int) $request['attendance_id'])
+                ->where('staff_id', (int) $request['staff_id'])->get()->row_array();
+            if (!$attendance) {
+                return false;
+            }
+            try {
+                $this->resolve_payroll_attendance($attendance, [array_merge($request, ['approved_by' => $approved_by])]);
+            } catch (DomainException $e) {
+                return false;
+            }
+        }
+        $this->db->where('id', $request_id)->where('status', 'pending');
+        $updated = $this->db->update($table, [
             'status' => $status,
             'approved_by' => $approved_by,
             'approved_at' => date('Y-m-d H:i:s'),
             'notes' => $notes,
             'updated_at' => date('Y-m-d H:i:s'),
         ]);
+        return (bool) $updated && $this->db->affected_rows() === 1;
     }
 
     /**
@@ -995,9 +1028,14 @@ class Field_staff_model extends App_Model
 
             $attendance_rows = $query->get()->result_array();
             foreach ($attendance_rows as $attendance_row) {
+                try {
+                    $attendance_row = $this->resolve_payroll_attendance($attendance_row);
+                } catch (DomainException $e) {
+                    return true;
+                }
                 $summary = $this->summarize_attendance_record($attendance_row);
                 $status = strtolower(trim((string) ($summary['status'] ?? '')));
-                if (in_array($status, ['timestamp_issue', 'break_return_pending'], true) || !empty($summary['has_unresolved_breaks'])) {
+                if (in_array($status, ['timestamp_issue', 'break_return_pending'], true) || !empty($summary['has_unresolved_breaks']) || empty($attendance_row['clock_in']) || empty($attendance_row['clock_out'])) {
                     return true;
                 }
             }
@@ -1010,20 +1048,67 @@ class Field_staff_model extends App_Model
                 ->where('staff_id', $staff_id)
                 ->where('status', 'pending');
 
-            if ($start_date !== null && $start_date !== '') {
-                $query->where('created_at >=', trim((string) $start_date));
-            }
-            if ($end_date !== null && $end_date !== '') {
-                $query->where('created_at <=', trim((string) $end_date));
-            }
-
             $pending = $query->get()->result_array();
-            if (is_array($pending) && !empty($pending)) {
-                return true;
+            foreach ($pending as $correction) {
+                $affected = $this->db->from($attendance_table)
+                    ->where('id', (int) $correction['attendance_id'])
+                    ->where('staff_id', $staff_id)->get()->row_array();
+                // An orphaned request cannot safely be assigned to a different cutoff.
+                if (empty($affected) || (($start_date === null || $start_date === '' || $affected['date'] >= $start_date)
+                    && ($end_date === null || $end_date === '' || $affected['date'] <= $end_date))) {
+                    return true;
+                }
             }
         }
 
         return false;
+    }
+
+    private function resolve_payroll_attendance(array $attendance, array $additional_corrections = [])
+    {
+        $summary = $this->summarize_attendance_record($attendance);
+        $attendance['break_rows'] = $summary['break_rows'];
+        $corrections = $this->db->from(db_prefix() . 'fs_attendance_corrections')
+            ->where('attendance_id', (int) $attendance['id'])
+            ->where('staff_id', (int) $attendance['staff_id'])
+            ->where('status', 'approved')->order_by('id', 'ASC')->get()->result_array();
+        $corrections = array_merge($corrections, $additional_corrections);
+        usort($corrections, function ($a, $b) { return (int) $a['id'] <=> (int) $b['id']; });
+        foreach ($corrections as $correction) {
+            $field = (string) $correction['correction_type'];
+            $before = (string) $correction['before_value'];
+            $after = (string) $correction['after_value'];
+            if ((int) ($correction['approved_by'] ?? 0) <= 0 || $this->parse_datetime_or_null($after) === null) {
+                throw new DomainException('An approved attendance correction has an invalid timestamp.');
+            }
+            if ($field === 'attendance') {
+                $matches = array_filter(['clock_in', 'clock_out'], function ($key) use ($attendance, $before) {
+                    return (string) ($attendance[$key] ?? '') === $before;
+                });
+                if (count($matches) !== 1) {
+                    throw new DomainException('An approved attendance correction has an ambiguous target.');
+                }
+                $field = reset($matches);
+            }
+            if (in_array($field, ['clock_in', 'clock_out'], true) && (string) ($attendance[$field] ?? '') === $before) {
+                $attendance[$field] = $after;
+            } elseif (preg_match('/^break:(\d+):(break_out_at|break_in_at|ended_at)$/', $field, $match)) {
+                $applied = false;
+                foreach ($attendance['break_rows'] as &$break) {
+                    if ((int) $break['id'] === (int) $match[1] && (string) ($break[$match[2]] ?? '') === $before) {
+                        $break[$match[2]] = $after;
+                        $applied = true;
+                    }
+                }
+                unset($break);
+                if (!$applied) {
+                    throw new DomainException('An approved break correction conflicts with its work record.');
+                }
+            } else {
+                throw new DomainException('An approved attendance correction conflicts with its work record.');
+            }
+        }
+        return $attendance;
     }
 
     /**
@@ -1059,8 +1144,13 @@ class Field_staff_model extends App_Model
         $paid_break_seconds = 0.0;
         $unpaid_break_seconds = 0.0;
         $missing_break_in = false;
-        $has_invalid_timestamp = false;
+        $shift_start = $this->parse_datetime_or_null($clock_in);
+        $shift_end = $this->parse_datetime_or_null($clock_out);
+        $has_invalid_timestamp = ($clock_in !== '' && $shift_start === null)
+            || ($clock_out !== '' && $shift_end === null)
+            || ($shift_start !== null && $shift_end !== null && $shift_end <= $shift_start);
         $invalid_breaks = [];
+        $intervals = [];
         foreach ($break_rows as $break_row) {
             $break_out = trim((string) ($break_row['break_out_at'] ?? ''));
             $break_in = trim((string) ($break_row['break_in_at'] ?? ''));
@@ -1073,6 +1163,22 @@ class Field_staff_model extends App_Model
                 if ($field_value !== '' && $this->parse_datetime_or_null($field_value) === null) {
                     $invalid_fields[] = $field_name;
                 }
+            }
+            $break_start = $this->parse_datetime_or_null($break_out);
+            $break_end = $this->parse_datetime_or_null($break_in !== '' ? $break_in : $ended_at);
+            if (!in_array($break_type, ['paid', 'unpaid'], true) || $break_start === null
+                || ($break_end !== null && ($break_end <= $break_start
+                    || ($shift_start !== null && $break_start < $shift_start)
+                    || ($shift_end !== null && $break_end > $shift_end)))) {
+                $invalid_fields[] = 'break_interval';
+            }
+            if ($break_start !== null && $break_end !== null) {
+                foreach ($intervals as $interval) {
+                    if ($break_start < $interval[1] && $break_end > $interval[0]) {
+                        $invalid_fields[] = 'overlapping_break';
+                    }
+                }
+                $intervals[] = [$break_start, $break_end];
             }
 
             if (!empty($invalid_fields)) {
@@ -1942,7 +2048,7 @@ class Field_staff_model extends App_Model
             'staff_id' => $staff_id,
             'cutoff_id' => $cutoff_id,
             'status' => $status,
-            'calculation_version' => '2026.10.19.payroll.v1',
+            'calculation_version' => $row['calculation_version'] ?? '2026.10.19.payroll.v1',
             'start_date' => isset($master_row['start_date']) ? (string) $master_row['start_date'] : '',
             'end_date' => isset($master_row['end_date']) ? (string) $master_row['end_date'] : '',
             'payment_method' => isset($master_row['payment_method']) ? (string) $master_row['payment_method'] : ($effective_policy['payment_method'] ?? 'online_transfer'),
@@ -1953,9 +2059,14 @@ class Field_staff_model extends App_Model
                 'status' => trim((string) ($cutoff_payload['status'] ?? 'open')),
             ],
             'policies' => $effective_policy,
+            'calculation' => isset($row['calculation_version']) ? $row : [],
             'rates' => $rates,
             'earnings' => $earnings,
             'deductions' => $deductions,
+            'adjustments' => [
+                'commission' => $earnings['commission_pay'], 'vacation_pay' => $earnings['vacation_pay'],
+                'loan_adjustment' => $deductions['loan_repayment'], 'advance' => $deductions['advance_repayment'],
+            ],
             'totals' => $totals,
             'generated_at' => date('Y-m-d H:i:s'),
             'updated_at' => date('Y-m-d H:i:s'),
@@ -1999,6 +2110,16 @@ class Field_staff_model extends App_Model
             }
             if ($existing_status === 'approved' && !in_array($status, ['approved', 'paid'], true)) {
                 return false;
+            }
+            if ($existing_status === 'approved') {
+                $previous = json_decode((string) $existing['snapshot_data'], true);
+                $immutable = ['payroll_id', 'staff_id', 'cutoff_id', 'start_date', 'end_date',
+                    'calculation_version', 'policies', 'rates', 'earnings', 'deductions', 'adjustments', 'totals', 'calculation'];
+                foreach ($immutable as $key) {
+                    if (($previous[$key] ?? null) != ($payload[$key] ?? null)) {
+                        return false;
+                    }
+                }
             }
 
             $this->db->where('payroll_id', $payroll_id);
@@ -2090,7 +2211,7 @@ class Field_staff_model extends App_Model
 
         $table = db_prefix() . 'fs_payroll_workflow_history';
         if (!$this->db->table_exists($table)) {
-            return false;
+            throw new RuntimeException('Payroll workflow audit storage is unavailable.');
         }
 
         $payroll_row = $this->get_payroll_master_row($payroll_id);
@@ -2116,7 +2237,10 @@ class Field_staff_model extends App_Model
             'created_at' => date('Y-m-d H:i:s'),
         ];
 
-        return (bool) $this->db->insert($table, $payload);
+        if (!$this->db->insert($table, $payload)) {
+            throw new RuntimeException('Payroll workflow audit event could not be saved.');
+        }
+        return true;
     }
 
     public function has_unverified_payroll_policy($staff_id)
@@ -2151,7 +2275,7 @@ class Field_staff_model extends App_Model
     {
         $payroll_id = (int) $payroll_id;
         $action = strtolower(trim((string) $action));
-        if ($payroll_id <= 0 || $action === '') {
+        if ($payroll_id <= 0 || $action === '' || (int) $actor_staff_id <= 0) {
             return ['success' => false, 'message' => 'A valid payroll record and action are required.'];
         }
 
@@ -2178,7 +2302,9 @@ class Field_staff_model extends App_Model
                     $snapshot_payload['status'] = 'under_review';
                     $snapshot_payload['updated_at'] = date('Y-m-d H:i:s');
                     $snapshot_payload['generated_at'] = $snapshot_payload['generated_at'] ?? $snapshot_payload['updated_at'];
-                    $this->save_payroll_snapshot($payroll_id, 'under_review', $snapshot_payload);
+                    if (!$this->save_payroll_snapshot($payroll_id, 'under_review', $snapshot_payload)) {
+                        return ['success' => false, 'message' => 'Payroll review snapshot could not be saved.'];
+                    }
                 }
 
                 $this->db->where('id', $payroll_id);
@@ -2195,8 +2321,14 @@ class Field_staff_model extends App_Model
                 return ['success' => true, 'message' => 'Payroll submitted for review.', 'status' => 'under_review'];
 
             case 'return_to_draft':
-                if (!in_array($current_status, ['under_review', 'approved'], true)) {
-                    return ['success' => false, 'message' => 'Only payroll under review or already approved can be returned to draft.'];
+                if ($current_status !== 'under_review') {
+                    return ['success' => false, 'message' => 'Only payroll under review can be returned to draft; approved history is protected.'];
+                }
+                $snapshot_payload = $snapshot;
+                $snapshot_payload['status'] = 'draft';
+                $snapshot_payload['updated_at'] = date('Y-m-d H:i:s');
+                if (!$this->save_payroll_snapshot($payroll_id, 'draft', $snapshot_payload)) {
+                    return ['success' => false, 'message' => 'Payroll draft snapshot could not be saved.'];
                 }
                 $this->db->where('id', $payroll_id);
                 $updated = (bool) $this->db->update(db_prefix() . 'fs_payroll_master', ['status' => 'draft']);
@@ -2214,11 +2346,14 @@ class Field_staff_model extends App_Model
                 if (in_array($current_status, ['paid'], true)) {
                     return ['success' => false, 'message' => 'Paid payroll cannot be re-approved.'];
                 }
-                if (!in_array($current_status, ['draft', 'under_review'], true)) {
-                    return ['success' => false, 'message' => 'Only draft or under-review payroll can be approved.'];
+                if ($current_status !== 'under_review') {
+                    return ['success' => false, 'message' => 'Only payroll submitted for review can be approved. Direct draft approval is disabled.'];
                 }
                 if (empty($snapshot)) {
                     return ['success' => false, 'message' => 'Payroll approval requires a valid saved snapshot.'];
+                }
+                if (($snapshot['calculation_version'] ?? '') !== '2026.10.22.payroll.v2' || empty($snapshot['calculation'])) {
+                    return ['success' => false, 'message' => 'Recalculate this draft with the current payroll engine and resubmit for review before approval. Approved and paid history is not recalculated.'];
                 }
                 if ($this->has_unverified_payroll_policy($staff_id)) {
                     return ['success' => false, 'message' => 'Payroll approval is blocked until the staff policy verification status is cleared.'];
@@ -2226,12 +2361,33 @@ class Field_staff_model extends App_Model
                 if ($this->has_unresolved_attendance_for_staff($staff_id, $payroll_row['start_date'] ?? null, $payroll_row['end_date'] ?? null)) {
                     return ['success' => false, 'message' => 'Payroll approval is blocked until open attendance corrections or unresolved timestamps are resolved for this period.'];
                 }
+                if ($this->get_module_setting('field_staff_statutory_verification_status', 'pending') !== 'verified') {
+                    return ['success' => false, 'message' => 'Payroll approval requires verified statutory configuration.'];
+                }
+                if (!empty($snapshot['calculation'])) {
+                    $saved_calculation = $snapshot['calculation'];
+                    $adjustments = array_intersect_key($saved_calculation, array_flip([
+                        'vacation_pay', 'commission_pay', 'loan_repayment', 'advance_repayment', 'other_misc_deductions',
+                    ]));
+                    try {
+                        $current = $this->calculate_payroll_for_staff($staff_id, $payroll_row['start_date'], $payroll_row['end_date'], $adjustments);
+                    } catch (DomainException $e) {
+                        return ['success' => false, 'message' => $e->getMessage()];
+                    }
+                    foreach ($current as $key => $value) {
+                        if (!array_key_exists($key, $saved_calculation) || $saved_calculation[$key] != $value) {
+                            return ['success' => false, 'message' => 'Payroll inputs changed after the snapshot. Return to draft, recalculate and resubmit for review.'];
+                        }
+                    }
+                }
 
                 $snapshot_payload = $this->get_payroll_snapshot($payroll_id);
                 if (!empty($snapshot_payload)) {
                     $snapshot_payload['status'] = 'approved';
                     $snapshot_payload['updated_at'] = date('Y-m-d H:i:s');
-                    $this->save_payroll_snapshot($payroll_id, 'approved', $snapshot_payload);
+                    if (!$this->save_payroll_snapshot($payroll_id, 'approved', $snapshot_payload)) {
+                        return ['success' => false, 'message' => 'Payroll approval snapshot could not be saved.'];
+                    }
                 }
 
                 $this->db->where('id', $payroll_id);
@@ -2261,6 +2417,15 @@ class Field_staff_model extends App_Model
                 if (empty($snapshot)) {
                     return ['success' => false, 'message' => 'A saved snapshot is required before a payment can be recorded.'];
                 }
+                $parsed_payment_date = DateTimeImmutable::createFromFormat('!Y-m-d', $payment_date);
+                if (!$parsed_payment_date || $parsed_payment_date->format('Y-m-d') !== $payment_date
+                    || !in_array($payment_method, ['cash', 'online_transfer', 'check'], true)
+                    || !is_numeric($details['payment_amount'] ?? null)
+                    || !is_finite((float) $details['payment_amount']) || $payment_amount < 0
+                    || abs($payment_amount - (float) ($snapshot['totals']['net_salary'] ?? -1)) > 0.001
+                    || strlen($payment_reference) > 120) {
+                    return ['success' => false, 'message' => 'A valid payment date, method and amount matching the saved net salary are required.'];
+                }
 
                 $existing = $this->db
                     ->from(db_prefix() . 'fs_payroll_workflow_history')
@@ -2283,7 +2448,9 @@ class Field_staff_model extends App_Model
                     $snapshot_payload['payment_method'] = $payment_method;
                     $snapshot_payload['payment_amount'] = $payment_amount;
                     $snapshot_payload['payment_date'] = $payment_date;
-                    $this->save_payroll_snapshot($payroll_id, 'paid', $snapshot_payload);
+                    if (!$this->save_payroll_snapshot($payroll_id, 'paid', $snapshot_payload)) {
+                        return ['success' => false, 'message' => 'Payroll payment snapshot could not be saved.'];
+                    }
                 }
 
                 $this->db->where('id', $payroll_id);
@@ -3821,7 +3988,7 @@ class Field_staff_model extends App_Model
      *
      * @return array
      */
-    public function generate_payrun_statement($start_date, $end_date, $staff_id = 0, $department_id = 0, $cutoff = null)
+    public function generate_payrun_statement($start_date, $end_date, $staff_id = 0, $department_id = 0, $cutoff = null, array $context = [])
     {
         $cutoff_id = 0;
         $cutoff_code = '';
@@ -3833,23 +4000,7 @@ class Field_staff_model extends App_Model
             $payroll_group = trim((string) ($cutoff['payroll_group'] ?? ''));
         }
 
-        $analytics = $this->get_attendance_analytics($start_date, $end_date, $staff_id, $department_id);
-        $holidays = $this->get_holidays();
-        $holiday_dates = array_column($holidays, 'date');
-
-        // Pre-fetch all attendance records once for efficiency
-        $all_attendance_records = $this->get_attendance_record_report($start_date, $end_date, $staff_id, $department_id);
-        $attendance_by_staff = [];
-        foreach ($all_attendance_records as $record) {
-            $record_staff_id = (int) ($record['staff_id'] ?? 0);
-            if ($record_staff_id > 0) {
-                if (!isset($attendance_by_staff[$record_staff_id])) {
-                    $attendance_by_staff[$record_staff_id] = [];
-                }
-                $attendance_by_staff[$record_staff_id][] = $record;
-            }
-        }
-
+        $directory = $this->get_staff_directory($department_id);
         $statement_rows = [];
         $totals = [
             'regular_pay' => 0.0,
@@ -3864,91 +4015,24 @@ class Field_staff_model extends App_Model
             'net_pay' => 0.0,
         ];
 
-        foreach ($analytics['rows'] as $row) {
-            $rate = round((float) $row['base_hourly_rate'], 2);
-            $overtime_multiplier = (float) $row['overtime_multiplier'];
-            if ($overtime_multiplier <= 0) {
-                $overtime_multiplier = $this->get_default_overtime_multiplier();
+        foreach ($directory as $employee) {
+            $employee_id = (int) ($employee['staff_id'] ?? 0);
+            if ($employee_id <= 0 || ((int) $staff_id > 0 && $employee_id !== (int) $staff_id)) {
+                continue;
             }
-
-            $staff_id_current = (int) $row['staff_id'];
-            $holiday_hours = 0.0;
-            $non_holiday_regular_hours = (float) $row['regular_hours'];
-
-            // Calculate holiday hours from pre-fetched attendance records
-            if (!empty($holiday_dates) && isset($attendance_by_staff[$staff_id_current])) {
-                foreach ($attendance_by_staff[$staff_id_current] as $record) {
-                    $record_date = isset($record['date']) ? (string) $record['date'] : '';
-                    if ($record_date && in_array($record_date, $holiday_dates, true)) {
-                        $holiday_hours += (float) ($record['total_hours'] ?? 0);
-                    }
-                }
-
-                // Subtract holiday hours from regular hours
-                if ($holiday_hours > 0) {
-                    $non_holiday_regular_hours = max((float) $row['regular_hours'] - $holiday_hours, 0);
-                }
+            $profile = $this->get_payroll_profile($employee_id, $start_date);
+            if ($payroll_group !== '' && ($profile['payroll_group'] ?? 'default') !== $payroll_group) {
+                continue;
             }
-
-            $regular_pay = round($non_holiday_regular_hours * $rate, 2);
-            $overtime_pay = round((float) $row['overtime_hours'] * $rate * $overtime_multiplier, 2);
-            $holiday_pay = round($holiday_hours * $rate * 2.0, 2); // 2x pay for holidays
-            $allowance_pay = round((float) $row['total_allowance_due'], 2);
-            $vacation_pay = round((float) ($row['vacation_pay'] ?? 0), 2);
-            $commission_pay = round((float) ($row['commission_pay'] ?? 0), 2);
-            $loan_repayment = round((float) ($row['loan_repayment'] ?? 0), 2);
-            $advance_repayment = round((float) ($row['advance_repayment'] ?? 0), 2);
-            $other_misc_deductions = round((float) ($row['other_misc_deductions'] ?? 0), 2);
-            $gross_pay = round($regular_pay + $overtime_pay + $holiday_pay + $allowance_pay + $vacation_pay + $commission_pay, 2);
-            $nib_ee = round($gross_pay * $this->get_nib_employee_rate(), 2);
-            $nib_er = round($gross_pay * $this->get_nib_employer_rate(), 2);
-            $nhip_base = min($gross_pay, $this->get_nhip_ceiling());
-            $nhip_ee = round($nhip_base * $this->get_nhip_employee_rate(), 2);
-            $nhip_er = round($nhip_base * $this->get_nhip_employer_rate(), 2);
-            $total_deductions = round($nib_ee + $nhip_ee + $loan_repayment + $advance_repayment + $other_misc_deductions, 2);
-            $net_pay = round($gross_pay - $total_deductions, 2);
-
-            $statement_rows[] = [
-                'staff_id' => (int) $row['staff_id'],
-                'worker_name' => $row['worker_name'],
-                'department_name' => $row['department_name'] ?? '',
-                'days_worked' => (int) $row['days_worked'],
-                'regular_hours' => (float) $row['regular_hours'],
-                'overtime_hours' => (float) $row['overtime_hours'],
-                'holiday_hours' => $holiday_hours,
-                'base_hourly_rate' => $rate,
-                'overtime_multiplier' => round($overtime_multiplier, 2),
-                'daily_field_allowance' => round((float) $row['daily_field_allowance'], 2),
-                'allowance_due' => $allowance_pay,
-                'vacation_pay' => $vacation_pay,
-                'commission_pay' => $commission_pay,
-                'regular_pay' => $regular_pay,
-                'overtime_pay' => $overtime_pay,
-                'holiday_pay' => $holiday_pay,
-                'gross_pay' => $gross_pay,
-                'nib_ee' => $nib_ee,
-                'nib_er' => $nib_er,
-                'nhip_ee' => $nhip_ee,
-                'nhip_er' => $nhip_er,
-                'loan_repayment' => $loan_repayment,
-                'advance_repayment' => $advance_repayment,
-                'other_misc_deductions' => $other_misc_deductions,
-                'total_deductions' => $total_deductions,
-                'net_pay' => $net_pay,
-                'payment_method' => $row['payment_method'],
-                'bank_account_info' => $row['bank_account_info'],
-            ];
-
-            $totals['regular_pay'] += $regular_pay;
-            $totals['overtime_pay'] += $overtime_pay;
-            $totals['holiday_pay'] += $holiday_pay;
-            $totals['allowance_pay'] += $allowance_pay;
-            $totals['gross_pay'] += $gross_pay;
-            $totals['nib_ee'] += $nib_ee;
-            $totals['nib_er'] += $nib_er;
-            $totals['nhip_ee'] += $nhip_ee;
-            $totals['nhip_er'] += $nhip_er;
-            $totals['net_pay'] += $net_pay;
+            $row = $this->calculate_payroll_for_staff($employee_id, $start_date, $end_date, $context);
+            $row['worker_name'] = $employee['full_name'] ?? $this->resolve_staff_name($employee, $employee_id);
+            $row['department_name'] = $employee['department_name'] ?? '';
+            $row['payment_method'] = $profile['payment_method'];
+            $row['bank_account_info'] = $profile['bank_account_info'] ?? '';
+            $statement_rows[] = $row;
+            foreach ($totals as $key => $value) {
+                $totals[$key] += (float) ($row[$key === 'allowance_pay' ? 'allowance_due' : $key] ?? 0);
+            }
         }
 
         foreach ($totals as $key => $value) {
@@ -4012,147 +4096,167 @@ class Field_staff_model extends App_Model
         $start_date = trim((string) $start_date);
         $end_date = trim((string) $end_date);
 
-        $policy_reference_date = trim((string) ($context['policy_reference_date'] ?? $start_date));
-        if ($policy_reference_date === '') {
-            $policy_reference_date = date('Y-m-d');
+        $start = DateTimeImmutable::createFromFormat('!Y-m-d', $start_date);
+        $end = DateTimeImmutable::createFromFormat('!Y-m-d', $end_date);
+        if ($staff_id <= 0 || !$start || !$end || $start->format('Y-m-d') !== $start_date
+            || $end->format('Y-m-d') !== $end_date || $end < $start) {
+            throw new DomainException('A valid employee and payroll date window are required.');
         }
-
-        $profile = $this->get_payroll_profile($staff_id, $policy_reference_date);
-        $payment_basis = strtolower(trim((string) ($context['payment_basis'] ?? $profile['payment_basis'] ?? 'hourly')));
+        $profile = $this->get_payroll_profile($staff_id, $start_date);
+        $payment_basis = (string) ($profile['payment_basis'] ?? '');
         if (!in_array($payment_basis, ['salary', 'hourly', 'daily', 'per_job', 'per_unit'], true)) {
-            $payment_basis = 'hourly';
+            throw new DomainException('A valid payment basis must be configured.');
         }
-
-        $hourly_rate = isset($context['hourly_rate']) && is_numeric($context['hourly_rate'])
-            ? (float) $context['hourly_rate']
-            : (float) ($profile['base_hourly_rate'] ?? 0);
-        if ($hourly_rate < 0) {
-            $hourly_rate = 0.0;
+        $week_start = $this->get_module_setting('field_staff_workweek_start_day', '1');
+        $cap = $this->get_module_setting('field_staff_regular_hours_cap', '44');
+        if (!preg_match('/^[0-6]$/', (string) $week_start) || !is_numeric($cap) || (float) $cap <= 0 || (float) $cap > 168) {
+            throw new DomainException('Configure a valid workweek start day and weekly regular-hours cap.');
         }
-
-        $attendance_table = db_prefix() . 'fs_attendance';
-        $attendance_rows = [];
-        if ($this->db && method_exists($this->db, 'select') && method_exists($this->db, 'from') && method_exists($this->db, 'where')) {
-            $this->db->select('*');
-            $this->db->from($attendance_table);
-            $this->db->where('staff_id', $staff_id);
-            if ($start_date !== '') {
-                $this->db->where('date >=', $start_date);
-            }
-            if ($end_date !== '') {
-                $this->db->where('date <=', $end_date);
-            }
-            $attendance_rows = $this->db->get()->result_array();
+        $week_offset = ((int) $start->format('w') - (int) $week_start + 7) % 7;
+        $lookback = $start->modify('-' . $week_offset . ' days')->format('Y-m-d');
+        if ($this->has_unresolved_attendance_for_staff($staff_id, $lookback, $end_date)) {
+            throw new DomainException('Resolve attendance timestamps, breaks and pending corrections before calculating payroll.');
         }
-
-        $attendance_rows = is_array($attendance_rows) ? $attendance_rows : [];
+        $attendance_rows = $this->db->from(db_prefix() . 'fs_attendance')
+            ->where('staff_id', $staff_id)->where('date >=', $lookback)->where('date <=', $end_date)
+            ->order_by('date', 'ASC')->order_by('clock_in', 'ASC')->order_by('id', 'ASC')->get()->result_array();
+        usort($attendance_rows, function ($a, $b) {
+            return [$a['date'], $a['clock_in'], $a['id']] <=> [$b['date'], $b['clock_in'], $b['id']];
+        });
         $regular_hours = 0.0;
         $ot_hours = 0.0;
-        $gross_salary = 0.0;
-        $has_work_rows = false;
-
-        if (!empty($attendance_rows)) {
-            foreach ($attendance_rows as $attendance) {
-                if (!is_array($attendance)) {
-                    continue;
+        $regular_pay = 0.0;
+        $overtime_pay = 0.0;
+        $holiday_pay = 0.0;
+        $weeks = [];
+        $days = [];
+        $evidence = [];
+        $holidays = array_column($this->get_holidays(), 'date');
+        foreach ($attendance_rows as $raw) {
+            $attendance = $this->resolve_payroll_attendance($raw);
+            $summary = $this->summarize_attendance_record($attendance);
+            $date = (string) $attendance['date'];
+            $work_day = new DateTimeImmutable($date);
+            $offset = ((int) $work_day->format('w') - (int) $week_start + 7) % 7;
+            $week = $work_day->modify('-' . $offset . ' days')->format('Y-m-d');
+            $hours = (float) $summary['payable_seconds'] / 3600;
+            $used = $weeks[$week] ?? 0.0;
+            $regular = min($hours, max((float) $cap - $used, 0.0));
+            $ot = $hours - $regular;
+            $weeks[$week] = $used + $hours;
+            if ($date < $start_date) {
+                continue;
+            }
+            $day_profile = $this->get_payroll_profile($staff_id, $date);
+            if (($day_profile['payment_basis'] ?? '') !== $payment_basis) {
+                throw new DomainException('Split the cutoff at a payment-basis change before calculating payroll.');
+            }
+            $enabled = $this->is_overtime_enabled_for_staff($staff_id, (int) ($day_profile['department_id'] ?? 0), (string) ($day_profile['payroll_group'] ?? ''));
+            if (!$enabled) {
+                $regular = $hours;
+                $ot = 0.0;
+            }
+            $regular_hours += $regular;
+            $ot_hours += $ot;
+            if ($hours > 0) {
+                $days[$date] = true;
+            }
+            $evidence[] = ['attendance_id' => (int) $raw['id'], 'date' => $date,
+                'clock_in' => $attendance['clock_in'], 'clock_out' => $attendance['clock_out'],
+                'payable_seconds' => $summary['payable_seconds'], 'unpaid_break_seconds' => $summary['unpaid_break_seconds'],
+                'regular_hours' => $regular, 'ot_hours' => $ot, 'workweek' => $week];
+            if ($payment_basis === 'hourly') {
+                $rate = $this->require_payroll_number($day_profile, 'base_hourly_rate');
+                $multiplier = $this->require_payroll_number($day_profile, 'overtime_multiplier');
+                $holiday_multiplier = 1.0;
+                if (in_array($date, $holidays, true)) {
+                    $holiday_multiplier = $this->require_payroll_number(
+                        ['holiday_multiplier' => $this->get_module_setting('field_staff_holiday_multiplier', '')], 'holiday_multiplier');
                 }
-
-                $work_date = trim((string) ($attendance['date'] ?? $start_date));
-                $day_profile = $this->get_payroll_profile($staff_id, $work_date !== '' ? $work_date : $policy_reference_date);
-                $effective_base_rate = isset($context['hourly_rate']) && is_numeric($context['hourly_rate'])
-                    ? (float) $context['hourly_rate']
-                    : (float) ($day_profile['base_hourly_rate'] ?? $profile['base_hourly_rate'] ?? $hourly_rate);
-                if ($effective_base_rate < 0) {
-                    $effective_base_rate = 0.0;
-                }
-
-                $overtime_enabled = $this->is_overtime_enabled_for_staff((int) $staff_id, (int) ($day_profile['department_id'] ?? 0), (string) ($day_profile['payroll_group'] ?? $profile['payroll_group'] ?? ''));
-                $effective_ot_multiplier = isset($day_profile['overtime_multiplier']) && is_numeric($day_profile['overtime_multiplier'])
-                    ? (float) $day_profile['overtime_multiplier']
-                    : (float) ($context['overtime_multiplier'] ?? $this->get_overtime_multiplier_for_staff((int) $staff_id, (int) ($day_profile['department_id'] ?? 0), (string) ($day_profile['payroll_group'] ?? $profile['payroll_group'] ?? '')));
-                if ($effective_ot_multiplier < 1) {
-                    $effective_ot_multiplier = 1.0;
-                }
-
-                $overtime_multiplier_setting = $this->get_module_setting('field_staff_overtime_multiplier', '1.5');
-                if (!$overtime_enabled && is_numeric($overtime_multiplier_setting)) {
-                    $effective_ot_multiplier = 1.0;
-                }
-
-                $clock_in = isset($attendance['clock_in']) ? trim((string) $attendance['clock_in']) : '';
-                $clock_out = isset($attendance['clock_out']) ? trim((string) $attendance['clock_out']) : '';
-                $seconds = 0.0;
-                if ($clock_in !== '' && $clock_out !== '' && $clock_out > $clock_in) {
-                    $seconds = max((strtotime($clock_out) - strtotime($clock_in)), 0);
-                }
-
-                $hours = $seconds / 3600;
-                if ($hours <= 0) {
-                    continue;
-                }
-
-                $has_work_rows = true;
-                $regular_hours += min($hours, (float) $this->get_regular_hours_cap());
-                $ot_hours += max($hours - (float) $this->get_regular_hours_cap(), 0.0);
-                $gross_salary += min($hours, (float) $this->get_regular_hours_cap()) * $effective_base_rate;
-                $gross_salary += max($hours - (float) $this->get_regular_hours_cap(), 0.0) * $effective_base_rate * $effective_ot_multiplier;
+                $regular_pay += $regular * $rate;
+                $overtime_pay += $ot * $rate * $multiplier;
+                $holiday_pay += ($regular * $rate + $ot * $rate * $multiplier) * ($holiday_multiplier - 1);
             }
         }
-
-        if (!$has_work_rows) {
-            $total_hours = 0.0;
-            $regular_hours_cap = $this->get_regular_hours_cap();
-            if ($this->db && method_exists($this->db, 'select') && method_exists($this->db, 'from') && method_exists($this->db, 'where')) {
-                $this->db->select(
-                    "COALESCE(SUM(CASE
-                        WHEN clock_in IS NOT NULL
-                        AND clock_out IS NOT NULL
-                        AND clock_out > clock_in
-                        THEN TIMESTAMPDIFF(SECOND, clock_in, clock_out)
-                        ELSE 0
-                    END), 0) AS total_seconds",
-                    false
-                );
-                $this->db->from($attendance_table);
-                $this->db->where('staff_id', $staff_id);
-                $this->db->where('date >=', $start_date);
-                $this->db->where('date <=', $end_date);
-                $result = $this->db->get()->row();
-                $total_seconds = $result ? (float) $result->total_seconds : 0.0;
-                $total_hours = $total_seconds / 3600;
+        $work_records = [];
+        if ($payment_basis !== 'hourly') {
+            $table = db_prefix() . 'fs_payroll_work_records';
+            if (!$this->db->table_exists($table)) {
+                throw new DomainException('Approved payment-basis work records are required; run module migrations.');
             }
-
-            $overtime_enabled = $this->is_overtime_enabled_for_staff((int) $staff_id, (int) ($profile['department_id'] ?? 0), (string) ($profile['payroll_group'] ?? ''));
-            $overtime_multiplier = $this->get_overtime_multiplier_for_staff((int) $staff_id, (int) ($profile['department_id'] ?? 0), (string) ($profile['payroll_group'] ?? ''));
-            $regular_hours = min($total_hours, $regular_hours_cap);
-            $ot_hours = max($total_hours - $regular_hours_cap, 0.0);
-            $gross_salary = ($regular_hours * $hourly_rate) + (($overtime_enabled ? $ot_hours : 0.0) * $hourly_rate * $overtime_multiplier);
+            $work_records = $this->db->from($table)->where('staff_id', $staff_id)
+                ->where('start_date >=', $start_date)->where('end_date <=', $end_date)->get()->result_array();
+            usort($work_records, function ($a, $b) { return (int) $a['id'] <=> (int) $b['id']; });
+            if (empty($work_records)) {
+                throw new DomainException('Missing approved ' . $payment_basis . ' payment inputs for this cutoff.');
+            }
+            $paid_days = [];
+            foreach ($work_records as $record) {
+                $record_cutoff = $this->get_payroll_cutoff_by_id((int) $record['cutoff_id']);
+                if (!$record_cutoff || $record_cutoff['start_date'] !== $start_date || $record_cutoff['end_date'] !== $end_date
+                    || $record_cutoff['payroll_group'] !== $profile['payroll_group']) {
+                    throw new DomainException('Approved work inputs must belong to the selected complete cutoff and payroll group.');
+                }
+                if ($record['payment_basis'] !== $payment_basis || $record['status'] !== 'approved'
+                    || (int) $record['approved_by'] <= 0 || empty($record['reference'])) {
+                    throw new DomainException('All payment-basis work records must match the basis and be approved.');
+                }
+                $quantity = $this->require_payroll_number($record, 'quantity');
+                $rate = $this->require_payroll_number($record, 'rate');
+                if ($payment_basis === 'salary' && ($record['start_date'] !== $start_date || $record['end_date'] !== $end_date
+                    || $quantity != 1 || count($work_records) !== 1)) {
+                    throw new DomainException('Salary requires exactly one approved amount for the complete cutoff, with quantity 1.');
+                }
+                if ($payment_basis === 'daily' && ($record['start_date'] !== $record['end_date'] || $quantity != 1
+                    || !isset($days[$record['start_date']]) || isset($paid_days[$record['start_date']]))) {
+                    throw new DomainException('Daily pay requires one approved day and explicit daily rate backed by completed attendance.');
+                }
+                $paid_days[$record['start_date']] = true;
+                $regular_pay += $quantity * $rate;
+            }
+            if ($payment_basis === 'daily' && count($paid_days) !== count($days)) {
+                throw new DomainException('Each completed work date requires an approved daily rate record before payroll can be calculated.');
+            }
         }
-
-        if ($payment_basis === 'salary') {
-            $gross_salary = max($gross_salary, (float) ($context['salary_amount'] ?? $gross_salary));
-        } elseif ($payment_basis === 'daily') {
-            $work_days = (float) ($context['work_days'] ?? max($regular_hours / 8.0, 0.0));
-            $gross_salary = max($gross_salary, $work_days * max($hourly_rate * 8.0, 0.0));
-        } elseif ($payment_basis === 'per_job') {
-            $job_units = isset($context['job_units']) && is_numeric($context['job_units']) ? (float) $context['job_units'] : 0.0;
-            $job_rate = isset($context['job_rate']) && is_numeric($context['job_rate']) ? (float) $context['job_rate'] : $hourly_rate;
-            $gross_salary = $job_units * max($job_rate, 0.0);
-        } elseif ($payment_basis === 'per_unit') {
-            $unit_count = isset($context['unit_count']) && is_numeric($context['unit_count']) ? (float) $context['unit_count'] : 0.0;
-            $unit_rate = isset($context['unit_rate']) && is_numeric($context['unit_rate']) ? (float) $context['unit_rate'] : $hourly_rate;
-            $gross_salary = $unit_count * max($unit_rate, 0.0);
+        $allowance = count($days) * (float) ($profile['daily_field_allowance'] ?? 0);
+        $adjustments = [];
+        foreach (['vacation_pay', 'commission_pay', 'loan_repayment', 'advance_repayment', 'other_misc_deductions'] as $key) {
+            $adjustments[$key] = array_key_exists($key, $context)
+                ? $this->require_payroll_number($context, $key, true) : (float) ($profile[$key] ?? 0);
         }
-
-        $nib_ee = $gross_salary * $this->get_statutory_rates_for_staff($staff_id, (int) ($profile['department_id'] ?? 0), (string) ($profile['payroll_group'] ?? ''))['employee_nib_rate'] / 100;
-        $nib_er = $gross_salary * $this->get_statutory_rates_for_staff($staff_id, (int) ($profile['department_id'] ?? 0), (string) ($profile['payroll_group'] ?? ''))['employer_nib_rate'] / 100;
+        $regular_pay = round($regular_pay, 2);
+        $overtime_pay = round($overtime_pay, 2);
+        $holiday_pay = round($holiday_pay, 2);
+        $gross_salary = round($regular_pay + $overtime_pay + $holiday_pay + $allowance + $adjustments['vacation_pay'] + $adjustments['commission_pay'], 2);
+        $rates = $this->get_statutory_rates_for_staff($staff_id, (int) ($profile['department_id'] ?? 0), (string) ($profile['payroll_group'] ?? ''));
+        $nib_ee = round($gross_salary * $rates['employee_nib_rate'] / 100, 2);
+        $nib_er = round($gross_salary * $rates['employer_nib_rate'] / 100, 2);
         $nhip_base_gross = min($gross_salary, $this->get_nhip_ceiling());
-        $nhip_ee = $nhip_base_gross * $this->get_statutory_rates_for_staff($staff_id, (int) ($profile['department_id'] ?? 0), (string) ($profile['payroll_group'] ?? ''))['employee_nhip_rate'] / 100;
-        $nhip_er = $nhip_base_gross * $this->get_statutory_rates_for_staff($staff_id, (int) ($profile['department_id'] ?? 0), (string) ($profile['payroll_group'] ?? ''))['employer_nhip_rate'] / 100;
-        $net_salary = $gross_salary - ($nib_ee + $nhip_ee);
+        $nhip_ee = round($nhip_base_gross * $rates['employee_nhip_rate'] / 100, 2);
+        $nhip_er = round($nhip_base_gross * $rates['employer_nhip_rate'] / 100, 2);
+        $deductions = round($nib_ee + $nhip_ee + $adjustments['loan_repayment'] + $adjustments['advance_repayment'] + $adjustments['other_misc_deductions'], 2);
+        $net_salary = round($gross_salary - $deductions, 2);
 
-        return [
+        return array_merge($adjustments, [
+            'staff_id' => $staff_id,
+            'calculation_version' => '2026.10.22.payroll.v2',
             'payment_basis' => $payment_basis,
+            'base_hourly_rate' => (float) ($profile['base_hourly_rate'] ?? 0),
+            'overtime_multiplier' => (float) ($profile['overtime_multiplier'] ?? 0),
+            'regular_pay' => $regular_pay,
+            'overtime_pay' => $overtime_pay,
+            'holiday_pay' => $holiday_pay,
+            'allowance_due' => round($allowance, 2),
+            'days_worked' => count($days),
+            'total_deductions' => $deductions,
+            'gross_pay' => $gross_salary,
+            'net_pay' => $net_salary,
+            'overtime_hours' => round($ot_hours, 2),
+            'attendance_evidence' => $evidence,
+            'work_records' => $work_records,
+            'workweek_start_day' => (int) $week_start,
+            'regular_hours_cap' => (float) $cap,
+            'statutory_rates' => $rates,
             'regular_hours' => round($regular_hours, 2),
             'ot_hours' => round($ot_hours, 2),
             'gross_salary' => round($gross_salary, 2),
@@ -4162,18 +4266,80 @@ class Field_staff_model extends App_Model
             'nhip_ee' => round($nhip_ee, 2),
             'nhip_er' => round($nhip_er, 2),
             'net_salary' => round($net_salary, 2),
-        ];
+        ]);
+    }
+
+    public function save_approved_payroll_work_record(array $input, $actor_staff_id)
+    {
+        $staff_id = (int) ($input['staff_id'] ?? 0);
+        $cutoff_id = (int) ($input['cutoff_id'] ?? 0);
+        $cutoff = $this->get_payroll_cutoff_by_id($cutoff_id);
+        if ($staff_id <= 0 || (int) $actor_staff_id <= 0 || !$cutoff
+            || !in_array($cutoff['status'], ['open', 'under_review'], true)) {
+            throw new DomainException('A valid employee, actor and editable cutoff are required.');
+        }
+        $profile = $this->get_payroll_profile($staff_id, $cutoff['start_date']);
+        $basis = $profile['payment_basis'] ?? '';
+        if (!in_array($basis, ['salary', 'daily', 'per_job', 'per_unit'], true)
+            || $profile['payroll_group'] !== $cutoff['payroll_group']) {
+            throw new DomainException('Select an employee in this cutoff group with a non-hourly payment basis.');
+        }
+        $start_date = trim((string) ($input['start_date'] ?? ''));
+        $end_date = trim((string) ($input['end_date'] ?? ''));
+        foreach ([$start_date, $end_date] as $date) {
+            $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+            if (!$parsed || $parsed->format('Y-m-d') !== $date) {
+                throw new DomainException('Valid work dates are required.');
+            }
+        }
+        $reference = trim((string) ($input['reference'] ?? ''));
+        $quantity = $this->require_payroll_number($input, 'quantity');
+        $rate = $this->require_payroll_number($input, 'rate');
+        if ($start_date < $cutoff['start_date'] || $end_date > $cutoff['end_date'] || $end_date < $start_date
+            || $reference === '' || strlen($reference) > 120) {
+            throw new DomainException('Work dates must belong to the cutoff and a unique source reference is required.');
+        }
+        if ($basis === 'salary' && ($quantity != 1 || $start_date !== $cutoff['start_date'] || $end_date !== $cutoff['end_date'])) {
+            throw new DomainException('Salary requires quantity 1 and an explicit amount for the complete cutoff.');
+        }
+        if ($basis === 'daily' && ($quantity != 1 || $start_date !== $end_date)) {
+            throw new DomainException('Daily records require quantity 1 for one work date and an explicit daily rate.');
+        }
+        $masters = $this->db->from(db_prefix() . 'fs_payroll_master')->where('staff_id', $staff_id)
+            ->where('cutoff_id', $cutoff_id)->get()->result_array();
+        foreach ($masters as $master) {
+            if (in_array($master['status'], ['approved', 'paid'], true)) {
+                throw new DomainException('Approved or paid payroll history cannot accept replacement work inputs.');
+            }
+        }
+        $existing = $this->db->from(db_prefix() . 'fs_payroll_work_records')->where('staff_id', $staff_id)
+            ->where('cutoff_id', $cutoff_id)->get()->result_array();
+        foreach ($existing as $record) {
+            if ($record['reference'] === $reference || $basis === 'salary'
+                || ($basis === 'daily' && $record['start_date'] === $start_date)) {
+                throw new DomainException('Duplicate source reference, salary amount or daily work date.');
+            }
+        }
+        return (bool) $this->db->insert(db_prefix() . 'fs_payroll_work_records', [
+            'staff_id' => $staff_id, 'cutoff_id' => $cutoff_id, 'payment_basis' => $basis,
+            'start_date' => $start_date, 'end_date' => $end_date, 'quantity' => $quantity, 'rate' => $rate,
+            'reference' => $reference, 'status' => 'approved', 'approved_by' => (int) $actor_staff_id,
+            'approved_at' => date('Y-m-d H:i:s'),
+        ]);
+    }
+
+    private function require_payroll_number(array $values, $key, $allow_zero = false)
+    {
+        $value = $values[$key] ?? null;
+        if (!is_numeric($value) || !is_finite((float) $value) || ($allow_zero ? (float) $value < 0 : (float) $value <= 0)) {
+            throw new DomainException('An explicit valid ' . $key . ' is required for payroll.');
+        }
+        return (float) $value;
     }
 
     public function calculate_weekly_payroll($staff_id, $start_date, $end_date, $hourly_rate)
     {
-        $staff_id = (int) $staff_id;
-        $profile = $this->get_payroll_profile($staff_id, trim((string) $start_date));
-        return $this->calculate_payroll_for_staff($staff_id, $start_date, $end_date, [
-            'payment_basis' => $profile['payment_basis'] ?? 'hourly',
-            'policy_reference_date' => trim((string) $start_date),
-            'hourly_rate' => (float) $hourly_rate,
-        ]);
+        return $this->calculate_payroll_for_staff($staff_id, $start_date, $end_date);
     }
 
     /**
@@ -4562,9 +4728,16 @@ class Field_staff_model extends App_Model
         if ($value === '' || in_array($normalized, ['null', 'none', 'n/a', 'na', '0000-00-00', '0000-00-00 00:00:00', '0000-00-00 00:00:00.000000'], true)) {
             return null;
         }
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})?$/', $value)) {
+            return null;
+        }
 
         try {
             $date = new DateTimeImmutable($value, $this->resolve_business_timezone());
+            $errors = DateTimeImmutable::getLastErrors();
+            if (is_array($errors) && ($errors['warning_count'] > 0 || $errors['error_count'] > 0)) {
+                return null;
+            }
             return $date->getTimestamp() > 0 ? $date : null;
         } catch (Throwable $e) {
             return null;

@@ -6,6 +6,17 @@ The format follows Keep a Changelog principles and semantic versioning intent.
 
 ## [Unreleased]
 
+### Payroll remediation - 2026-10-22 UTC
+- Replaced separate preview/individual/bulk payroll arithmetic with one versioned calculation result and saved calculation evidence.
+- Aggregated overtime by configurable workweek, including earlier-cutoff workweek consumption without paying earlier-cutoff rows twice.
+- Applied validated unpaid breaks and approved clock/break correction overlays; blocked unresolved attendance and keyed correction blockers to affected work dates.
+- Added idempotent approved work-input storage and an authorized HR form for explicit salary/daily/job/unit values, quantities, rates and references. Missing or unapproved inputs reject calculation instead of using hourly/eight-hour-day fallbacks.
+- Required review before approval, current-engine snapshots for unapproved legacy drafts, verified statutory configuration and unchanged calculation inputs. Protected approved/paid financial history and made component/snapshot/audit persistence failures transactional.
+- Wired review/payment actions and saved CSV/print/PDF links in the payroll register. Removed misleading fixed rate/cap headings; holiday multipliers must be explicitly configured.
+- Added numerical and actual-controller subprocess regressions covering 44/6 hours, paid/unpaid breaks, crossing cutoffs, multiple workweeks, configured start days, explicit payment inputs and adjustments, late corrections, immutable raw punches, endpoint/snapshot parity, authorization and rollback. Added rendered workflow-control assertions.
+- Local regression suites and all-module PHP lint pass. Live evidence remains separate: authenticated team-monitor request returned HTTP 500; outside-public-root backup was partial/permission-denied and the controlled retry received a host verification page. No live files/data/schema were overwritten by this remediation.
+- Consolidated release artifact is `..\field_staff.zip`; package integrity must be verified by extraction and SHA-256 comparison after the final checkpoint.
+
 ### Added
 - Supervisor correction flow and payroll-blocking guard for unresolved attendance or pending corrections in the selected period.
 - Unresolved break metadata in the attendance summary payloads (`has_unresolved_breaks`, `invalid_break_count`, and `unresolved_break_ids`).
@@ -26,7 +37,7 @@ The format follows Keep a Changelog principles and semantic versioning intent.
 - Verified locally: PHP lint passes across the module PHP files; runtime checks pass for attendance/break guards, cutoff/snapshot logic, correction gating, and effective-dated policy overrides.
 - Pending integration verification: live Perfex demo acceptance is still outstanding and requires authenticated host access plus server-log diagnosis for any HTTP 500.
 - Packaging status: a ZIP from the authoritative working tree is a source snapshot only; it is not proof of complete deployment or final acceptance.
-- Current deployment gate: hosted deployment remains suspended while the current local source is the authoritative baseline.
+- Current deployment gate (2026-10-22): authorized deployment remains blocked before overwrite because the outside-public-root backup is incomplete and the host is returning request-verification HTML to file operations. The local source is authoritative; no live sign-off is claimed.
 
 ## [1.2.0] - 2026-10-14
 

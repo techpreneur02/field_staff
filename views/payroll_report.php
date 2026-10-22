@@ -75,6 +75,11 @@ $summary_error = isset($summary_error) && trim((string) $summary_error) !== '' ?
                                 &nbsp;|&nbsp; <?php echo html_escape((string) ($selected_cutoff['start_date'] ?? '')); ?> to <?php echo html_escape((string) ($selected_cutoff['end_date'] ?? '')); ?>
                                 &nbsp;|&nbsp; Payment: <?php echo html_escape((string) ($selected_cutoff['payment_date'] ?? '')); ?>
                             </div>
+                            <div class="mtop10">
+                                <a class="btn btn-default" href="<?php echo html_escape($export_csv_url . '?cutoff_id=' . $selected_cutoff_id); ?>">Export saved CSV</a>
+                                <a class="btn btn-default" target="_blank" rel="noopener" href="<?php echo html_escape($print_url . '?cutoff_id=' . $selected_cutoff_id); ?>">Print saved register</a>
+                                <a class="btn btn-default" href="<?php echo html_escape($pdf_url . '?cutoff_id=' . $selected_cutoff_id); ?>">Download saved PDF</a>
+                            </div>
                         <?php } ?>
 
                         <?php if ($summary_error !== '') { ?>
@@ -89,14 +94,14 @@ $summary_error = isset($summary_error) && trim((string) $summary_error) !== '' ?
                                 <thead>
                                     <tr>
                                         <th>Worker Name</th>
-                                        <th class="text-right">Regular Hours Worked (Capped at 44)</th>
+                                        <th class="text-right">Regular Hours (Configured Workweek)</th>
                                         <th class="text-right">Overtime Hours Worked</th>
                                         <th class="text-right">Hourly Rate ($ USD)</th>
                                         <th class="text-right">Gross Earnings Pay</th>
-                                        <th class="text-right">Employee NIB Deduction (5.5%)</th>
-                                        <th class="text-right">Employer NIB Contribution (6.5%)</th>
-                                        <th class="text-right">Employee NHIP Deduction (3.0%)</th>
-                                        <th class="text-right">Employer NHIP Contribution (3.0%)</th>
+                                        <th class="text-right">Employee NIB Deduction</th>
+                                        <th class="text-right">Employer NIB Contribution</th>
+                                        <th class="text-right">Employee NHIP Deduction</th>
+                                        <th class="text-right">Employer NHIP Contribution</th>
                                         <th class="text-right">Net Salary Pay</th>
                                         <th class="text-center">Payment Status</th>
                                     </tr>
@@ -116,6 +121,7 @@ $summary_error = isset($summary_error) && trim((string) $summary_error) !== '' ?
                                             $er_nhip = is_array($row) ? ($row['employer_nhip'] ?? 0) : ($row->employer_nhip ?? 0);
                                             $net = is_array($row) ? ($row['net_salary'] ?? 0) : ($row->net_salary ?? 0);
                                             $status = is_array($row) ? ($row['status'] ?? 'draft') : ($row->status ?? 'draft');
+                                            $payroll_id = (int) (is_array($row) ? ($row['id'] ?? 0) : ($row->id ?? 0));
 
                                             if ($ot_hours == 0) {
                                                 $ot_hours = is_array($row) ? ($row['ot_hours'] ?? 0) : ($row->ot_hours ?? 0);
@@ -157,6 +163,31 @@ $summary_error = isset($summary_error) && trim((string) $summary_error) !== '' ?
                                                 <td class="text-right bold"><?php echo '$' . number_format((float) $net, 2); ?></td>
                                                 <td class="text-center">
                                                     <span class="badge <?php echo $status_class; ?> text-uppercase"><?php echo html_escape($status); ?></span>
+                                                    <?php if ($payroll_id > 0 && in_array($status, ['draft', 'under_review', 'approved'], true)) { ?>
+                                                        <form class="payroll-workflow-form mtop10">
+                                                            <input type="hidden" name="payroll_id" value="<?php echo $payroll_id; ?>">
+                                                            <select name="action" class="form-control" aria-label="Payroll workflow action">
+                                                                <?php if ($status === 'draft') { ?>
+                                                                    <option value="submit_for_review">Submit for review</option>
+                                                                <?php } elseif ($status === 'under_review') { ?>
+                                                                    <option value="approve">Approve reviewed payroll</option>
+                                                                    <option value="return_to_draft">Return to draft</option>
+                                                                <?php } else { ?>
+                                                                    <option value="record_payment">Record payment</option>
+                                                                <?php } ?>
+                                                            </select>
+                                                            <input name="notes" class="form-control mtop5" placeholder="Audit notes" aria-label="Payroll audit notes" required>
+                                                            <?php if ($status === 'approved') { ?>
+                                                                <input name="payment_reference" class="form-control mtop5" placeholder="Payment reference" aria-label="Payment reference" required>
+                                                                <input type="date" name="payment_date" class="form-control mtop5" aria-label="Payment date" required>
+                                                                <input type="number" name="payment_amount" min="0" step="0.01" value="<?php echo number_format((float) $net, 2, '.', ''); ?>" class="form-control mtop5" aria-label="Payment amount" required>
+                                                                <select name="payment_method" class="form-control mtop5" aria-label="Payment method">
+                                                                    <option value="online_transfer">Online transfer</option><option value="cash">Cash</option><option value="check">Check</option>
+                                                                </select>
+                                                            <?php } ?>
+                                                            <button type="submit" class="btn btn-primary btn-sm mtop5">Apply workflow action</button>
+                                                        </form>
+                                                    <?php } ?>
                                                 </td>
                                             </tr>
                                         <?php } ?>
@@ -216,3 +247,23 @@ $summary_error = isset($summary_error) && trim((string) $summary_error) !== '' ?
     </div>
 </div>
 <?php init_tail(); ?>
+<script>
+$(function() {
+    $(document).on('submit', '.payroll-workflow-form', function(event) {
+        event.preventDefault();
+        var $form = $(this);
+        var $button = $form.find('button');
+        $button.prop('disabled', true);
+        $.post('<?php echo html_escape(field_staff_admin_url('field_staff/payroll_workflow_action')); ?>', $form.serialize())
+            .done(function(response) {
+                if (response && response.success) {
+                    window.location.reload();
+                    return;
+                }
+                alert_float('danger', response && response.message ? response.message : 'Payroll workflow action failed.');
+            })
+            .fail(function() { alert_float('danger', 'Payroll workflow action failed.'); })
+            .always(function() { $button.prop('disabled', false); });
+    });
+});
+</script>

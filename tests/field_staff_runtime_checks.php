@@ -1,5 +1,10 @@
 <?php
 
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
+
 define('BASEPATH', true);
 
 function db_prefix()
@@ -52,6 +57,7 @@ class FakeDb
     private $policyOverrides = [];
     private $schemaMigrations = [];
     private $createdTables = [];
+    private $settings = ['field_staff_statutory_verification_status' => 'verified'];
     private $indexes = [
         'fs_payroll_profiles' => ['idx_fs_payroll_profiles_group'],
         'fs_payroll_master' => ['uq_fs_payroll_master_staff_cutoff'],
@@ -70,6 +76,7 @@ class FakeDb
         'fs_break_sessions' => true,
         'fs_policy_overrides' => true,
         'fs_attendance_corrections' => true,
+        'fs_settings' => true,
     ];
     private $columns = [
         'fs_payroll_master' => ['status' => "enum('draft','under_review','approved','paid')", 'cutoff_id' => 'int unsigned'],
@@ -310,6 +317,16 @@ class FakeDb
 
     public function get()
     {
+        if (str_ends_with($this->currentTable, 'fs_settings')) {
+            $rows = [];
+            foreach ($this->settings as $key => $value) {
+                $row = ['setting_key' => $key, 'setting_value' => $value];
+                if ($this->matchesQueryConditions($row)) {
+                    $rows[] = $row;
+                }
+            }
+            return new FakeDbResult($rows, $rows[0] ?? null);
+        }
         if (str_ends_with($this->currentTable, 'fs_schema_migrations')) {
             $filtered = [];
             foreach ($this->schemaMigrations as $row) {
@@ -816,10 +833,18 @@ if (($model->get_payroll_snapshot(88)['status'] ?? '') !== 'under_review') {
 }
 
 $approval_result = $model->apply_payroll_workflow_action(88, 'approve', 7, ['notes' => 'Approved']);
-if ($approval_result['success'] !== true) {
-    fwrite(STDERR, "Payroll workflow should approve a valid review record with a saved snapshot.\n");
+if ($approval_result['success'] !== false) {
+    fwrite(STDERR, "Legacy draft calculations must be refreshed before approval.\n");
     exit(1);
 }
+
+// Seed already-approved legacy history to verify payment compatibility without recalculating it.
+$legacy_approved = $model->get_payroll_snapshot(88);
+$legacy_approved['status'] = 'approved';
+$model->db->where('payroll_id', 88)->update('fs_payroll_snapshots', [
+    'snapshot_status' => 'approved', 'snapshot_data' => json_encode($legacy_approved),
+]);
+$model->db->where('id', 88)->update('fs_payroll_master', ['status' => 'approved']);
 
 $unresolved_attendance_block = $model->has_unresolved_attendance_for_staff(21, '2026-01-01', '2026-01-15');
 if ($unresolved_attendance_block !== false) {
@@ -903,6 +928,7 @@ if ($model->save_payroll_cutoff($cutoff_2, 7) !== false) {
     exit(1);
 }
 
+$model->db->set_active_break(false);
 $model->db->set_attendance_rows([
     ['id' => 30, 'staff_id' => 21, 'date' => '2026-02-03', 'clock_in' => '2026-02-03 08:00:00', 'clock_out' => '2026-02-03 16:00:00'],
     ['id' => 31, 'staff_id' => 21, 'date' => '2026-02-10', 'clock_in' => '2026-02-10 08:00:00', 'clock_out' => '2026-02-10 16:00:00'],

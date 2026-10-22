@@ -5,6 +5,43 @@ Base path prefix in examples:
 
 All mutating actions should be called with POST and CSRF tokens in authenticated admin context.
 
+## Payroll calculation contract (2026-10-22)
+
+`POST generate_payrun`, `POST save_payroll` and `POST apply_payrun` require a valid `cutoff_id`; the server derives its date window and validates employee group membership. Preview and bulk save use the same versioned engine as individual save. Explicit single-employee adjustments use `commission`, `vacation_pay`, `loan_adjustment` and `advance` (finite non-negative values). Multi-employee requests cannot apply one employee's explicit adjustments to everyone.
+
+Unresolved timestamps, open shifts, malformed/overlapping/out-of-shift breaks and pending work-date corrections reject calculation. Payable hours retain paid breaks and deduct unpaid breaks. Workweek totals include earlier-cutoff work dates for cap consumption only.
+
+### POST save_payroll_work_record
+
+Authorization: the existing HR Settings/manage-settings gate; POST and normal CSRF validation.
+
+Fields:
+- `staff_id`, `cutoff_id`: employee and editable cutoff in the same payroll group.
+- `start_date`, `end_date`: valid work dates within the selected cutoff.
+- `quantity`, `rate`: explicit finite positive numbers; no fallback rates/quantities.
+- `reference`: unique approved source reference, up to 120 characters.
+- `attest_approved=1`: authorized actor attests to approval against the source record.
+
+The server resolves `payment_basis` from the employee's policy, not from a client-supplied override. Salary needs one complete-cutoff amount and quantity 1; daily needs one work date and quantity 1. Every completed daily work date must have a record before calculation. Job/unit quantities use their explicit approved rates. Actor and approval time are stored server-side.
+
+Work-input writes lock the cutoff and reject duplicates or replacements for approved/paid payroll. Inputs are append-only; this endpoint is not an edit/revoke API.
+
+### POST payroll_workflow_action
+
+Fields: `payroll_id`, `action`, `notes`; payment also requires `payment_reference`, `payment_method` (`cash|online_transfer|check`), `payment_date` (`Y-m-d`) and `payment_amount` equal to saved net salary.
+
+Transitions:
+- `submit_for_review`: draft -> under_review, with saved snapshot.
+- `return_to_draft`: under_review -> draft only, updating snapshot status too.
+- `approve`: under_review -> approved only; current engine snapshot, unchanged calculation inputs, cleared attendance/corrections and verified statutory configuration required.
+- `record_payment`: approved -> paid only; paid history cannot be reopened.
+
+No direct-draft-approval mode is configured. Invalid transitions, legacy unapproved calculations and stale snapshots return `success=false`. Controllers lock payroll rows and roll back snapshot/component/audit persistence failures.
+
+### Attendance correction fields
+
+Correction types: `clock_in`, `clock_out`, `break:<id>:break_out_at`, `break:<id>:break_in_at`, or `break:<id>:ended_at`. Legacy `attendance` is accepted only when its before-value identifies exactly one clock field. `before_value` must match the effective source field, and `after_value` must be a valid timestamp. Only pending requests can be approved/rejected; approved overlays preserve raw clock and break punches.
+
 ## 1. Attendance
 
 ### GET attendance
