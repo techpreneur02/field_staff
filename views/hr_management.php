@@ -348,25 +348,25 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
             <div class="col-lg-3 col-md-6 col-sm-6 col-xs-12">
                 <div class="stat-card">
                     <div class="stat-label">Total Hours</div>
-                    <div class="stat-value"><?php echo number_format($summary_total_hours, 1); ?></div>
+                    <div class="stat-value"><?php echo !empty($attendance_summary['has_unresolved_attendance']) ? 'Pending correction' : number_format($summary_total_hours, 1); ?></div>
                 </div>
             </div>
             <div class="col-lg-3 col-md-6 col-sm-6 col-xs-12">
                 <div class="stat-card warning">
                     <div class="stat-label">Regular Hours</div>
-                    <div class="stat-value"><?php echo number_format($summary_regular_hours, 1); ?></div>
+                    <div class="stat-value"><?php echo !empty($attendance_summary['has_unresolved_attendance']) ? 'Pending correction' : number_format($summary_regular_hours, 1); ?></div>
                 </div>
             </div>
             <div class="col-lg-3 col-md-6 col-sm-6 col-xs-12">
                 <div class="stat-card success">
                     <div class="stat-label">Overtime Hours</div>
-                    <div class="stat-value"><?php echo number_format($summary_overtime_hours, 1); ?></div>
+                    <div class="stat-value"><?php echo !empty($attendance_summary['has_unresolved_attendance']) ? 'Pending correction' : number_format($summary_overtime_hours, 1); ?></div>
                 </div>
             </div>
             <div class="col-lg-3 col-md-6 col-sm-6 col-xs-12">
                 <div class="stat-card danger">
                     <div class="stat-label">Allowance Due</div>
-                    <div class="stat-value">$<?php echo number_format($summary_allowance_due, 2); ?></div>
+                    <div class="stat-value"><?php echo !empty($attendance_summary['has_unresolved_attendance']) ? 'Pending correction' : '$' . number_format($summary_allowance_due, 2); ?></div>
                 </div>
             </div>
         </div>
@@ -763,10 +763,10 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                                     <div class="form-group"><label for="manual_date" class="control-label">Attendance Date</label><input type="date" id="manual_date" class="form-control" value="<?php echo $report_date; ?>"></div>
                                 </div>
                                 <div class="col-md-2 col-sm-6 col-xs-12">
-                                    <div class="form-group"><label for="manual_clock_in" class="control-label">Clock In</label><input type="time" id="manual_clock_in" class="form-control"></div>
+                                    <div class="form-group"><label for="manual_clock_in" class="control-label">Clock In (date/time)</label><input type="datetime-local" step="1" id="manual_clock_in" class="form-control"></div>
                                 </div>
                                 <div class="col-md-2 col-sm-6 col-xs-12">
-                                    <div class="form-group"><label for="manual_clock_out" class="control-label">Clock Out</label><input type="time" id="manual_clock_out" class="form-control"></div>
+                                    <div class="form-group"><label for="manual_clock_out" class="control-label">Clock Out (date/time)</label><input type="datetime-local" step="1" id="manual_clock_out" class="form-control"></div>
                                 </div>
                                 <div class="col-md-2 col-sm-12 col-xs-12">
                                     <div class="form-group mtop25"><button type="button" id="save-manual-attendance-btn" class="btn btn-primary">Post Manual Log</button></div>
@@ -910,7 +910,7 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                                                         <td><?php echo field_staff_hr_escape($row['date'] ?? ''); ?></td>
                                                         <td><?php echo field_staff_hr_escape($row['clock_in'] ?? ''); ?></td>
                                                         <td><?php echo field_staff_hr_escape($row['clock_out'] ?? ''); ?></td>
-                                                        <td><?php echo number_format((float) ($row['total_hours'] ?? 0), 2); ?></td>
+                                                        <td><?php echo !empty($row['calculation_issue']) ? field_staff_hr_escape($row['calculation_issue']) : number_format((float) ($row['total_hours'] ?? 0), 2); ?></td>
                                                         <td><?php echo (int) ($row['late_in_minutes'] ?? 0); ?> mins</td>
                                                         <td><?php echo (int) ($row['early_out_minutes'] ?? 0); ?> mins</td>
                                                         <td><?php echo (int) ($row['over_work_minutes'] ?? 0); ?> mins</td>
@@ -950,9 +950,9 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                                                         <td><?php echo (int) ($row['total_days_worked'] ?? 0); ?></td>
                                                         <td><?php echo (int) ($row['total_late_ins'] ?? 0); ?></td>
                                                         <td><?php echo (int) ($row['total_early_outs'] ?? 0); ?></td>
-                                                        <td><?php echo number_format((float) ($row['total_hours_worked'] ?? 0), 2); ?></td>
-                                                        <td><?php echo number_format((float) ($row['regular_hours'] ?? 0), 2); ?></td>
-                                                        <td><?php echo number_format((float) ($row['overtime_hours'] ?? 0), 2); ?></td>
+                                                        <td><?php echo !empty($row['calculation_issue']) ? field_staff_hr_escape($row['calculation_issue']) : number_format((float) ($row['total_hours_worked'] ?? 0), 2); ?></td>
+                                                        <td><?php echo !empty($row['calculation_issue']) ? 'Pending correction' : number_format((float) ($row['regular_hours'] ?? 0), 2); ?></td>
+                                                        <td><?php echo !empty($row['calculation_issue']) ? 'Pending correction' : number_format((float) ($row['overtime_hours'] ?? 0), 2); ?></td>
                                                     </tr><?php }
                                                     } else { ?><tr>
                                                     <td colspan="8" class="text-center text-muted">No attendance summary rows available for the selected period.</td>
@@ -1030,9 +1030,9 @@ $active_tab_id = isset($tab_map[$default_hr_tab]) ? $tab_map[$default_hr_tab] : 
                                                     foreach ($department_wise_rows as $row) { ?><tr>
                                                         <td><?php echo field_staff_hr_escape($row['department_name'] ?? ''); ?></td>
                                                         <td><?php echo (int) ($row['headcount'] ?? 0); ?></td>
-                                                        <td><?php echo number_format((float) ($row['total_regular_hours'] ?? 0), 2); ?></td>
-                                                        <td><?php echo number_format((float) ($row['total_overtime_hours'] ?? 0), 2); ?></td>
-                                                        <td><?php echo number_format((float) ($row['total_hours_worked'] ?? 0), 2); ?></td>
+                                                        <td><?php echo !empty($row['calculation_issue']) ? 'Pending correction' : number_format((float) ($row['total_regular_hours'] ?? 0), 2); ?></td>
+                                                        <td><?php echo !empty($row['calculation_issue']) ? 'Pending correction' : number_format((float) ($row['total_overtime_hours'] ?? 0), 2); ?></td>
+                                                        <td><?php echo !empty($row['calculation_issue']) ? field_staff_hr_escape($row['calculation_issue']) : number_format((float) ($row['total_hours_worked'] ?? 0), 2); ?></td>
                                                     </tr><?php }
                                                     } else { ?><tr>
                                                     <td colspan="5" class="text-center text-muted">No department wise analytics available for the selected period.</td>

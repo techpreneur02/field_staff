@@ -257,6 +257,11 @@ class FakeDb
                 $effectiveNullMatches = ($actual === null || $actual === '');
                 continue;
             }
+            if (preg_match('/^([a-z_]+) IS (NOT )?NULL$/i', $fieldName, $null)) {
+                $is_null = !isset($row[$null[1]]);
+                if ($is_null === !empty($null[2])) { return false; }
+                continue;
+            }
 
             if ($fieldName === 'effective_to' && $operator === '>=') {
                 $actual = array_key_exists('effective_to', $row) ? $row['effective_to'] : null;
@@ -586,6 +591,10 @@ class FakeDb
     public function set_open_clock($enabled)
     {
         $this->openClock = (bool) $enabled;
+        $this->attendanceRows = $enabled ? [[
+            'id' => 1, 'staff_id' => 7, 'date' => '2026-01-15',
+            'clock_in' => '2026-01-15 07:00:00', 'clock_out' => null,
+        ]] : [];
     }
 
     public function set_active_break($enabled)

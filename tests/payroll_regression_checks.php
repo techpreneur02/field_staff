@@ -33,6 +33,20 @@ if (($argv[1] ?? '') === '--endpoint') {
     $scenario = $argv[3] ?? '';
     $GLOBALS['payroll_test_admin'] = $scenario !== 'unauthorized';
     if ($scenario === 'unresolved') { $model->db->tables['fs_attendance'][0]['clock_out'] = null; }
+    if ($scenario === 'raw-breaks') {
+        $model->db->tables['fs_settings'][] = ['setting_key' => 'field_staff_attendance_rounding', 'setting_value' => 'nearest_15'];
+        foreach ($model->db->tables['fs_attendance'] as &$attendance) {
+            $attendance['raw_punches'] = 1;
+            $attendance['clock_in'] = $attendance['date'] . ' 08:01:00';
+            $attendance['clock_out'] = $attendance['date'] . ' 17:59:00';
+            foreach (['unpaid' => ['12:00:00', '12:30:00'], 'paid' => ['14:00:00', '14:15:00']] as $type => $times) {
+                $model->db->tables['fs_break_sessions'][] = ['id' => count($model->db->tables['fs_break_sessions']) + 1,
+                    'attendance_id' => $attendance['id'], 'staff_id' => 21, 'break_type' => $type,
+                    'break_out_at' => $attendance['date'] . ' ' . $times[0], 'break_in_at' => $attendance['date'] . ' ' . $times[1]];
+            }
+        }
+        unset($attendance);
+    }
     if ($scenario === 'component-failure') { $model->db->failTable = 'fs_payroll_values'; }
     if ($scenario === 'snapshot-failure') { $model->db->failTable = 'fs_payroll_snapshots'; }
     if ($scenario === 'audit-failure') {
@@ -114,6 +128,7 @@ near($result['regular_hours'], 44, 'Five ten-hour shifts: regular hours');
 near($result['ot_hours'], 6, 'Five ten-hour shifts: overtime hours');
 near($result['gross_salary'], 1060, 'Weekly gross at configured test rates');
 near($result['net_salary'], 932.80, 'Configured test statutory deductions, not hardcoded rates');
+check($result['workweek_start_day'] === 1 && $result['regular_hours_cap'] === 44.0, 'Calculation evidence must retain configured workweek metadata');
 echo "PASS five ten-hour shifts: 44 regular + 6 overtime; gross 1060; net 932.80\n";
 
 $early = calculate($model, '2026-10-12', '2026-10-15');
@@ -237,7 +252,7 @@ foreach (['open', 'malformed', 'overflow', 'relative', 'reversed', 'overlap', 'o
 }
 echo "PASS open, malformed, reversed, overlapping and out-of-shift attendance blockers\n";
 
-foreach (['', 'adjustments', 'explicit-adjustments', 'salary'] as $scenario) {
+foreach (['', 'adjustments', 'explicit-adjustments', 'salary', 'raw-breaks'] as $scenario) {
     $preview = endpoint('generate_payrun', $scenario);
     $individual = endpoint('save_payroll', $scenario);
     $bulk = endpoint('apply_payrun', $scenario);
@@ -245,6 +260,30 @@ foreach (['', 'adjustments', 'explicit-adjustments', 'salary'] as $scenario) {
         check($response['response']['success'] === true, 'Endpoint failure: ' . json_encode($response['response']));
     }
     $row = $preview['response']['statement']['rows'][0];
+    if ($scenario === 'raw-breaks') {
+        near($row['regular_hours'], 44, 'Rounded raw punches regular hours with mixed breaks');
+        near($row['ot_hours'], 3.5, 'Only unpaid breaks reduce rounded payroll');
+        near($row['gross_salary'], 985, 'Mixed-break raw-punch payroll gross');
+        $report_model = payroll_fixture();
+        $report_model->db->tables = $individual['tables'];
+        $records = $report_model->get_attendance_record_report('2026-10-12', '2026-10-16', 21);
+        near(array_sum(array_column($records, 'total_hours')), 47.5, 'Attendance history must use the shared payable seconds');
+        $report = $report_model->get_attendance_summary_report('2026-10-12', '2026-10-16', 21)[0];
+        near($report['regular_hours'], $row['regular_hours'], 'Attendance summary regular/payroll parity');
+        near($report['overtime_hours'], $row['ot_hours'], 'Attendance summary overtime/payroll parity');
+        $analytics = $report_model->get_attendance_analytics('2026-10-12', '2026-10-16', 21);
+        near($analytics['rows'][0]['total_hours'], 47.5, 'Attendance analytics mixed-break payable time');
+        near($analytics['rows'][0]['regular_hours'], $row['regular_hours'], 'Attendance analytics regular/payroll parity');
+        near($analytics['rows'][0]['overtime_hours'], $row['ot_hours'], 'Attendance analytics overtime/payroll parity');
+        $split_report = $report_model->get_attendance_summary_report('2026-10-16', '2026-10-16', 21)[0];
+        near($split_report['regular_hours'], 6, 'Attendance report crossing cutoff must consume earlier hours');
+        near($split_report['overtime_hours'], 3.5, 'Attendance report crossing cutoff overtime');
+        $report_model->db->tables['fs_break_sessions'][0]['break_in_at'] = null;
+        $pending = $report_model->get_attendance_summary_report('2026-10-12', '2026-10-16', 21)[0];
+        check($pending['regular_hours'] === null && $pending['calculation_issue'] !== '', 'Unresolved attendance must be explicit, not a zero-hour success');
+        $pending_analytics = $report_model->get_attendance_analytics('2026-10-12', '2026-10-16', 21);
+        check($pending_analytics['rows'][0]['total_hours'] === null && $pending_analytics['summary']['has_unresolved_attendance'], 'Analytics must explicitly flag unresolved totals');
+    }
     foreach ([$individual, $bulk] as $saved) {
         check($saved['commits'] === 1 && $saved['rollbacks'] === 0, 'Successful save must commit once');
         $master = $saved['tables']['fs_payroll_master'][0];

@@ -145,6 +145,7 @@ if (!fs_table_exists($CI, $attendanceTable)) {
         `out_latitude` DECIMAL(10,8) NULL,
         `out_longitude` DECIMAL(11,8) NULL,
         `tracking_mode` ENUM('assigned','free-form') NOT NULL DEFAULT 'free-form',
+        `raw_punches` TINYINT(1) NOT NULL DEFAULT 0,
         `dispatch_id` INT UNSIGNED NULL,
         `notes` TEXT NULL,
         PRIMARY KEY (`id`),

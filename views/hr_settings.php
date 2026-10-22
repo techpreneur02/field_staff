@@ -61,6 +61,7 @@ $allowlist_lookup = array_flip(array_map('intval', $hr_payroll_staff_ids));
                     <div class="panel-body">
                         <h4 class="no-margin">HR Settings</h4>
                         <p class="text-muted mtop5">Configuration for employees, attendance, payroll control, and access. Only live controls are enabled in this phase.</p>
+                        <a class="btn btn-default" href="<?php echo field_staff_settings_escape(field_staff_admin_url('field_staff/attendance') . '#live-team-operations'); ?>">Team Operations - Live Status</a>
                     </div>
                 </div>
             </div>

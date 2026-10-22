@@ -320,6 +320,10 @@ class Field_staff extends AdminController
         } else {
             $attendance_records = $this->field_staff_model->get_recent_attendance_by_staff($staff_id, 20);
         }
+        foreach ($attendance_records as &$attendance_record) {
+            $attendance_record['summary'] = $this->field_staff_model->get_attendance_payable_summary($attendance_record);
+        }
+        unset($attendance_record);
         $leave_rows = $this->field_staff_model->get_leave_records([
             'staff_id' => $staff_id,
         ]);
@@ -329,6 +333,7 @@ class Field_staff extends AdminController
         $data['start_date'] = $start_date !== '' ? $start_date : date('Y-m-d', strtotime('-14 days'));
         $data['end_date'] = $end_date !== '' ? $end_date : date('Y-m-d');
         $data['is_clocked_in'] = $this->field_staff_model->has_open_clock($staff_id);
+        $data['can_view_team_monitor'] = $this->can_access_operations_tab();
         $data['attendance_records'] = $attendance_records;
         $data['leave_rows'] = $leave_rows;
         $data['payslip_rows'] = $payslip_rows;
@@ -732,13 +737,17 @@ class Field_staff extends AdminController
             $this->respond_json(['success' => false, 'message' => 'Request validation failed.']);
         }
 
-        $saved = $this->field_staff_model->save_manual_attendance([
+        try {
+            $saved = $this->field_staff_model->save_manual_attendance([
             'staff_id' => $this->input->post('staff_id', true),
             'date' => $this->input->post('date', true),
             'clock_in' => $this->input->post('clock_in', true),
             'clock_out' => $this->input->post('clock_out', true),
             'notes' => $this->input->post('notes', true),
-        ]);
+            ]);
+        } catch (DomainException $e) {
+            $this->respond_json(['success' => false, 'message' => $e->getMessage()]);
+        }
 
         $this->respond_json([
             'success' => $saved,
@@ -1935,28 +1944,12 @@ class Field_staff extends AdminController
             $this->respond_json(['success' => false, 'reason' => 'not_authorized', 'message' => 'Session is not active.']);
         }
 
-        $open_attendance = $this->field_staff_model->get_open_attendance_id($staff_id);
-        $active_break = $this->field_staff_model->get_active_break_session($staff_id);
         $csrf_name = isset($this->security) && method_exists($this->security, 'get_csrf_token_name') ? (string) $this->security->get_csrf_token_name() : '';
         $csrf_hash = isset($this->security) && method_exists($this->security, 'get_csrf_hash') ? (string) $this->security->get_csrf_hash() : '';
 
-        $is_on_break = is_array($active_break) && !empty($active_break);
-        $status = 'clocked_out';
-        if ($open_attendance > 0) {
-            $status = $is_on_break ? 'on_break' : 'working';
-        }
-
         $this->respond_json([
             'success' => true,
-            'state' => [
-                'staff_id' => $staff_id,
-                'clocked_in' => $open_attendance > 0,
-                'on_break' => $is_on_break,
-                'status' => $status,
-                'break_type' => $is_on_break ? strtolower(trim((string) ($active_break['break_type'] ?? 'paid'))) : null,
-                'pending_action' => null,
-                'last_updated' => date('c'),
-            ],
+            'state' => $this->field_staff_model->get_employee_attendance_state($staff_id),
             'csrf' => $csrf_name !== '' || $csrf_hash !== '' ? ['name' => $csrf_name, 'hash' => $csrf_hash] : null,
         ]);
     }
@@ -2630,8 +2623,8 @@ class Field_staff extends AdminController
                 exit;
             }
 
-            $can_manage_attendance = $this->can_access_operations_tab() || $this->can_manage_hr_settings();
-            if (!$can_manage_attendance && !isset($this->session)) {
+            // Self-service always uses the authenticated employee, never a posted staff ID.
+            if (!is_staff_logged_in()) {
                 header('Content-Type: application/json');
                 echo json_encode([
                     'success' => false,
@@ -2650,8 +2643,13 @@ class Field_staff extends AdminController
                 ]);
                 exit;
             }
+            if ($action === 'break_out' && !in_array($break_type, ['paid', 'unpaid'], true)) {
+                $this->respond_json(['success' => false, 'reason' => 'invalid_break_type',
+                    'message' => 'Choose a paid or unpaid break before Break Out.']);
+            }
 
-            if (!is_numeric($latitude) || !is_numeric($longitude)) {
+            if (!is_numeric($latitude) || !is_numeric($longitude)
+                || abs((float) $latitude) > 90 || abs((float) $longitude) > 180) {
                 header('Content-Type: application/json');
                 echo json_encode([
                     'success' => false,
@@ -2661,31 +2659,15 @@ class Field_staff extends AdminController
                 exit;
             }
 
-            $transition_valid = false;
-            switch ($action) {
-                case 'clock_in':
-                    $transition_valid = $this->field_staff_model->validate_attendance_transition($staff_id, 'clock_in');
-                    break;
-                case 'clock_out':
-                    $transition_valid = $this->field_staff_model->validate_attendance_transition($staff_id, 'clock_out');
-                    break;
-                case 'break_out':
-                    $transition_valid = $this->field_staff_model->validate_break_transition($staff_id, 'break_out');
-                    break;
-                case 'break_in':
-                    $transition_valid = $this->field_staff_model->validate_break_transition($staff_id, 'break_in');
-                    break;
-                default:
-                    $transition_valid = false;
-                    break;
-            }
+            $state = $this->field_staff_model->get_employee_attendance_state($staff_id);
+            $transition_valid = in_array($action, $state['allowed_actions'], true);
 
             if (!$transition_valid) {
                 header('Content-Type: application/json');
                 echo json_encode([
                     'success' => false,
                     'reason' => 'invalid_transition',
-                    'message' => 'The current attendance state does not allow that action. Refresh to confirm the latest status before retrying.',
+                    'message' => $state['issue'] ?: 'The current attendance state does not allow that action. Refresh to confirm the latest status before retrying.',
                 ]);
                 exit;
             }
@@ -2710,6 +2692,7 @@ class Field_staff extends AdminController
                     'success' => true,
                     'message' => 'Attendance recorded successfully',
                     'record' => $latest_record,
+                    'state' => $this->field_staff_model->get_employee_attendance_state($staff_id),
                 ]);
                 exit;
             }
@@ -2722,6 +2705,8 @@ class Field_staff extends AdminController
                 'reference_id' => $reference_id,
             ]);
             exit;
+        } catch (DomainException $e) {
+            $this->respond_json(['success' => false, 'reason' => 'invalid_transition', 'message' => $e->getMessage()]);
         } catch (Throwable $e) {
             error_log('Field Staff attendance action failed [' . $reference_id . ']: ' . $e->getMessage());
             if (method_exists($e, 'getTraceAsString')) {
@@ -3246,7 +3231,9 @@ class Field_staff extends AdminController
             'total_allowance_due' => 0.0,
         ];
 
+        $has_unresolved = false;
         foreach ($attendance_summary_rows as $row) {
+            $has_unresolved = $has_unresolved || !empty($row['calculation_issue']);
             $tiles['total_hours_worked'] += (float) ($row['total_hours_worked'] ?? 0);
             $tiles['regular_hours'] += (float) ($row['regular_hours'] ?? 0);
             $tiles['overtime_hours'] += (float) ($row['overtime_hours'] ?? 0);
@@ -3254,8 +3241,9 @@ class Field_staff extends AdminController
         }
 
         foreach ($tiles as $key => $value) {
-            $tiles[$key] = round((float) $value, 2);
+            $tiles[$key] = $has_unresolved ? null : round((float) $value, 2);
         }
+        $tiles['has_unresolved_attendance'] = $has_unresolved;
 
         return $tiles;
     }

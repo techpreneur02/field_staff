@@ -6,6 +6,18 @@ The format follows Keep a Changelog principles and semantic versioning intent.
 
 ## [Unreleased]
 
+### Break lifecycle and live status - 2026-10-22 UTC
+- Enforced the complete Clock In / Break Out / Break In / Clock Out lifecycle using server-confirmed action allowlists and employee-row transaction locking.
+- Preserved multiple paid/unpaid breaks and their original types. Rejected duplicate/invalid actions, malformed/overlapping/future timestamps and missing-return closure attempts without inventing return times.
+- Preserved raw device punches with an additive `raw_punches` migration; configured rounding is calculated separately. Fixed midnight day carry and explicit overnight manual date handling.
+- Applied approved corrections consistently to operational state and payable summaries without rewriting raw punches. Manual changes cannot overwrite raw/break-bearing/open attendance or approved/paid payroll periods.
+- Added live My Work and authorized Team Operations clock-in/break details and elapsed timers, reload restoration, processing/duplicate protection and safe errors that preserve confirmed state.
+- Unified attendance reports/analytics and payroll on the validated workweek/payable ledger; unresolved report totals are explicitly pending.
+- Added the CLI lifecycle/controller suite and mixed-break numerical preview/save/bulk/snapshot/report regressions. All three suites and rendered JavaScript syntax checks pass.
+- Backed up affected demo content outside the public root; initial eight-file break deployment and migration were verified. Dedicated employee live testing passed two breaks, timer/reload, type preservation, invalid/parallel/duplicate requests and non-admin HTTP 403 restrictions.
+- Final correction/reporting follow-up remains undeployed because authenticated admin/hosting access was no longer available. Overnight, final team/payroll parity, non-hourly and print/PDF live acceptance remain unverified. Statutory verification remains pending.
+- Validated the clean 41-file package by extraction, complete source SHA-256 comparison and all three regression suites; final packaging is repeated after the source checkpoint.
+
 ### Live deployment and hardening - 2026-10-22 UTC
 - Fixed: `save_payroll` and `apply_payrun` no longer silently reset an `under_review` payroll to draft. Recalculation now requires the audited return-to-draft workflow.
 - Fixed: `submit_for_review` is now rejected while unresolved attendance or pending corrections exist for the cutoff's work dates.

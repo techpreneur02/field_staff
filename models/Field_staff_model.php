@@ -18,24 +18,34 @@ class Field_staff_model extends App_Model
     public function record_clock_action($staff_id, $action, $latitude, $longitude, $notes, $break_type = 'paid')
     {
         $action = strtolower(trim((string) $action));
+        $aliases = ['in' => 'clock_in', 'out' => 'clock_out', 'break-out' => 'break_out',
+            'breakout' => 'break_out', 'break-in' => 'break_in', 'breakin' => 'break_in'];
+        $action = $aliases[$action] ?? $action;
         $break_type = strtolower(trim((string) $break_type));
-        if (!in_array($break_type, ['paid', 'unpaid'], true)) {
-            $break_type = 'paid';
+        if (!in_array($action, ['clock_in', 'clock_out', 'break_out', 'break_in'], true)
+            || !in_array($break_type, ['paid', 'unpaid'], true)) {
+            throw new DomainException('Select a valid attendance action and paid or unpaid break type.');
         }
 
         $this->db->trans_begin();
 
         try {
-            if (in_array($action, ['clock_in', 'in'], true)) {
-                if (!$this->validate_attendance_transition($staff_id, 'clock_in')) {
-                    $this->db->trans_rollback();
-                    return false;
-                }
-
+            // Lock a stable parent row even when no shift exists yet.
+            $staff_key = $this->db->field_exists('staffid', db_prefix() . 'staff') ? 'staffid' : 'id';
+            $staff = $this->db->query('SELECT * FROM ' . db_prefix() . 'staff WHERE ' . $staff_key . ' = ' . (int) $staff_id . ' FOR UPDATE')->row_array();
+            if (!$staff || empty($staff['active'])) {
+                throw new DomainException('An active employee session is required.');
+            }
+            $state = $this->get_employee_attendance_state($staff_id);
+            if (!in_array($action, $state['allowed_actions'], true)) {
+                throw new DomainException($state['issue'] ?: 'The current attendance state does not allow that action. Refresh the latest status.');
+            }
+            $now = new DateTimeImmutable('now', $this->resolve_business_timezone());
+            if ($action === 'clock_in') {
                 $saved = $this->clock_in(
                     $staff_id,
-                    date('Y-m-d'),
-                    date('Y-m-d H:i:s'),
+                    $now->format('Y-m-d'),
+                    $now->format('Y-m-d H:i:s'),
                     $latitude,
                     $longitude,
                     $notes
@@ -46,17 +56,15 @@ class Field_staff_model extends App_Model
                     return false;
                 }
 
+                if (!$this->db->trans_status()) {
+                    throw new RuntimeException('Attendance transaction failed.');
+                }
                 $this->db->trans_commit();
                 return true;
             }
 
-            if (in_array($action, ['break_out', 'break-out', 'breakout'], true)) {
-                if (!$this->validate_break_transition($staff_id, 'break_out')) {
-                    $this->db->trans_rollback();
-                    return false;
-                }
-
-                $attendance_id = $this->get_open_attendance_id($staff_id);
+            if ($action === 'break_out') {
+                $attendance_id = (int) $state['attendance_id'];
                 if ($attendance_id <= 0) {
                     $this->db->trans_rollback();
                     return false;
@@ -68,17 +76,15 @@ class Field_staff_model extends App_Model
                     return false;
                 }
 
+                if (!$this->db->trans_status()) {
+                    throw new RuntimeException('Attendance transaction failed.');
+                }
                 $this->db->trans_commit();
                 return true;
             }
 
-            if (in_array($action, ['break_in', 'break-in', 'breakin'], true)) {
-                if (!$this->validate_break_transition($staff_id, 'break_in')) {
-                    $this->db->trans_rollback();
-                    return false;
-                }
-
-                $attendance_id = $this->get_open_attendance_id($staff_id);
+            if ($action === 'break_in') {
+                $attendance_id = (int) $state['attendance_id'];
                 if ($attendance_id <= 0) {
                     $this->db->trans_rollback();
                     return false;
@@ -90,22 +96,21 @@ class Field_staff_model extends App_Model
                     return false;
                 }
 
+                if (!$this->db->trans_status()) {
+                    throw new RuntimeException('Attendance transaction failed.');
+                }
                 $this->db->trans_commit();
                 return true;
             }
 
-            if (in_array($action, ['clock_out', 'out'], true)) {
-                if (!$this->validate_attendance_transition($staff_id, 'clock_out')) {
-                    $this->db->trans_rollback();
-                    return false;
-                }
-
+            if ($action === 'clock_out') {
                 $saved = $this->clock_out(
                     $staff_id,
-                    date('Y-m-d H:i:s'),
+                    $now->format('Y-m-d H:i:s'),
                     $latitude,
                     $longitude,
-                    $notes
+                    $notes,
+                    (int) $state['attendance_id']
                 );
 
                 if (!$saved) {
@@ -113,12 +118,18 @@ class Field_staff_model extends App_Model
                     return false;
                 }
 
+                if (!$this->db->trans_status()) {
+                    throw new RuntimeException('Attendance transaction failed.');
+                }
                 $this->db->trans_commit();
                 return true;
             }
 
             $this->db->trans_rollback();
             return false;
+        } catch (DomainException $e) {
+            $this->db->trans_rollback();
+            throw $e;
         } catch (Throwable $e) {
             if ($this->db && method_exists($this->db, 'trans_rollback')) {
                 $this->db->trans_rollback();
@@ -143,36 +154,9 @@ class Field_staff_model extends App_Model
      */
     public function validate_attendance_transition($staff_id, $requested_action)
     {
-        $staff_id = (int) $staff_id;
         $requested_action = strtolower(trim((string) $requested_action));
-
-        if ($staff_id <= 0 || $requested_action === '') {
-            return false;
-        }
-
-        $attendance_table = db_prefix() . 'fs_attendance';
-        if (!$this->db->table_exists($attendance_table)) {
-            return false;
-        }
-
-        $has_open_record = (bool) $this->db
-            ->from($attendance_table)
-            ->where('staff_id', $staff_id)
-            ->where('clock_out IS NULL', null, false)
-            ->limit(1)
-            ->count_all_results();
-
-        $has_active_break = $this->has_active_break_session($staff_id);
-
-        if ($requested_action === 'clock_in') {
-            return !$has_open_record;
-        }
-
-        if ($requested_action === 'clock_out') {
-            return $has_open_record && !$has_active_break;
-        }
-
-        return false;
+        return (int) $staff_id > 0 && in_array($requested_action, ['clock_in', 'clock_out'], true)
+            && in_array($requested_action, $this->get_employee_attendance_state($staff_id)['allowed_actions'], true);
     }
 
     /**
@@ -185,50 +169,11 @@ class Field_staff_model extends App_Model
      */
     public function validate_break_transition($staff_id, $requested_status)
     {
-        $staff_id = (int) $staff_id;
         $requested_status = strtolower(trim((string) $requested_status));
-
-        if ($staff_id <= 0 || $requested_status === '') {
-            return false;
-        }
-
-        $attendance_table = db_prefix() . 'fs_attendance';
-        if (!$this->db || !method_exists($this->db, 'table_exists') || !$this->db->table_exists($attendance_table)) {
-            return false;
-        }
-
-        $has_open_record = (bool) $this->db
-            ->from($attendance_table)
-            ->where('staff_id', $staff_id)
-            ->where('clock_out IS NULL', null, false)
-            ->limit(1)
-            ->count_all_results();
-
-        $has_active_break = $this->has_active_break_session($staff_id);
-
-        if ($requested_status === 'clock_in') {
-            return !$has_open_record;
-        }
-
-        $has_pending_break = $this->has_pending_break_return($staff_id);
-
-        if ($requested_status === 'break_out') {
-            return $has_open_record && !$has_active_break && !$has_pending_break;
-        }
-
-        if ($requested_status === 'break_in') {
-            return $has_open_record && ($has_active_break || $has_pending_break);
-        }
-
-        if ($requested_status === 'working') {
-            return $has_open_record && !$has_active_break;
-        }
-
-        if ($requested_status === 'clock_out') {
-            return $has_open_record && !$has_active_break;
-        }
-
-        return false;
+        if ((int) $staff_id <= 0) { return false; }
+        $state = $this->get_employee_attendance_state($staff_id);
+        return $requested_status === 'working' ? $state['status'] === 'working'
+            : in_array($requested_status, $state['allowed_actions'], true);
     }
 
     /**
@@ -270,7 +215,7 @@ class Field_staff_model extends App_Model
      *
      * @return bool
      */
-    public function record_break_session($staff_id, $attendance_id, $direction, $break_type = 'paid', $notes = '')
+    private function record_break_session($staff_id, $attendance_id, $direction, $break_type = 'paid', $notes = '')
     {
         $staff_id = (int) $staff_id;
         $attendance_id = (int) $attendance_id;
@@ -287,27 +232,17 @@ class Field_staff_model extends App_Model
         }
 
         $break_table = db_prefix() . 'fs_break_sessions';
-        $active_row = $this->db
-            ->select('id, ended_at, break_in_at, break_out_at')
-            ->from($break_table)
-            ->where('staff_id', $staff_id)
-            ->where('attendance_id', $attendance_id)
-            ->where('ended_at IS NULL', null, false)
-            ->limit(1)
-            ->get()
-            ->row_array();
-
-        if (!is_array($active_row) || empty($active_row)) {
-            $active_row = $this->db
-                ->select('id, ended_at, break_in_at, break_out_at')
-                ->from($break_table)
-                ->where('staff_id', $staff_id)
-                ->where('attendance_id', $attendance_id)
-                ->where('break_in_at IS NULL', null, false)
-                ->where('break_out_at IS NOT NULL', null, false)
-                ->limit(1)
-                ->get()
-                ->row_array();
+        $attendance = $this->db->from(db_prefix() . 'fs_attendance')
+            ->where('id', $attendance_id)->where('staff_id', $staff_id)->get()->row_array();
+        if (!$attendance) {
+            throw new DomainException('The active shift could not be found.');
+        }
+        $effective = $this->resolve_payroll_attendance($attendance);
+        $active_row = [];
+        foreach ($effective['break_rows'] as $break) {
+            if (empty($break['break_in_at']) && empty($break['ended_at'])) {
+                $active_row = $break;
+            }
         }
 
         if ($direction === 'break_out') {
@@ -315,10 +250,11 @@ class Field_staff_model extends App_Model
                 return false;
             }
 
+            $now = new DateTimeImmutable('now', $this->resolve_business_timezone());
             return (bool) $this->db->insert($break_table, [
                 'staff_id' => $staff_id,
                 'attendance_id' => $attendance_id,
-                'break_out_at' => date('Y-m-d H:i:s'),
+                'break_out_at' => $now->format('Y-m-d H:i:s'),
                 'break_type' => $break_type,
                 'notes' => $notes,
                 'created_at' => date('Y-m-d H:i:s'),
@@ -330,14 +266,91 @@ class Field_staff_model extends App_Model
             return false;
         }
 
+        $started = $this->parse_datetime_or_null((string) $active_row['break_out_at']);
+        $now = new DateTimeImmutable('now', $this->resolve_business_timezone());
+        if ($started === null || $now->getTimestamp() <= $started->getTimestamp()) {
+            throw new DomainException('Break In must be later than Break Out. Please retry after a second, or request a correction.');
+        }
+        $timestamp = $now->format('Y-m-d H:i:s');
         $this->db->where('id', (int) $active_row['id']);
         return (bool) $this->db->update($break_table, [
-            'break_in_at' => date('Y-m-d H:i:s'),
-            'ended_at' => date('Y-m-d H:i:s'),
-            'break_type' => $break_type,
-            'notes' => $notes,
+            'break_in_at' => $timestamp,
+            'ended_at' => $timestamp,
             'updated_at' => date('Y-m-d H:i:s'),
         ]);
+    }
+
+    public function get_employee_attendance_state($staff_id)
+    {
+        $rows = $this->db->from(db_prefix() . 'fs_attendance')->where('staff_id', (int) $staff_id)
+            ->where('clock_out IS NULL', null, false)->order_by('clock_in', 'DESC')->get()->result_array();
+        $effective_rows = [];
+        $issue = '';
+        foreach ($rows as $row) {
+            try {
+                $effective = $this->resolve_payroll_attendance($row);
+                if (empty($effective['clock_out'])) {
+                    $effective_rows[] = $effective;
+                }
+            } catch (DomainException $e) {
+                $effective_rows[] = $row;
+                $issue = $e->getMessage();
+            }
+        }
+        $attendance = $effective_rows[0] ?? null;
+        if (count($effective_rows) > 1) {
+            $issue = 'Multiple open shifts require an authorized correction.';
+        }
+        $state = [
+            'staff_id' => (int) $staff_id, 'attendance_id' => $attendance ? (int) $attendance['id'] : null,
+            'clocked_in' => $attendance !== null, 'on_break' => false, 'status' => 'clocked_out',
+            'clock_in' => $attendance['clock_in'] ?? null, 'break_started_at' => null,
+            'elapsed_break_seconds' => 0, 'break_type' => null, 'allowed_actions' => ['clock_in'],
+            'issue' => $issue, 'server_time' => time(), 'last_updated' => date('c'),
+        ];
+        if (!$attendance) {
+            return $state;
+        }
+        try {
+            $effective = $attendance;
+            $summary = $this->summarize_attendance_record($effective);
+            if ($summary['has_invalid_timestamp']) {
+                $issue = 'Malformed or overlapping attendance/break timestamps require an authorized correction.';
+            }
+            $clock_start = $this->parse_datetime_or_null((string) $effective['clock_in']);
+            if ($clock_start && $clock_start->getTimestamp() > time()) {
+                $issue = 'A future clock-in timestamp requires an authorized correction.';
+            }
+            foreach ($summary['break_rows'] as $break) {
+                foreach (['break_out_at', 'break_in_at', 'ended_at'] as $field) {
+                    $timestamp = $this->parse_datetime_or_null($break[$field] ?? '');
+                    if ($timestamp && $timestamp->getTimestamp() > time()) {
+                        $issue = 'A future break timestamp requires an authorized correction.';
+                    }
+                }
+            }
+            $open_breaks = array_values(array_filter($summary['break_rows'], function ($row) {
+                return empty($row['break_in_at']) && empty($row['ended_at']);
+            }));
+            if (count($open_breaks) > 1) {
+                $issue = 'Overlapping open breaks require an authorized correction.';
+            }
+            $active = $open_breaks[0] ?? null;
+            $state['on_break'] = $active !== null;
+            $state['break_started_at'] = $active['break_out_at'] ?? null;
+            $state['break_type'] = $active['break_type'] ?? null;
+            $start = $active ? $this->parse_datetime_or_null((string) $active['break_out_at']) : null;
+            $state['elapsed_break_seconds'] = $start ? max(0, time() - $start->getTimestamp()) : 0;
+            if ($start && $start->getTimestamp() > time()) {
+                $issue = 'A future break timestamp requires an authorized correction.';
+            }
+        } catch (DomainException $e) {
+            $issue = $e->getMessage();
+        }
+        $state['issue'] = $issue;
+        $state['status'] = $issue !== '' ? 'timestamp_issue' : ($state['on_break'] ? 'on_break' : 'working');
+        $state['allowed_actions'] = $issue !== '' ? [] : ($state['on_break'] ? ['break_in'] : ['break_out', 'clock_out']);
+        return $state;
     }
 
     /**
@@ -593,25 +606,30 @@ class Field_staff_model extends App_Model
             $date = date('Y-m-d');
         }
 
-        $select_fields = 'a.id, a.staff_id, a.date, a.clock_in, a.clock_out, a.notes, s.firstname, s.lastname';
+        $select_fields = 'a.id, a.staff_id, a.date, a.clock_in, a.clock_out, a.raw_punches, a.notes, s.firstname, s.lastname';
         if ($this->db && method_exists($this->db, 'field_exists') && $this->db->field_exists('department_id', $staff_table)) {
             $select_fields .= ', s.department_id';
         }
 
-        $sessions = $this->db
+        $query = $this->db
             ->select($select_fields)
             ->from($attendance_table . ' a')
-            ->join($staff_table . ' s', 's.' . ($this->db->field_exists('staffid', $staff_table) ? 'staffid' : 'id') . ' = a.staff_id', 'left')
-            ->where('a.date', $date)
-            ->where('a.clock_out IS NULL', null, false)
+            ->join($staff_table . ' s', 's.' . ($this->db->field_exists('staffid', $staff_table) ? 'staffid' : 'id') . ' = a.staff_id', 'left');
+        if ($date === date('Y-m-d')) {
+            $query->group_start()->where('a.date', $date)->or_where('a.clock_out IS NULL', null, false)->group_end();
+        } else {
+            $query->where('a.date', $date);
+        }
+        $sessions = $query
             ->order_by('a.clock_in', 'DESC')
             ->get()
             ->result_array();
 
         $team = [];
+        $seen = [];
         foreach ($sessions as $session) {
             $staff_id = (int) ($session['staff_id'] ?? 0);
-            if ($staff_id <= 0) {
+            if ($staff_id <= 0 || isset($seen[$staff_id])) {
                 continue;
             }
 
@@ -627,72 +645,28 @@ class Field_staff_model extends App_Model
                 continue;
             }
 
-            $break_row = $this->db
-                ->select('id, break_out_at, break_in_at, break_type, ended_at')
-                ->from($break_table)
-                ->where('staff_id', $staff_id)
-                ->where('attendance_id', (int) ($session['id'] ?? 0))
-                ->where('ended_at IS NULL', null, false)
-                ->order_by('break_out_at', 'DESC')
-                ->limit(1)
-                ->get()
-                ->row_array();
-
-            $has_invalid_break_timestamp = false;
-            $invalid_break_fields = [];
-            if (is_array($break_row) && !empty($break_row)) {
-                $break_out_at = trim((string) ($break_row['break_out_at'] ?? ''));
-                $break_in_at = trim((string) ($break_row['break_in_at'] ?? ''));
-                $ended_at = trim((string) ($break_row['ended_at'] ?? ''));
-
-                foreach (['break_out_at' => $break_out_at, 'break_in_at' => $break_in_at, 'ended_at' => $ended_at] as $field_name => $field_value) {
-                    if ($field_value !== '' && $this->parse_datetime_or_null($field_value) === null) {
-                        $has_invalid_break_timestamp = true;
-                        $invalid_break_fields[] = $field_name;
-                    }
-                }
-
-                if ($break_out_at === '' || $this->parse_datetime_or_null($break_out_at) === null) {
-                    $break_row = [];
-                } elseif ($break_in_at !== '' && $this->parse_datetime_or_null($break_in_at) === null) {
-                    $break_row = [];
-                } elseif ($ended_at !== '' && $this->parse_datetime_or_null($ended_at) === null) {
-                    $break_row = [];
-                }
-            }
-
-            $now = new DateTimeImmutable('now', $this->resolve_business_timezone());
-            $elapsed_break_seconds = 0;
-            if (is_array($break_row) && isset($break_row['break_out_at']) && trim((string) $break_row['break_out_at']) !== '') {
-                $break_start = $this->parse_datetime_or_null((string) $break_row['break_out_at']);
-                if ($break_start !== null) {
-                    $elapsed_break_seconds = max(0, $now->getTimestamp() - $break_start->getTimestamp());
-                }
-            }
-
-            $missing_break_return = is_array($break_row)
-                && !empty($break_row)
-                && trim((string) ($break_row['break_in_at'] ?? '')) === ''
-                && trim((string) ($break_row['ended_at'] ?? '')) === '';
-
-            $status = 'working';
-            if ($has_invalid_break_timestamp) {
-                $status = 'timestamp_issue';
-            } elseif (is_array($break_row) && !empty($break_row)) {
-                $status = 'on_break';
+            $seen[$staff_id] = true;
+            $state = $this->get_employee_attendance_state($staff_id);
+            $summary = $this->get_attendance_payable_summary($session);
+            if (!empty($session['clock_out']) && !$state['clocked_in']) {
+                $state['status'] = $summary['has_unresolved_breaks'] ? 'timestamp_issue' : 'clocked_out';
+                $state['clock_in'] = $summary['effective_clock_in'];
+                $state['issue'] = $summary['has_unresolved_breaks'] ? 'Attendance requires correction before payroll.' : '';
             }
 
             $team[] = [
                 'staff_id' => $staff_id,
                 'name' => trim((string) ($session['firstname'] ?? '') . ' ' . (string) ($session['lastname'] ?? '')) ?: 'Staff #' . $staff_id,
-                'status' => $status,
-                'missing_break_return' => $missing_break_return && !$has_invalid_break_timestamp,
-                'unresolved_timestamp' => $has_invalid_break_timestamp,
-                'invalid_break_fields' => $invalid_break_fields,
-                'clock_in' => $session['clock_in'] ?? null,
-                'current_break_type' => is_array($break_row) ? strtolower((string) ($break_row['break_type'] ?? 'paid')) : 'paid',
-                'elapsed_break_seconds' => $elapsed_break_seconds,
-                'is_active' => true,
+                'status' => $state['status'],
+                'missing_break_return' => $summary['missing_break_in'],
+                'unresolved_timestamp' => $summary['has_invalid_timestamp'],
+                'issue' => $state['issue'],
+                'clock_in' => $state['clock_in'],
+                'break_started_at' => $state['break_started_at'],
+                'current_break_type' => $state['break_type'],
+                'elapsed_break_seconds' => $state['elapsed_break_seconds'],
+                'is_active' => $state['clocked_in'],
+                'summary' => $summary,
             ];
         }
 
@@ -1146,7 +1120,7 @@ class Field_staff_model extends App_Model
         $missing_break_in = false;
         $shift_start = $this->parse_datetime_or_null($clock_in);
         $shift_end = $this->parse_datetime_or_null($clock_out);
-        $has_invalid_timestamp = ($clock_in !== '' && $shift_start === null)
+        $has_invalid_timestamp = $shift_start === null
             || ($clock_out !== '' && $shift_end === null)
             || ($shift_start !== null && $shift_end !== null && $shift_end <= $shift_start);
         $invalid_breaks = [];
@@ -1167,6 +1141,8 @@ class Field_staff_model extends App_Model
             $break_start = $this->parse_datetime_or_null($break_out);
             $break_end = $this->parse_datetime_or_null($break_in !== '' ? $break_in : $ended_at);
             if (!in_array($break_type, ['paid', 'unpaid'], true) || $break_start === null
+                || ($shift_start !== null && $break_start !== null && $break_start < $shift_start)
+                || ($break_in === '' && $ended_at !== '')
                 || ($break_end !== null && ($break_end <= $break_start
                     || ($shift_start !== null && $break_start < $shift_start)
                     || ($shift_end !== null && $break_end > $shift_end)))) {
@@ -1206,7 +1182,13 @@ class Field_staff_model extends App_Model
             }
         }
 
-        $payable_seconds = max(0.0, $shift_seconds - $unpaid_break_seconds);
+        $policy_shift_seconds = $shift_seconds;
+        if (!empty($attendance_row['raw_punches']) && $shift_start !== null && $shift_end !== null) {
+            $policy_in = $this->apply_working_time_policy($shift_start->format('Y-m-d'), $clock_in, 'in');
+            $policy_out = $this->apply_working_time_policy($shift_end->format('Y-m-d'), $clock_out, 'out');
+            $policy_shift_seconds = $this->calculate_duration_seconds($policy_in, $policy_out);
+        }
+        $payable_seconds = max(0.0, $policy_shift_seconds - $unpaid_break_seconds);
         $status = 'closed';
         if ($has_invalid_timestamp) {
             $status = 'timestamp_issue';
@@ -1236,6 +1218,25 @@ class Field_staff_model extends App_Model
         ];
     }
 
+    public function get_attendance_payable_summary(array $attendance)
+    {
+        try {
+            $effective = $this->resolve_payroll_attendance($attendance);
+            return array_merge($this->summarize_attendance_record($effective), [
+                'effective_clock_in' => $effective['clock_in'],
+                'effective_clock_out' => $effective['clock_out'] ?? null,
+            ]);
+        } catch (DomainException $e) {
+            $summary = $this->summarize_attendance_record($attendance);
+            $summary['effective_clock_in'] = $attendance['clock_in'] ?? null;
+            $summary['effective_clock_out'] = $attendance['clock_out'] ?? null;
+            $summary['has_unresolved_breaks'] = true;
+            $summary['status'] = 'timestamp_issue';
+            $summary['issue'] = $e->getMessage();
+            return $summary;
+        }
+    }
+
     /**
      * Get recent attendance rows for dashboard history.
      *
@@ -1260,7 +1261,7 @@ class Field_staff_model extends App_Model
         $attendance_table = db_prefix() . 'fs_attendance';
 
         return $this->db
-            ->select('id, date, clock_in, clock_out, in_latitude, in_longitude, out_latitude, out_longitude, notes')
+            ->select('id, staff_id, date, clock_in, clock_out, raw_punches, in_latitude, in_longitude, out_latitude, out_longitude, notes')
             ->from($attendance_table)
             ->where('staff_id', $staff_id)
             ->order_by('date', 'DESC')
@@ -1297,7 +1298,7 @@ class Field_staff_model extends App_Model
 
         $attendance_table = db_prefix() . 'fs_attendance';
         $query = $this->db
-            ->select('id, date, clock_in, clock_out, in_latitude, in_longitude, out_latitude, out_longitude, notes')
+            ->select('id, staff_id, date, clock_in, clock_out, raw_punches, in_latitude, in_longitude, out_latitude, out_longitude, notes')
             ->from($attendance_table)
             ->where('staff_id', $staff_id);
 
@@ -1334,7 +1335,7 @@ class Field_staff_model extends App_Model
         $attendance_table = db_prefix() . 'fs_attendance';
 
         return $this->db
-            ->select('id, staff_id, date, clock_in, clock_out, in_latitude, in_longitude, out_latitude, out_longitude, notes')
+            ->select('id, staff_id, date, clock_in, clock_out, raw_punches, in_latitude, in_longitude, out_latitude, out_longitude, notes')
             ->from($attendance_table)
             ->order_by('date', 'DESC')
             ->order_by('clock_in', 'DESC')
@@ -1360,7 +1361,7 @@ class Field_staff_model extends App_Model
         $attendance_table = db_prefix() . 'fs_attendance';
 
         $row = $this->db
-            ->select('id, staff_id, date, clock_in, clock_out, in_latitude, in_longitude, out_latitude, out_longitude, notes')
+            ->select('id, staff_id, date, clock_in, clock_out, raw_punches, in_latitude, in_longitude, out_latitude, out_longitude, notes')
             ->from($attendance_table)
             ->where('staff_id', $staff_id)
             ->order_by('date', 'DESC')
@@ -3193,8 +3194,7 @@ class Field_staff_model extends App_Model
             $increment = $rounding_mode === 'nearest_15' ? 15 : 30;
             $minutes_since_midnight = ((int) $normalized->format('G') * 60) + (int) $normalized->format('i');
             $rounded_minutes = (int) round($minutes_since_midnight / $increment) * $increment;
-            $rounded_minutes = ((($rounded_minutes % 1440) + 1440) % 1440);
-            $date_start = new DateTimeImmutable($date . ' 00:00:00', $this->resolve_business_timezone());
+            $date_start = new DateTimeImmutable($parsed->format('Y-m-d') . ' 00:00:00', $this->resolve_business_timezone());
             $normalized = $date_start->modify('+' . $rounded_minutes . ' minutes');
         }
 
@@ -3228,7 +3228,32 @@ class Field_staff_model extends App_Model
         $notes = trim((string) ($data['notes'] ?? ''));
 
         if ($staff_id <= 0 || $date === '' || $clock_in === '' || $clock_out === '') {
-            return false;
+            throw new DomainException('An employee, work date, Clock In and Clock Out are required.');
+        }
+        $timestamps = ['clock_in' => $clock_in, 'clock_out' => $clock_out];
+        foreach ($timestamps as &$value) {
+            if (preg_match('/^\d{2}:\d{2}(?::\d{2})?$/', $value)) {
+                $value = $date . ' ' . $value;
+            }
+            $value = str_replace('T', ' ', $value);
+            if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/', $value)) {
+                $value .= ':00';
+            }
+        }
+        unset($value);
+        $clock_in = $timestamps['clock_in'];
+        $clock_out = $timestamps['clock_out'];
+        $start = $this->parse_datetime_or_null($clock_in);
+        $end = $this->parse_datetime_or_null($clock_out);
+        if (!$start || !$end || $start->format('Y-m-d') !== $date || $end <= $start) {
+            throw new DomainException('Enter valid Clock In and Clock Out dates/times, with Clock Out later than Clock In. Specify the next date for an overnight shift.');
+        }
+        $payrolls = $this->db->from(db_prefix() . 'fs_payroll_master')->where('staff_id', $staff_id)
+            ->where('start_date <=', $date)->where('end_date >=', $date)->get()->result_array();
+        foreach ($payrolls as $payroll) {
+            if (in_array($payroll['status'], ['approved', 'paid'], true)) {
+                throw new DomainException('Attendance covered by approved or paid payroll cannot be overwritten with manual attendance.');
+            }
         }
 
         $payload = [
@@ -3241,7 +3266,7 @@ class Field_staff_model extends App_Model
         ];
 
         $existing = $this->db
-            ->select('id')
+            ->select('id, clock_out, raw_punches')
             ->from($attendance_table)
             ->where('staff_id', $staff_id)
             ->where('date', $date)
@@ -3251,6 +3276,11 @@ class Field_staff_model extends App_Model
             ->row_array();
 
         if (!empty($existing) && isset($existing['id'])) {
+            $break_count = $this->db->from(db_prefix() . 'fs_break_sessions')
+                ->where('attendance_id', (int) $existing['id'])->count_all_results();
+            if (empty($existing['clock_out']) || !empty($existing['raw_punches']) || $break_count > 0) {
+                throw new DomainException('Use the audited attendance correction workflow for open shifts, raw punches or records with breaks.');
+            }
             $this->db->where('id', (int) $existing['id']);
             return (bool) $this->db->update($attendance_table, $payload);
         }
@@ -3300,13 +3330,14 @@ class Field_staff_model extends App_Model
 
         foreach ($rows as &$row) {
             $current_staff_id = isset($row['staff_id']) ? (int) $row['staff_id'] : 0;
+            $summary = $this->get_attendance_payable_summary($row);
             $staff_row = isset($staff_lookup[$current_staff_id]) ? $staff_lookup[$current_staff_id] : $this->get_staff_row($current_staff_id);
             $profile = $this->get_payroll_profile($current_staff_id);
             $metrics = $this->calculate_shift_metrics(
                 $current_staff_id,
                 isset($row['date']) ? $row['date'] : '',
-                isset($row['clock_in']) ? $row['clock_in'] : '',
-                isset($row['clock_out']) ? $row['clock_out'] : '',
+                $summary['effective_clock_in'] ?? '',
+                $summary['effective_clock_out'] ?? '',
                 $profile,
                 $shift_map,
                 $distribution_map
@@ -3315,7 +3346,10 @@ class Field_staff_model extends App_Model
             $row['worker_name'] = $this->resolve_staff_name($staff_row, $current_staff_id);
             $row['department_id'] = (int) $profile['department_id'];
             $row['department_name'] = $this->get_department_name((int) $profile['department_id']);
-            $row['total_hours'] = round($this->calculate_duration_seconds($row['clock_in'] ?? '', $row['clock_out'] ?? '') / 3600, 2);
+            $row['attendance_summary'] = $summary;
+            $row['calculation_issue'] = $summary['has_unresolved_breaks'] || empty($summary['effective_clock_out'])
+                ? ($summary['issue'] ?? 'Attendance requires completion or correction.') : '';
+            $row['total_hours'] = $row['calculation_issue'] !== '' ? null : round($summary['payable_seconds'] / 3600, 6);
             $row['late_in_minutes'] = $metrics['late_in_minutes'];
             $row['early_out_minutes'] = $metrics['early_out_minutes'];
             $row['over_work_minutes'] = $metrics['over_work_minutes'];
@@ -3384,14 +3418,24 @@ class Field_staff_model extends App_Model
         }
 
         foreach ($summary_rows as $key => $row) {
-            $regular_hours = min((float) $row['total_hours_worked'], $this->get_regular_hours_cap());
-            $overtime_hours = max((float) $row['total_hours_worked'] - $this->get_regular_hours_cap(), 0);
+            try {
+                $ledger = $this->get_payroll_attendance_ledger((int) $row['staff_id'], $start_date, $end_date);
+                $regular_hours = array_sum(array_column($ledger, 'regular_hours'));
+                $overtime_hours = array_sum(array_column($ledger, 'ot_hours'));
+                $summary_rows[$key]['total_hours_worked'] = round($regular_hours + $overtime_hours, 6);
+                $summary_rows[$key]['regular_hours'] = round($regular_hours, 6);
+                $summary_rows[$key]['overtime_hours'] = round($overtime_hours, 6);
+                $summary_rows[$key]['calculation_issue'] = '';
+            } catch (DomainException $e) {
+                $summary_rows[$key]['total_hours_worked'] = null;
+                $summary_rows[$key]['regular_hours'] = null;
+                $summary_rows[$key]['overtime_hours'] = null;
+                $summary_rows[$key]['calculation_issue'] = $e->getMessage();
+            }
             $profile = $this->get_payroll_profile((int) $row['staff_id']);
 
-            $summary_rows[$key]['total_hours_worked'] = round((float) $row['total_hours_worked'], 2);
-            $summary_rows[$key]['regular_hours'] = round($regular_hours, 2);
-            $summary_rows[$key]['overtime_hours'] = round($overtime_hours, 2);
-            $summary_rows[$key]['total_allowance_due'] = round((float) $row['total_days_worked'] * (float) $profile['daily_field_allowance'], 2);
+            $summary_rows[$key]['total_allowance_due'] = !empty($summary_rows[$key]['calculation_issue']) ? null
+                : round((float) $row['total_days_worked'] * (float) $profile['daily_field_allowance'], 2);
             unset($summary_rows[$key]['_days']);
         }
 
@@ -3562,12 +3606,21 @@ class Field_staff_model extends App_Model
             }
 
             $grouped[$group_name]['headcount']++;
+            if (!empty($row['calculation_issue'])) {
+                $grouped[$group_name]['calculation_issue'] = $row['calculation_issue'];
+            }
             $grouped[$group_name]['total_regular_hours'] += (float) $row['regular_hours'];
             $grouped[$group_name]['total_overtime_hours'] += (float) $row['overtime_hours'];
             $grouped[$group_name]['total_hours_worked'] += (float) $row['total_hours_worked'];
         }
 
         foreach ($grouped as $key => $group_row) {
+            if (!empty($group_row['calculation_issue'])) {
+                $grouped[$key]['total_regular_hours'] = null;
+                $grouped[$key]['total_overtime_hours'] = null;
+                $grouped[$key]['total_hours_worked'] = null;
+                continue;
+            }
             $grouped[$key]['total_regular_hours'] = round((float) $group_row['total_regular_hours'], 2);
             $grouped[$key]['total_overtime_hours'] = round((float) $group_row['total_overtime_hours'], 2);
             $grouped[$key]['total_hours_worked'] = round((float) $group_row['total_hours_worked'], 2);
@@ -3849,7 +3902,7 @@ class Field_staff_model extends App_Model
         $department_id = (int) $department_id;
 
         $select = $this->db
-            ->select('a.id, a.staff_id, a.date, a.clock_in, a.clock_out, a.notes, a.in_latitude, a.in_longitude, a.out_latitude, a.out_longitude')
+            ->select('a.id, a.staff_id, a.date, a.clock_in, a.clock_out, a.raw_punches, a.notes, a.in_latitude, a.in_longitude, a.out_latitude, a.out_longitude')
             ->select('s.*')
             ->from($attendance_table . ' a')
             ->join($staff_table . ' s', 's.' . $staff_key . ' = a.staff_id', 'left');
@@ -3914,10 +3967,8 @@ class Field_staff_model extends App_Model
                 ];
             }
 
-            $seconds = $this->calculate_duration_seconds(
-                isset($record['clock_in']) ? $record['clock_in'] : null,
-                isset($record['clock_out']) ? $record['clock_out'] : null
-            );
+            $attendance_summary = $this->get_attendance_payable_summary($record);
+            $seconds = $attendance_summary['payable_seconds'];
             $hours = $seconds / 3600;
 
             $grouped_rows[$current_staff_id]['total_hours'] += $hours;
@@ -3929,8 +3980,8 @@ class Field_staff_model extends App_Model
                 $grouped_rows[$current_staff_id]['total_allowance_due'] += (float) $grouped_rows[$current_staff_id]['daily_field_allowance'];
             }
 
-            $clock_in = isset($record['clock_in']) ? trim((string) $record['clock_in']) : '';
-            $clock_out = isset($record['clock_out']) ? trim((string) $record['clock_out']) : '';
+            $clock_in = trim((string) ($attendance_summary['effective_clock_in'] ?? ''));
+            $clock_out = trim((string) ($attendance_summary['effective_clock_out'] ?? ''));
             if ($clock_in !== '' && ($grouped_rows[$current_staff_id]['latest_clock_in'] === '' || $clock_in > $grouped_rows[$current_staff_id]['latest_clock_in'])) {
                 $grouped_rows[$current_staff_id]['latest_clock_in'] = $clock_in;
             }
@@ -3951,13 +4002,23 @@ class Field_staff_model extends App_Model
         ];
 
         foreach ($grouped_rows as $staff_key_value => $grouped_row) {
-            $regular_hours = min((float) $grouped_row['total_hours'], $this->get_regular_hours_cap());
-            $overtime_hours = max((float) $grouped_row['total_hours'] - $this->get_regular_hours_cap(), 0.0);
-
-            $grouped_rows[$staff_key_value]['total_hours'] = round((float) $grouped_row['total_hours'], 2);
-            $grouped_rows[$staff_key_value]['regular_hours'] = round($regular_hours, 2);
-            $grouped_rows[$staff_key_value]['overtime_hours'] = round($overtime_hours, 2);
-            $grouped_rows[$staff_key_value]['total_allowance_due'] = round((float) $grouped_row['total_allowance_due'], 2);
+            try {
+                $ledger = $this->get_payroll_attendance_ledger((int) $staff_key_value, $start_date, $end_date);
+                $regular_hours = array_sum(array_column($ledger, 'regular_hours'));
+                $overtime_hours = array_sum(array_column($ledger, 'ot_hours'));
+                $grouped_rows[$staff_key_value]['total_hours'] = round($regular_hours + $overtime_hours, 6);
+                $grouped_rows[$staff_key_value]['regular_hours'] = round($regular_hours, 6);
+                $grouped_rows[$staff_key_value]['overtime_hours'] = round($overtime_hours, 6);
+                $grouped_rows[$staff_key_value]['calculation_issue'] = '';
+            } catch (DomainException $e) {
+                $grouped_rows[$staff_key_value]['total_hours'] = null;
+                $grouped_rows[$staff_key_value]['regular_hours'] = null;
+                $grouped_rows[$staff_key_value]['overtime_hours'] = null;
+                $grouped_rows[$staff_key_value]['calculation_issue'] = $e->getMessage();
+                $summary['has_unresolved_attendance'] = true;
+            }
+            $grouped_rows[$staff_key_value]['total_allowance_due'] = !empty($grouped_rows[$staff_key_value]['calculation_issue']) ? null
+                : round((float) $grouped_row['total_allowance_due'], 2);
 
             unset($grouped_rows[$staff_key_value]['_worked_dates']);
 
@@ -3974,10 +4035,11 @@ class Field_staff_model extends App_Model
         return [
             'rows' => $grouped_rows,
             'summary' => [
-                'total_hours_worked' => round((float) $summary['total_hours_worked'], 2),
-                'regular_hours' => round((float) $summary['regular_hours'], 2),
-                'overtime_hours' => round((float) $summary['overtime_hours'], 2),
-                'total_allowance_due' => round((float) $summary['total_allowance_due'], 2),
+                'has_unresolved_attendance' => !empty($summary['has_unresolved_attendance']),
+                'total_hours_worked' => !empty($summary['has_unresolved_attendance']) ? null : round((float) $summary['total_hours_worked'], 2),
+                'regular_hours' => !empty($summary['has_unresolved_attendance']) ? null : round((float) $summary['regular_hours'], 2),
+                'overtime_hours' => !empty($summary['has_unresolved_attendance']) ? null : round((float) $summary['overtime_hours'], 2),
+                'total_allowance_due' => !empty($summary['has_unresolved_attendance']) ? null : round((float) $summary['total_allowance_due'], 2),
             ],
         ];
     }
@@ -4093,6 +4155,55 @@ class Field_staff_model extends App_Model
      *
      * @return array
      */
+    public function get_payroll_attendance_ledger($staff_id, $start_date, $end_date)
+    {
+        $start = DateTimeImmutable::createFromFormat('!Y-m-d', $start_date);
+        $end = DateTimeImmutable::createFromFormat('!Y-m-d', $end_date);
+        if ((int) $staff_id <= 0 || !$start || !$end || $start->format('Y-m-d') !== $start_date
+            || $end->format('Y-m-d') !== $end_date || $end < $start) {
+            throw new DomainException('A valid employee and attendance date window are required.');
+        }
+        $week_start = $this->get_module_setting('field_staff_workweek_start_day', '1');
+        $cap = $this->get_module_setting('field_staff_regular_hours_cap', '44');
+        if (!preg_match('/^[0-6]$/', (string) $week_start) || !is_numeric($cap) || (float) $cap <= 0 || (float) $cap > 168) {
+            throw new DomainException('Configure a valid workweek start day and weekly regular-hours cap.');
+        }
+        $week_offset = ((int) $start->format('w') - (int) $week_start + 7) % 7;
+        $lookback = $start->modify('-' . $week_offset . ' days')->format('Y-m-d');
+        if ($this->has_unresolved_attendance_for_staff($staff_id, $lookback, $end_date)) {
+            throw new DomainException('Resolve attendance timestamps, breaks and pending corrections before calculating payable hours.');
+        }
+        $rows = $this->db->from(db_prefix() . 'fs_attendance')->where('staff_id', (int) $staff_id)
+            ->where('date >=', $lookback)->where('date <=', $end_date)->get()->result_array();
+        usort($rows, function ($a, $b) {
+            return [$a['date'], $a['clock_in'], $a['id']] <=> [$b['date'], $b['clock_in'], $b['id']];
+        });
+        $weeks = [];
+        $ledger = [];
+        foreach ($rows as $raw) {
+            $attendance = $this->resolve_payroll_attendance($raw);
+            $summary = $this->summarize_attendance_record($attendance);
+            $date = (string) $attendance['date'];
+            $day = new DateTimeImmutable($date);
+            $offset = ((int) $day->format('w') - (int) $week_start + 7) % 7;
+            $week = $day->modify('-' . $offset . ' days')->format('Y-m-d');
+            $hours = (float) $summary['payable_seconds'] / 3600;
+            $used = $weeks[$week] ?? 0.0;
+            $regular = min($hours, max((float) $cap - $used, 0.0));
+            $ot = $hours - $regular;
+            $weeks[$week] = $used + $hours;
+            if ($date < $start_date) { continue; }
+            $profile = $this->get_payroll_profile($staff_id, $date);
+            if (!$this->is_overtime_enabled_for_staff($staff_id, (int) ($profile['department_id'] ?? 0), (string) ($profile['payroll_group'] ?? ''))) {
+                $regular = $hours;
+                $ot = 0.0;
+            }
+            $ledger[] = ['attendance' => $attendance, 'summary' => $summary, 'regular_hours' => $regular,
+                'ot_hours' => $ot, 'workweek' => $week];
+        }
+        return $ledger;
+    }
+
     public function calculate_payroll_for_staff($staff_id, $start_date, $end_date, array $context = [])
     {
         $staff_id = (int) $staff_id;
@@ -4110,61 +4221,33 @@ class Field_staff_model extends App_Model
         if (!in_array($payment_basis, ['salary', 'hourly', 'daily', 'per_job', 'per_unit'], true)) {
             throw new DomainException('A valid payment basis must be configured.');
         }
-        $week_start = $this->get_module_setting('field_staff_workweek_start_day', '1');
-        $cap = $this->get_module_setting('field_staff_regular_hours_cap', '44');
-        if (!preg_match('/^[0-6]$/', (string) $week_start) || !is_numeric($cap) || (float) $cap <= 0 || (float) $cap > 168) {
-            throw new DomainException('Configure a valid workweek start day and weekly regular-hours cap.');
-        }
-        $week_offset = ((int) $start->format('w') - (int) $week_start + 7) % 7;
-        $lookback = $start->modify('-' . $week_offset . ' days')->format('Y-m-d');
-        if ($this->has_unresolved_attendance_for_staff($staff_id, $lookback, $end_date)) {
-            throw new DomainException('Resolve attendance timestamps, breaks and pending corrections before calculating payroll.');
-        }
-        $attendance_rows = $this->db->from(db_prefix() . 'fs_attendance')
-            ->where('staff_id', $staff_id)->where('date >=', $lookback)->where('date <=', $end_date)
-            ->order_by('date', 'ASC')->order_by('clock_in', 'ASC')->order_by('id', 'ASC')->get()->result_array();
-        usort($attendance_rows, function ($a, $b) {
-            return [$a['date'], $a['clock_in'], $a['id']] <=> [$b['date'], $b['clock_in'], $b['id']];
-        });
+        $ledger = $this->get_payroll_attendance_ledger($staff_id, $start_date, $end_date);
         $regular_hours = 0.0;
         $ot_hours = 0.0;
         $regular_pay = 0.0;
         $overtime_pay = 0.0;
         $holiday_pay = 0.0;
-        $weeks = [];
         $days = [];
         $evidence = [];
         $holidays = array_column($this->get_holidays(), 'date');
-        foreach ($attendance_rows as $raw) {
-            $attendance = $this->resolve_payroll_attendance($raw);
-            $summary = $this->summarize_attendance_record($attendance);
+        foreach ($ledger as $entry) {
+            $attendance = $entry['attendance'];
+            $summary = $entry['summary'];
             $date = (string) $attendance['date'];
-            $work_day = new DateTimeImmutable($date);
-            $offset = ((int) $work_day->format('w') - (int) $week_start + 7) % 7;
-            $week = $work_day->modify('-' . $offset . ' days')->format('Y-m-d');
-            $hours = (float) $summary['payable_seconds'] / 3600;
-            $used = $weeks[$week] ?? 0.0;
-            $regular = min($hours, max((float) $cap - $used, 0.0));
-            $ot = $hours - $regular;
-            $weeks[$week] = $used + $hours;
-            if ($date < $start_date) {
-                continue;
-            }
+            $week = $entry['workweek'];
+            $regular = $entry['regular_hours'];
+            $ot = $entry['ot_hours'];
+            $hours = $regular + $ot;
             $day_profile = $this->get_payroll_profile($staff_id, $date);
             if (($day_profile['payment_basis'] ?? '') !== $payment_basis) {
                 throw new DomainException('Split the cutoff at a payment-basis change before calculating payroll.');
-            }
-            $enabled = $this->is_overtime_enabled_for_staff($staff_id, (int) ($day_profile['department_id'] ?? 0), (string) ($day_profile['payroll_group'] ?? ''));
-            if (!$enabled) {
-                $regular = $hours;
-                $ot = 0.0;
             }
             $regular_hours += $regular;
             $ot_hours += $ot;
             if ($hours > 0) {
                 $days[$date] = true;
             }
-            $evidence[] = ['attendance_id' => (int) $raw['id'], 'date' => $date,
+            $evidence[] = ['attendance_id' => (int) $attendance['id'], 'date' => $date,
                 'clock_in' => $attendance['clock_in'], 'clock_out' => $attendance['clock_out'],
                 'payable_seconds' => $summary['payable_seconds'], 'unpaid_break_seconds' => $summary['unpaid_break_seconds'],
                 'regular_hours' => $regular, 'ot_hours' => $ot, 'workweek' => $week];
@@ -4257,8 +4340,8 @@ class Field_staff_model extends App_Model
             'overtime_hours' => round($ot_hours, 2),
             'attendance_evidence' => $evidence,
             'work_records' => $work_records,
-            'workweek_start_day' => (int) $week_start,
-            'regular_hours_cap' => (float) $cap,
+            'workweek_start_day' => (int) $this->get_module_setting('field_staff_workweek_start_day', '1'),
+            'regular_hours_cap' => (float) $this->get_module_setting('field_staff_regular_hours_cap', '44'),
             'statutory_rates' => $rates,
             'regular_hours' => round($regular_hours, 2),
             'ot_hours' => round($ot_hours, 2),
@@ -4437,7 +4520,7 @@ class Field_staff_model extends App_Model
      *
      * @return bool
      */
-    public function clock_in($staff_id, $date, $datetime, $latitude, $longitude, $notes)
+    private function clock_in($staff_id, $date, $datetime, $latitude, $longitude, $notes)
     {
         $staff_id  = (int) $staff_id;
         $date      = trim((string) $date);
@@ -4452,15 +4535,14 @@ class Field_staff_model extends App_Model
 
         $attendance_table = db_prefix() . 'fs_attendance';
 
-        $normalized_datetime = $this->apply_working_time_policy($date, $datetime, 'in');
-
         return (bool) $this->db->insert($attendance_table, [
             'staff_id'      => $staff_id,
             'date'          => $date,
-            'clock_in'      => $normalized_datetime,
+            'clock_in'      => $datetime,
             'in_latitude'   => $latitude,
             'in_longitude'  => $longitude,
             'tracking_mode' => 'free-form',
+            'raw_punches' => 1,
             'notes'         => $notes,
         ]);
     }
@@ -4476,7 +4558,7 @@ class Field_staff_model extends App_Model
      *
      * @return bool
      */
-    public function clock_out($staff_id, $datetime, $latitude, $longitude, $notes)
+    private function clock_out($staff_id, $datetime, $latitude, $longitude, $notes, $attendance_id)
     {
         $staff_id  = (int) $staff_id;
         $datetime  = trim((string) $datetime);
@@ -4491,8 +4573,9 @@ class Field_staff_model extends App_Model
         $attendance_table = db_prefix() . 'fs_attendance';
 
         $open_record = $this->db
-            ->select('id, notes')
+            ->select('*')
             ->from($attendance_table)
+            ->where('id', (int) $attendance_id)
             ->where('staff_id', $staff_id)
             ->where('clock_out IS NULL', null, false)
             ->order_by('clock_in', 'DESC')
@@ -4503,15 +4586,19 @@ class Field_staff_model extends App_Model
         if (!$open_record) {
             return false;
         }
+        $effective = $this->resolve_payroll_attendance((array) $open_record);
+        $start = $this->parse_datetime_or_null((string) $effective['clock_in']);
+        $end = $this->parse_datetime_or_null($datetime);
+        if ($start === null || $end === null || $end <= $start) {
+            throw new DomainException('Clock Out must be later than Clock In. Request a correction for invalid timestamps.');
+        }
 
         $merged_notes = $this->merge_notes((string) $open_record->notes, $notes);
 
         $this->db->where('id', (int) $open_record->id);
 
-        $normalized_datetime = $this->apply_working_time_policy(date('Y-m-d', strtotime($datetime)), $datetime, 'out');
-
         return (bool) $this->db->update($attendance_table, [
-            'clock_out'     => $normalized_datetime,
+            'clock_out'     => $datetime,
             'out_latitude'  => $latitude,
             'out_longitude' => $longitude,
             'notes'         => $merged_notes,

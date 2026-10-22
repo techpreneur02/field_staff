@@ -416,6 +416,8 @@ function field_staff_run_pending_migrations()
                 return $table_exists($prefix . 'fs_payroll_workflow_history');
             case '2026_10_22_payroll_work_records':
                 return $table_exists($prefix . 'fs_payroll_work_records');
+            case '2026_10_22_attendance_raw_punches':
+                return $field_exists($prefix . 'fs_attendance', 'raw_punches');
             default:
                 return true;
         }
@@ -618,6 +620,10 @@ function field_staff_run_pending_migrations()
             UNIQUE KEY `uq_fs_work_reference` (`staff_id`, `cutoff_id`, `reference`),
             KEY `idx_fs_work_period` (`staff_id`, `start_date`, `end_date`)
         ) ENGINE=InnoDB;"
+    ];
+
+    $migrations['2026_10_22_attendance_raw_punches'] = [
+        "ALTER TABLE `{$prefix}fs_attendance` ADD COLUMN `raw_punches` TINYINT(1) NOT NULL DEFAULT 0",
     ];
 
     foreach ($migrations as $migration_name => $statement_set) {

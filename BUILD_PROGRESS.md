@@ -1,6 +1,46 @@
 ﻿# Field Staff Module Build Progress
 
-## Latest milestone - 2026-10-22 UTC
+## Latest milestone - break lifecycle, 2026-10-22 UTC
+
+**Implemented and locally tested:** complete authoritative clock/break lifecycle; stable employee-row transaction locking; immutable paid/unpaid break types; multiple breaks; explicit invalid/missing timestamp blockers; raw punch preservation with calculation-time rounding; midnight/overnight date handling; correction-aware operational state; duplicate-safe UI with server action allowlists, processing state, persistent timer and safe error preservation; private attendance history and authorized live Team Operations; shared payable/workweek ledger for payroll and attendance reporting.
+
+Additive migration `2026_10_22_attendance_raw_punches` defaults existing records to legacy behavior. Manual date/time controls explicitly support overnight dates and reject writes over raw/break-bearing/approved history. No rates or statutory verification statuses were changed.
+
+### Validation
+- PASS `php tests\attendance_lifecycle_checks.php`: lifecycle, two immutable paid/unpaid breaks, elapsed state persistence, duplicate/invalid actions, staff-row locking, actual controller actor scoping, authorization/coordinate/type rejection, rollback, overnight/missing/malformed/overlapping breaks, correction-closed raw shifts, explicit manual overnight input and raw/paid-history preservation.
+- PASS `php tests\payroll_regression_checks.php`, including all previous numerical regressions and new mixed-break raw-punch endpoint/snapshot/attendance report parity: 47.5 payable = 44 regular + 3.5 OT; fixture gross 985.
+- PASS `php tests\field_staff_runtime_checks.php` (including additive migration checks).
+- PASS lint for all 13 non-backup PHP files and rendered portal JavaScript syntax check. Package validation is repeated before delivery.
+- PASS clean 41-file ZIP candidate: one `field_staff/` root, zero extra/missing/hash-mismatched files, all three suites pass from extraction. Final packaging is repeated after committing the source checkpoint.
+
+### Deployed and live verified
+- Verified new outside-public-root backup at `/home/erpxolluxn/field_staff_backup_pre_breaks_20261022/`; all 10 then-affected existing files matched direct content read-back.
+- Initial eight-file break deployment hash-verified; raw-punch migration run via module reactivation. Browser-native multipart upload worked where fetch uploads hit verification.
+- Dedicated non-admin staff 2 completed Working -> On break -> Working twice -> Clocked out. The timer survived reload. Unpaid 38 seconds and paid 32 seconds were saved with immutable types; history showed 0.489444 payable hours under the existing policy.
+- Duplicate UI clicks sent one request. Parallel Clock In and Break Out each returned exactly one success and one rejection. The extra short test shift (attendance 28) was clocked out.
+- Invalid Clock Out on break rejected; UI displayed the safe error and preserved confirmed status; all actions disabled while processing.
+- Team and payroll endpoints returned HTTP 403 to the test employee.
+
+### Current blocker and remaining acceptance
+Final source is NOT fully deployed. The shared Perfex tab remained unauthenticated after admin-sign-in confirmations; cPanel verification looped and ended on a browser error page. No authentication or host-security bypass was attempted.
+
+Pending deployment: controller/model, portal and HR management views, all four tests and the three current progress documents. Initial activation/install and HR settings files are already deployed. See HANDOFF.md for the exact 11-file list and test-record evidence.
+
+| Acceptance | Local | Live |
+|---|---|---|
+| Complete two-break lifecycle, timer/reload, safe errors, duplicates | PASS | PASS (initial deployed build) |
+| Paid/unpaid deduction and payroll/snapshot/report parity | PASS | History verified; final admin/payroll comparison blocked |
+| Overnight shift and midnight rounding | PASS | Not run |
+| Missing/malformed returns and correction-aware closing | PASS | On-break Clock Out rejection verified; abandoned/closed fixture not run |
+| My Work / Team Operations / history / payroll agreement | PASS calculation layer | Final team/admin comparison blocked |
+| Salary/daily/job/unit required inputs | PASS | Not run |
+| Non-admin restrictions | PASS | PASS HTTP 403 |
+| Print/PDF | UI/export links tested | Not verified |
+| Approval/payment | Local workflow PASS | Statutory verification still blocks |
+
+Local source, GitHub checkpoint and the single ZIP are synchronized after final validation; demo parity remains explicitly pending.
+
+## Earlier payroll milestone - 2026-10-22 UTC (superseded where noted above)
 
 Authoritative source: `D:\October projects\field_staff\field_staff`, branch `checkpoint/live-nav-ui-review`, existing remote `https://github.com/techpreneur02/field_staff.git`. Resumed from clean checkpoint `012587b`; no existing work was reset.
 

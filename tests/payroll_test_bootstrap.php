@@ -9,7 +9,8 @@ define('BASEPATH', true);
 
 function db_prefix() { return ''; }
 function is_admin() { return $GLOBALS['payroll_test_admin'] ?? true; }
-function get_staff_user_id() { return 7; }
+function get_staff_user_id() { return $GLOBALS['attendance_test_staff_id'] ?? 7; }
+function is_staff_logged_in() { return get_staff_user_id() > 0; }
 function init_head() {}
 function init_tail() {}
 function field_staff_admin_url($path) { return '/admin/' . $path; }
@@ -39,21 +40,33 @@ class PayrollTestDb
     public $commits = 0;
     public $rollbacks = 0;
     public $failTable = '';
+    public $lockedStaff = [];
     private $table = '';
     private $conditions = [];
     private $lastId = 0;
     private $affected = 0;
     private $backup;
+    private $joins = [];
 
     public function table_exists($table) { return array_key_exists($table, $this->tables); }
     public function field_exists($field, $table) { return array_key_exists($field, $this->tables[$table][0] ?? []); }
     public function select($fields, $escape = true) { return $this; }
-    public function from($table) { $this->table = $table; return $this; }
+    public function from($table) { $this->table = explode(' ', $table)[0]; $this->joins = []; return $this; }
     public function where($field, $value = null, $escape = null) { $this->conditions[] = [$field, $value]; return $this; }
     public function order_by($field, $direction = 'ASC') { return $this; }
     public function limit($count) { return $this; }
     public function count_all_results() { return $this->get()->num_rows(); }
-    public function join($table, $on, $type = '') { return $this; }
+    public function join($table, $on, $type = '')
+    {
+        $parts = explode(' ', $table);
+        if (!preg_match('/^(\w+)\.(\w+) = (\w+)\.(\w+)$/', $on, $match) || count($parts) !== 2) {
+            throw new RuntimeException('Unsupported fixture join: ' . $table . ' ON ' . $on);
+        }
+        $joined_on_left = $match[1] === $parts[1];
+        $this->joins[] = [$parts[0], $joined_on_left ? $match[2] : $match[4], $joined_on_left ? $match[4] : $match[2]];
+        return $this;
+    }
+    public function where_in($field, array $values) { return $this->where($field . ' IN', $values); }
     public function group_start() { return $this; }
     public function group_end() { return $this; }
     public function or_where($field, $value) { return $this->where($field, $value); }
@@ -61,6 +74,16 @@ class PayrollTestDb
     private function matches(array $row)
     {
         foreach ($this->conditions as [$field, $expected]) {
+            $field = preg_replace('/^\w+\./', '', $field);
+            if (preg_match('/^([a-z_]+) IN$/i', $field, $in)) {
+                if (!in_array($row[$in[1]] ?? null, $expected)) { return false; }
+                continue;
+            }
+            if (preg_match('/^([a-z_]+) IS (NOT )?NULL$/i', $field, $null)) {
+                $isNull = !isset($row[$null[1]]);
+                if ($isNull === !empty($null[2])) { return false; }
+                continue;
+            }
             if (!preg_match('/^([a-z_]+)(?: (>=|<=|!=|>|<))?$/i', $field, $match)) {
                 throw new RuntimeException('Unsupported fixture condition: ' . $field);
             }
@@ -81,12 +104,30 @@ class PayrollTestDb
     public function get()
     {
         $rows = array_filter($this->tables[$this->table] ?? [], function ($row) { return $this->matches($row); });
+        foreach ($rows as &$row) {
+            $id = $row['id'] ?? null;
+            foreach ($this->joins as [$table, $joined_field, $base_field]) {
+                foreach ($this->tables[$table] ?? [] as $joined) {
+                    if (($joined[$joined_field] ?? null) == ($row[$base_field] ?? null)) {
+                        $row = array_merge($row, $joined);
+                        break;
+                    }
+                }
+            }
+            if ($id !== null) { $row['id'] = $id; }
+        }
+        unset($row);
         $this->conditions = [];
+        $this->joins = [];
         return new PayrollTestResult($rows);
     }
 
     public function query($sql)
     {
+        if (preg_match('/^SELECT \* FROM staff WHERE staffid = (\d+) FOR UPDATE$/', $sql, $match)) {
+            $this->lockedStaff[] = (int) $match[1];
+            return $this->from('staff')->where('staffid', (int) $match[1])->get();
+        }
         if (preg_match('/^SELECT \* FROM (\w+) WHERE id = (\d+) FOR UPDATE$/', $sql, $match)) {
             return $this->from($match[1])->where('id', (int) $match[2])->get();
         }
