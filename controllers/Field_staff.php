@@ -1570,6 +1570,13 @@ class Field_staff extends AdminController
                             'message' => 'Approved or paid payroll cannot be silently overwritten for this cutoff.',
                         ]);
                     }
+                    if ($existing_status === 'under_review') {
+                        $this->db->trans_rollback();
+                        $this->respond_json([
+                            'success' => false,
+                            'message' => 'Payroll under review cannot be recalculated. Return it to draft through the audited workflow first.',
+                        ]);
+                    }
                 }
 
                 if (!empty($existing) && isset($existing['id'])) {
@@ -2206,6 +2213,13 @@ class Field_staff extends AdminController
                     $this->respond_json([
                         'success' => false,
                         'message' => 'Approved or paid payroll cannot be silently overwritten for this cutoff.',
+                    ]);
+                }
+                if ($status_value === 'under_review') {
+                    $this->db->trans_rollback();
+                    $this->respond_json([
+                        'success' => false,
+                        'message' => 'Payroll under review cannot be recalculated. Return it to draft through the audited workflow first.',
                     ]);
                 }
                 $payroll_id = (int) $existing['id'];

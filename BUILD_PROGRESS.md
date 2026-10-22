@@ -21,31 +21,44 @@ The numerical/controller suite passes: five ten-hour shifts = **44 regular + 6 o
 
 These are local PHP/query-builder fixtures, not a real hosted MySQL/Perfex integration run.
 
-### Current phase and hosted evidence
-Phase: local payroll remediation and release checkpoint; controlled deployment blocked before overwrite.
+### Live-testing hardening (implemented, locally tested, live verified)
+- `save_payroll` and `apply_payrun` now reject recalculating an `under_review` payroll. Previously it was silently reset to draft without a workflow audit event.
+- `submit_for_review` now rejects when the staff member has unresolved attendance or pending corrections within the cutoff work dates.
+- New regressions: an under-review endpoint scenario for both routes (rejected, rolled back, status and net preserved), and a pending-correction submission block. The suite fails without the fix (mutation check).
 
-- Authenticated demo and cPanel/File Manager were accessible in this session.
-- `GET /admin/field_staff/get_team_monitor?date=2026-10-21` returned **HTTP 500** with an empty body before deployment. No authenticated server exception establishing the root cause was obtained.
-- A whole-module copy to `/home/erpxolluxn/field_staff_pre_payroll_v2_20261022_0328/` returned **Permission denied** and left a partial backup. It must not be used as a verified rollback set.
-- A subsequent controlled affected-file backup retry, after normal browser verification, received the host HTML **"One moment, please... request is being verified"** instead of an API result.
-- No deployed files were overwritten, no schema migration was run on the demo, and no live payroll or staff records were created/changed. No other site, Perfex core or host security setting was modified.
-- Deployment target remains `/home/erpxolluxn/demo.erpxolluxn.com/modules/field_staff/`. Verify a complete outside-public-root backup before any overwrite, then deploy/check SHA-256 hashes and run dedicated-record acceptance.
+### Current phase and hosted evidence
+Phase: deployed to the demo and live-verified for hourly payroll. Full acceptance is pending statutory verification and the remaining live checks.
+
+- **Backup:** `/home/erpxolluxn/field_staff_backup_pre_payroll_v2_20261022/` is outside the public root and contains every non-`.git` file. It was verified 43/43 with identical sizes.
+  - The older `..._0328` folder is partial and is not a rollback set.
+  - The earlier "Permission denied" came from unreadable `.git/objects` in the deployed folder.
+- **Deployed:** checkpoint `7bcd612` (26 files), then the hardening (controller, model and payroll test).
+- **SHA-256:** all files match. The controller matches after allowing for a cPanel `get_file_content` read-back quirk that strips one duplicate 22-byte meta tag; the on-disk size equals local.
+- **Migrations:** run via module deactivate/reactivate.
+- **Team monitor:** HTTP 500 before deployment, HTTP 200 after. The stale untracked build was the cause.
+- **Live results** on dedicated staff 2 and cutoffs 1?3, group `fs_live_test`:
+  - 44/6 (gross 1060, net 969.90); cross-cutoff 30/0 + 14/6
+  - preview, individual save, bulk payrun and snapshot CSV identical
+  - invalid transitions rejected
+  - late correction blocked by work date; approved correction gave 44/5 (gross 1030, net 942.45)
+  - approval stopped at the statutory gate
+  - under-review re-save and bulk save rejected
+  - pending correction blocked submission
+- No settings were changed, no prior payroll history existed, and no other sites or core files were touched.
 
 ### Remaining acceptance
-1. Resolve normal host file-operation verification/permission failures; obtain and hash-verify the complete affected-file backup.
-2. Deploy the checkpoint, run the idempotent module activation/upgrade migrations (including `2026_10_22_payroll_work_records`), and compare deployed SHA-256 hashes.
-3. Diagnose and resolve the live team-monitor HTTP 500 using authenticated server-side evidence.
-4. Run dedicated staff attendance/break/correction/payroll review/payment scenarios against real Perfex/MySQL, CSV/print/PDF saved-snapshot parity, and non-admin rejection. Do not alter existing payroll history.
-5. Obtain authoritative statutory/legal verification; never mark rates verified solely to make a demo approval succeed.
-
-Release artifact: `D:\October projects\field_staff\field_staff.zip`, one top-level `field_staff/`, excluding Git, backups, logs, credentials, temporary files and nested archives. Rebuild/extract/hash comparison is required after the final source checkpoint.
+1. Authoritative statutory verification (approval and payment are blocked until then; do not mark verified for demo purposes).
+2. Live checks not yet run:
+   - unpaid-break deduction
+   - salary/daily/job/unit inputs and missing-input rejection
+   - non-admin role rejection
+   - print/PDF saved-snapshot parity
+3. Optional, with approval: clean junk (`.git`, `backups/`, nested ZIPs, logs) from the deployed module folder.
 
 ### Checkpoint and package evidence
-- Implementation checkpoint `39857630830f11e9cfff4746ceb576ea54ee1391` was pushed to the existing `origin/checkpoint/live-nav-ui-review` branch; `git ls-remote` returned the same hash and the working tree was clean afterward.
-- PHP lint passed for all **12** non-backup PHP files; both local suites passed.
-- The clean package contains **39 files**. Candidate extraction matched every included source file by SHA-256, with zero missing, extra or mismatched files. Both regression suites passed again from the extracted package.
-- This documentation is a follow-up checkpoint. The final consolidated ZIP is rebuilt and compared again after committing it; use `git log -1` for the final source revision and the delivered ZIP's SHA-256 for artifact identity.
-- Hosted status has not changed: backup/deployment and deployed hash checks remain blocked; the live HTTP 500 and real Perfex/MySQL/PDF/role acceptance remain unresolved.
+- Checkpoints are pushed to `origin/checkpoint/live-nav-ui-review` and verified with `git ls-remote`; use `git log -1` for the current revision.
+- PHP lint passes for all 12 non-backup PHP files; both suites pass.
+- `..\field_staff.zip` is rebuilt after the final commit, extracted, SHA-256 compared with source, and both suites are run from the extraction.
 
 ## Historical progress below (superseded by the milestone above)
 

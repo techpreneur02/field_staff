@@ -6,6 +6,21 @@ The format follows Keep a Changelog principles and semantic versioning intent.
 
 ## [Unreleased]
 
+### Live deployment and hardening - 2026-10-22 UTC
+- Fixed: `save_payroll` and `apply_payrun` no longer silently reset an `under_review` payroll to draft. Recalculation now requires the audited return-to-draft workflow.
+- Fixed: `submit_for_review` is now rejected while unresolved attendance or pending corrections exist for the cutoff's work dates.
+- Added regressions for both fixes; a mutation check confirms they fail without the fix.
+- Deployed to the demo after a verified outside-public-root backup (43/43). Deployed SHA-256 hashes were verified. The module was reactivated to run migrations.
+- The team-monitor HTTP 500 is resolved; it was caused by a stale untracked build.
+- Live-verified on dedicated test records:
+  - 44/6 and cross-cutoff 30/0 + 14/6
+  - preview, save, bulk and snapshot CSV parity
+  - invalid transitions rejected
+  - work-date correction blocker and approved-correction recalculation
+  - statutory approval gate
+  - both hardening fixes
+- Not yet live-verified: statutory approval/payment, unpaid breaks, non-hourly bases, non-admin rejection, print/PDF.
+
 ### Payroll remediation - 2026-10-22 UTC
 - Replaced separate preview/individual/bulk payroll arithmetic with one versioned calculation result and saved calculation evidence.
 - Aggregated overtime by configurable workweek, including earlier-cutoff workweek consumption without paying earlier-cutoff rows twice.

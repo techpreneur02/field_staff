@@ -2296,6 +2296,9 @@ class Field_staff_model extends App_Model
                 if (empty($snapshot)) {
                     return ['success' => false, 'message' => 'A saved snapshot is required before payroll can be submitted for review.'];
                 }
+                if ($this->has_unresolved_attendance_for_staff($staff_id, $payroll_row['start_date'] ?? null, $payroll_row['end_date'] ?? null)) {
+                    return ['success' => false, 'message' => 'Resolve open attendance corrections or timestamps for this period, recalculate the draft, then submit for review.'];
+                }
 
                 $snapshot_payload = $this->get_payroll_snapshot($payroll_id);
                 if (!empty($snapshot_payload)) {

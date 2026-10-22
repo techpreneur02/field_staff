@@ -65,6 +65,9 @@ if (($argv[1] ?? '') === '--endpoint') {
     if ($scenario === 'protected') {
         $model->db->tables['fs_payroll_master'][] = ['id' => 1, 'staff_id' => 21, 'cutoff_id' => 1, 'status' => 'paid', 'net_salary' => 123];
     }
+    if ($scenario === 'under-review') {
+        $model->db->tables['fs_payroll_master'][] = ['id' => 1, 'staff_id' => 21, 'cutoff_id' => 1, 'status' => 'under_review', 'net_salary' => 123];
+    }
     $controller = (new ReflectionClass(Field_staff::class))->newInstanceWithoutConstructor();
     $controller->db = $model->db;
     $controller->field_staff_model = $model;
@@ -256,12 +259,14 @@ foreach (['', 'adjustments', 'explicit-adjustments', 'salary'] as $scenario) {
 echo "PASS actual preview, individual-save and bulk-controller / snapshot numerical parity (hourly, adjustments, salary)\n";
 
 foreach (['save_payroll', 'apply_payrun'] as $route) {
-    foreach (['unresolved', 'component-failure', 'snapshot-failure', 'protected'] as $scenario) {
+    foreach (['unresolved', 'component-failure', 'snapshot-failure', 'protected', 'under-review'] as $scenario) {
         $response = endpoint($route, $scenario);
         check($response['response']['success'] === false, $route . ' should reject ' . $scenario);
         check($response['commits'] === 0 && $response['rollbacks'] === 1, 'Failure must roll back: ' . $route . ' / ' . $scenario);
-        check(count($response['tables']['fs_payroll_master']) === ($scenario === 'protected' ? 1 : 0), 'Rollback must preserve master state');
-        if ($scenario === 'protected') { near($response['tables']['fs_payroll_master'][0]['net_salary'], 123, 'Paid history unchanged'); }
+        $preserved = in_array($scenario, ['protected', 'under-review'], true);
+        check(count($response['tables']['fs_payroll_master']) === ($preserved ? 1 : 0), 'Rollback must preserve master state');
+        if ($preserved) { near($response['tables']['fs_payroll_master'][0]['net_salary'], 123, 'Protected/under-review payroll unchanged: ' . $scenario); }
+        if ($scenario === 'under-review') { check($response['tables']['fs_payroll_master'][0]['status'] === 'under_review', 'Re-save must not silently reset review status'); }
     }
 }
 foreach (['generate_payrun', 'save_payroll', 'apply_payrun', 'save_payroll_work_record'] as $route) {
@@ -285,6 +290,14 @@ $saved = endpoint('save_payroll');
 $model->db->tables = $saved['tables'];
 check(!$model->apply_payroll_workflow_action(1, 'approve', 7)['success'], 'Draft approval must be rejected');
 check(!$model->apply_payroll_workflow_action(1, 'record_payment', 7, ['payment_reference' => 'TEST'])['success'], 'Draft payment must be rejected');
+$model->db->tables['fs_attendance_corrections'][] = [
+    'id' => 1, 'attendance_id' => 16, 'staff_id' => 21, 'correction_type' => 'clock_out',
+    'before_value' => '2026-10-16 18:00:00', 'after_value' => '2026-10-16 20:00:00',
+    'status' => 'pending', 'created_at' => '2026-11-10 09:00:00', 'approved_by' => 7,
+];
+check(!$model->apply_payroll_workflow_action(1, 'submit_for_review', 7)['success'], 'Pending correction on a cutoff work date must block submission');
+check($model->get_payroll_master_row(1)['status'] === 'draft', 'Blocked submission must keep draft status');
+$model->db->tables['fs_attendance_corrections'] = [];
 check($model->apply_payroll_workflow_action(1, 'submit_for_review', 7)['success'], 'Valid submission');
 check($model->apply_payroll_workflow_action(1, 'return_to_draft', 7)['success'], 'Review can be returned to draft');
 check($model->get_payroll_snapshot(1)['status'] === 'draft', 'Return to draft must update saved snapshot status');
