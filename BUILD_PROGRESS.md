@@ -1,31 +1,30 @@
 ﻿# Field Staff Module Build Progress
 
-## Latest milestone - break lifecycle, 2026-10-22 UTC
+## Latest milestone - 2026-10-23 UTC
 
-**Implemented and locally tested:** complete authoritative clock/break lifecycle; stable employee-row transaction locking; immutable paid/unpaid break types; multiple breaks; explicit invalid/missing timestamp blockers; raw punch preservation with calculation-time rounding; midnight/overnight date handling; correction-aware operational state; duplicate-safe UI with server action allowlists, processing state, persistent timer and safe error preservation; private attendance history and authorized live Team Operations; shared payable/workweek ledger for payroll and attendance reporting.
-
-Additive migration `2026_10_22_attendance_raw_punches` defaults existing records to legacy behavior. Manual date/time controls explicitly support overnight dates and reject writes over raw/break-bearing/approved history. No rates or statutory verification statuses were changed.
+**Verified locally:** the repository is clean, on `checkpoint/live-nav-ui-review`, and synced with `origin/checkpoint/live-nav-ui-review` at `fe85e11`. The attendance lifecycle fix and matching regression were committed and pushed. The packaging issue has been corrected: the source zip is now rebuilt as a valid single-root archive with explicit manifest + SHA verification.
 
 ### Validation
-- PASS `php tests\attendance_lifecycle_checks.php`: lifecycle, two immutable paid/unpaid breaks, elapsed state persistence, duplicate/invalid actions, staff-row locking, actual controller actor scoping, authorization/coordinate/type rejection, rollback, overnight/missing/malformed/overlapping breaks, correction-closed raw shifts, explicit manual overnight input and raw/paid-history preservation.
-- PASS `php tests\payroll_regression_checks.php`, including all previous numerical regressions and new mixed-break raw-punch endpoint/snapshot/attendance report parity: 47.5 payable = 44 regular + 3.5 OT; fixture gross 985.
-- PASS `php tests\field_staff_runtime_checks.php` (including additive migration checks).
-- PASS lint for all 13 non-backup PHP files and rendered portal JavaScript syntax check. Package validation is repeated before delivery.
-- PASS clean 41-file ZIP candidate: one `field_staff/` root, zero extra/missing/hash-mismatched files, all three suites pass from extraction. Final packaging is repeated after committing the source checkpoint.
-- Local recovery fix is in progress and not yet committed: the Working-state guard and stale-processing cleanup were added in the live UI and lifecycle regression, but there is no final deployed record yet.
+- PASS `git status --short --branch` for the repo root: clean working tree.
+- PASS `git rev-list --left-right --count HEAD...origin/checkpoint/live-nav-ui-review`: `0 0`.
+- PASS focused local runtime/regression evidence for the attendance lifecycle fix as recorded in the current source tree.
+- PASS release-package integrity for the rebuilt `field_staff.zip`: one top-level `field_staff/` folder, no Git metadata, no nested archives or backup junk, and SHA parity confirmed against the current source tree.
+- BLOCKED on exact hosted-file comparison pending direct cPanel sign-in in the browser.
 
-### Deployed and live verified
-- Verified new outside-public-root backup at `/home/erpxolluxn/field_staff_backup_pre_breaks_20261022/`; all 10 then-affected existing files matched direct content read-back.
-- Initial eight-file break deployment hash-verified; raw-punch migration run via module reactivation. Browser-native multipart upload worked where fetch uploads hit verification.
-- Dedicated non-admin staff 2 completed Working -> On break -> Working twice -> Clocked out. The timer survived reload. Unpaid 38 seconds and paid 32 seconds were saved with immutable types; history showed 0.489444 payable hours under the existing policy.
-- Duplicate UI clicks sent one request. Parallel Clock In and Break Out each returned exactly one success and one rejection. The extra short test shift (attendance 28) was clocked out.
-- Invalid Clock Out on break rejected; UI displayed the safe error and preserved confirmed status; all actions disabled while processing.
-- Team and payroll endpoints returned HTTP 403 to the test employee.
+### Live / deployed status
+- The demo admin portal is reachable, and the cPanel login window is open.
+- The remaining deployment verification cannot proceed without the authenticated cPanel session; page-load success alone is not proof of a correct hosted deploy.
+- The source package is now valid and ready for the final hosted comparison and upload flow once the cPanel session is available.
 
 ### Current blocker and remaining acceptance
-The authoritative local branch is current and the focused lifecycle test passes, but the hosted deployment/upload and exact server-side hash verification were not completed as of the final repo check. The cPanel session was authenticated and the target module path was visible, but the last step remained a direct hosted file backup/upload and exact hash comparison, not a local package rebuild or a page-load claim.
+The repo and source tree are valid, and the package is fixed. The remaining work is live verification only:
 
-Pending deployment: the current validated local fix in `views/attendance_dashboard.php` and the matching regression update in `tests/attendance_lifecycle_checks.php`, plus any final doc sync after the hosted files are confirmed. The current state is local source validated; live status remains pending exact host verification.
+- exact hosted SHA of `views/attendance_dashboard.php`
+- fresh dedicated-employee live attendance/break test against the deployed version
+- hosted backup and replacement of affected file(s) only
+- payroll, permission, approval/correction, and export acceptance checks with explicit statutory verification
+
+We are paused only on the required authenticated cPanel session; the local source is already validated and package-ready.
 
 | Acceptance | Local | Live |
 |---|---|---|

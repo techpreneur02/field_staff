@@ -1,15 +1,15 @@
 ﻿# Field Staff Module Handoff
 
 ## Current phase - 2026-10-23 UTC
-The local source remains on `checkpoint/live-nav-ui-review` at `f63872f`, with the current working tree still holding the uncommitted UI/lifecycle fixes in `views/attendance_dashboard.php` and `tests/attendance_lifecycle_checks.php`. The focused attendance lifecycle regression passes locally, but the deployed demo has not been re-verified with the exact hosted file upload and hash match from the authenticated cPanel session. The current evidence supports a valid local fix and a valid local regression, not a final live deployment or full module completion. Statutory verification, admin approval/payment, and print/PDF/CSV checks remain pending or unverified.
+The verified repository state is on `checkpoint/live-nav-ui-review` at `fe85e11`. A fresh Git check shows a clean working tree and `origin/checkpoint/live-nav-ui-review` is fully synced to the same commit (`git rev-list --left-right --count HEAD...origin/checkpoint/live-nav-ui-review` returned `0 0`). The local source is valid and committed.
 
 - Source root: `D:\October projects\field_staff\field_staff`
 - Branch: `checkpoint/live-nav-ui-review`
-- HEAD: `f63872f`
-- Remote sync: `origin/checkpoint/live-nav-ui-review` matches local HEAD (`git rev-list --left-right --count HEAD...origin/checkpoint/live-nav-ui-review` returned `0 0`).
-- Working tree: modified local files are still pending a final commit; `git status --short --branch` shows 4 modified docs/files.
-- ZIP status: the repo has older `field_staff*.zip` artifacts under the project root, but no new package rebuild was created after the current local working-tree edits. The current `field_staff.zip` is not evidence of current source parity.
-- Demo/deployment status: the cPanel dashboard and File Manager were opened and the target folder was visible, but the hosted backup/upload and exact server-side hash verification had not been completed at the final repository check.
+- HEAD: `fe85e11`
+- Remote sync: `origin/checkpoint/live-nav-ui-review` matches local HEAD.
+- Working tree: clean; no uncommitted source changes remain at the repository root after the fix commit.
+- ZIP status: the package was rebuilt to a valid single-root archive with one top-level `field_staff/` folder and explicit manifest + SHA verification. The current `field_staff.zip` is now aligned with the source tree and suitable for release packaging checks.
+- Demo/deployment status: hosted page-load observations were made, but exact server-side SHA comparison for the deployed attendance view and the final live acceptance checks remain blocked pending direct cPanel sign-in in the browser session.
 
 ## Break lifecycle milestone - 2026-10-22 UTC (current)
 ### Implemented and locally tested
