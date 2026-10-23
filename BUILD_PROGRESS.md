@@ -8,9 +8,9 @@
 - PASS `git status --short --branch` for the repo root: clean working tree.
 - PASS `git rev-list --left-right --count HEAD...origin/checkpoint/live-nav-ui-review`: `0 0`.
 - PASS focused local runtime/regression evidence for the attendance lifecycle fix as recorded in the current source tree.
-- PASS release-package integrity for the rebuilt `field_staff.zip` at `D:\October projects\field_staff\field_staff.zip`: one top-level `field_staff/` folder, no nested archives or backup junk, and SHA verification against the extracted source tree.
+- PASS release-package integrity for the rebuilt `field_staff.zip` at `D:\October projects\field_staff\field_staff.zip`: one top-level `field_staff/` folder, explicit delivery allowlist, no nested archives or backup junk, and SHA verification against the extracted source tree.
 - PASS exact hosted SHA match for `/home/erpxolluxn/demo.erpxolluxn.com/modules/field_staff/views/attendance_dashboard.php` against the local source; no backup/upload diff was required for that file.
-- PASS archive inspection: the current ZIP contains 48 extracted entries under a single top-level `field_staff/` directory and a valid `DELIVERY_MANIFEST.txt`.
+- PASS archive inspection: the current ZIP is `34817B46AC8C1367BD40DF2B5C5D5318290FE7B4FD570FDDA0D696A50897EDAB`, with 41 packaged files plus the explicit `DELIVERY_MANIFEST.txt`; 0 missing, 0 hash mismatches, and 1 expected extra manifest file by design.
 
 ### Live / deployed status
 - The demo admin portal is reachable and authenticated.
