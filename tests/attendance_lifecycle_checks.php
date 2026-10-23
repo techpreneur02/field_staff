@@ -61,6 +61,7 @@ attendance_rejected(function () use ($action) { $action('break_in'); });
 attendance_check($action('clock_in'), 'Clock In failed.');
 attendance_check(abs(strtotime($model->db->tables['fs_attendance'][0]['clock_in']) - time()) <= 1, 'Clock In was rounded instead of preserving its raw timestamp.');
 attendance_check($state()['status'] === 'working', 'Clock In must enter Working.');
+attendance_check($state()['allowed_actions'] === ['break_out', 'clock_out'], 'Working state must not expose Break In before a break starts.');
 attendance_check(count($model->db->lockedStaff) === 2, 'Every transition must lock the stable staff row.');
 $rawIn = $model->db->tables['fs_attendance'][0]['clock_in'];
 attendance_rejected(function () use ($action) { $action('clock_in'); });
@@ -108,6 +109,23 @@ $rounded = ['id' => 100, 'staff_id' => 21, 'raw_punches' => 1, 'date' => '2026-1
     'clock_in' => '2026-10-12 22:01:00', 'clock_out' => '2026-10-12 23:59:00', 'break_rows' => []];
 attendance_check($model->summarize_attendance_record($rounded)['payable_seconds'] === 7200.0, 'Configured payroll rounding not applied to raw punches.');
 attendance_check($rounded['clock_out'] === '2026-10-12 23:59:00', 'Summary mutated a raw punch.');
+
+$live_shift = ['id' => 200, 'staff_id' => 21, 'date' => '2026-10-22',
+    'clock_in' => '2026-10-22 00:00:00', 'clock_out' => '2026-10-22 22:04:14',
+    'break_rows' => [
+        ['id' => 301, 'staff_id' => 21, 'attendance_id' => 200, 'break_out_at' => '2026-10-22 00:12:24', 'break_in_at' => '2026-10-22 20:52:44', 'ended_at' => '2026-10-22 20:52:44', 'break_type' => 'paid'],
+        ['id' => 302, 'staff_id' => 21, 'attendance_id' => 200, 'break_out_at' => '2026-10-22 21:16:01', 'break_in_at' => '2026-10-22 21:32:38', 'ended_at' => '2026-10-22 21:32:38', 'break_type' => 'paid'],
+        ['id' => 303, 'staff_id' => 21, 'attendance_id' => 200, 'break_out_at' => '2026-10-22 21:33:13', 'break_in_at' => '2026-10-22 22:03:41', 'ended_at' => '2026-10-22 22:03:41', 'break_type' => 'paid'],
+        ['id' => 304, 'staff_id' => 21, 'attendance_id' => 200, 'break_out_at' => '2026-10-22 22:04:06', 'break_in_at' => '2026-10-22 22:04:11', 'ended_at' => '2026-10-22 22:04:11', 'break_type' => 'unpaid'],
+    ],
+];
+$live_summary = $model->summarize_attendance_record($live_shift);
+attendance_check($live_summary['shift_seconds'] === 79454.0, 'Fresh shift elapsed time must be 79,454 seconds.');
+attendance_check($live_summary['paid_break_seconds'] === 77245.0, 'Paid breaks must total 77,245 seconds.');
+attendance_check($live_summary['unpaid_break_seconds'] === 5.0, 'Unpaid breaks must total 5 seconds.');
+attendance_check($live_summary['payable_seconds'] === 79449.0, 'Payable must equal shift minus unpaid breaks only.');
+attendance_check(abs($live_summary['payable_seconds'] - ($live_summary['shift_seconds'] - $live_summary['unpaid_break_seconds'])) < 0.00001, 'Payable calculation must exclude paid breaks without double-counting overlap.');
+attendance_check(!$live_summary['has_unresolved_breaks'] && empty($live_summary['invalid_breaks']), 'Valid paid/unpaid break sequence must not be marked unresolved.');
 
 foreach (['missing', 'malformed', 'ended-only', 'overlap'] as $defect) {
     $row = $overnight;

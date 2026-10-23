@@ -1,12 +1,15 @@
 ﻿# Field Staff Module Handoff
 
-## Current phase - 2026-10-22 UTC
-Payroll remediation and the complete break lifecycle are implemented and locally tested. The initial break build was deployed, hash-verified, and tested live as dedicated non-admin staff 2. Follow-up correction/reporting hardening is locally tested but NOT yet deployed: cPanel returned a looping verification page and then `chrome-error://chromewebdata/`; the accessible Perfex tab remains unauthenticated despite admin-sign-in confirmations. Full module acceptance is **not** claimed. Statutory verification remains pending.
+## Current phase - 2026-10-23 UTC
+The local source remains on `checkpoint/live-nav-ui-review` at `f63872f`, with the current working tree still holding the uncommitted UI/lifecycle fixes in `views/attendance_dashboard.php` and `tests/attendance_lifecycle_checks.php`. The focused attendance lifecycle regression passes locally, but the deployed demo has not been re-verified with the exact hosted file upload and hash match from the authenticated cPanel session. The current evidence supports a valid local fix and a valid local regression, not a final live deployment or full module completion. Statutory verification, admin approval/payment, and print/PDF/CSV checks remain pending or unverified.
 
 - Source root: `D:\October projects\field_staff\field_staff`
 - Branch: `checkpoint/live-nav-ui-review`
-- Authorized remote: `https://github.com/techpreneur02/field_staff.git`
-- Use `git log -1` and `git status` for the current revision. Local/Git/ZIP and demo are NOT at final source parity; see the exact deployment delta below.
+- HEAD: `f63872f`
+- Remote sync: `origin/checkpoint/live-nav-ui-review` matches local HEAD (`git rev-list --left-right --count HEAD...origin/checkpoint/live-nav-ui-review` returned `0 0`).
+- Working tree: modified local files are still pending a final commit; `git status --short --branch` shows 4 modified docs/files.
+- ZIP status: the repo has older `field_staff*.zip` artifacts under the project root, but no new package rebuild was created after the current local working-tree edits. The current `field_staff.zip` is not evidence of current source parity.
+- Demo/deployment status: the cPanel dashboard and File Manager were opened and the target folder was visible, but the hosted backup/upload and exact server-side hash verification had not been completed at the final repository check.
 
 ## Break lifecycle milestone - 2026-10-22 UTC (current)
 ### Implemented and locally tested

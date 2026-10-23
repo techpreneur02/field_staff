@@ -12,6 +12,7 @@ Additive migration `2026_10_22_attendance_raw_punches` defaults existing records
 - PASS `php tests\field_staff_runtime_checks.php` (including additive migration checks).
 - PASS lint for all 13 non-backup PHP files and rendered portal JavaScript syntax check. Package validation is repeated before delivery.
 - PASS clean 41-file ZIP candidate: one `field_staff/` root, zero extra/missing/hash-mismatched files, all three suites pass from extraction. Final packaging is repeated after committing the source checkpoint.
+- Local recovery fix is in progress and not yet committed: the Working-state guard and stale-processing cleanup were added in the live UI and lifecycle regression, but there is no final deployed record yet.
 
 ### Deployed and live verified
 - Verified new outside-public-root backup at `/home/erpxolluxn/field_staff_backup_pre_breaks_20261022/`; all 10 then-affected existing files matched direct content read-back.
@@ -22,9 +23,9 @@ Additive migration `2026_10_22_attendance_raw_punches` defaults existing records
 - Team and payroll endpoints returned HTTP 403 to the test employee.
 
 ### Current blocker and remaining acceptance
-Final source is NOT fully deployed. The shared Perfex tab remained unauthenticated after admin-sign-in confirmations; cPanel verification looped and ended on a browser error page. No authentication or host-security bypass was attempted.
+The authoritative local branch is current and the focused lifecycle test passes, but the hosted deployment/upload and exact server-side hash verification were not completed as of the final repo check. The cPanel session was authenticated and the target module path was visible, but the last step remained a direct hosted file backup/upload and exact hash comparison, not a local package rebuild or a page-load claim.
 
-Pending deployment: controller/model, portal and HR management views, all four tests and the three current progress documents. Initial activation/install and HR settings files are already deployed. See HANDOFF.md for the exact 11-file list and test-record evidence.
+Pending deployment: the current validated local fix in `views/attendance_dashboard.php` and the matching regression update in `tests/attendance_lifecycle_checks.php`, plus any final doc sync after the hosted files are confirmed. The current state is local source validated; live status remains pending exact host verification.
 
 | Acceptance | Local | Live |
 |---|---|---|

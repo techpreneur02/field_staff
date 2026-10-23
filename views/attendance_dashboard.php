@@ -901,10 +901,13 @@ $team_monitor_url = field_staff_admin_url('field_staff/get_team_monitor');
                         }).fail(function() {
                             setAttendanceStateMessage('Attendance saved. History could not be refreshed; reload to view it.', true);
                         });
-                    } else {
+                        return;
+                    }
+
+                    refreshAttendanceState().always(function() {
                         applyAttendanceActionState(confirmedAttendanceState);
                         $('#reconcile-attendance-btn').removeClass('hidden');
-                    }
+                    });
                 };
 
                 var breakType = $('#break-type-select').val() || 'paid';
