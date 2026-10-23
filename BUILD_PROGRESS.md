@@ -2,29 +2,29 @@
 
 ## Latest milestone - 2026-10-23 UTC
 
-**Verified locally:** the repository is clean, on `checkpoint/live-nav-ui-review`, and synced with `origin/checkpoint/live-nav-ui-review` at `fe85e11`. The attendance lifecycle fix and matching regression were committed and pushed. The packaging issue has been corrected: the source zip is now rebuilt as a valid single-root archive with explicit manifest + SHA verification.
+**Verified locally:** the repository is clean, on `checkpoint/live-nav-ui-review`, and synced with `origin/checkpoint/live-nav-ui-review` at `6e71759`. The attendance lifecycle fix and matching regression are committed in the current branch. The packaging issue has been corrected: the source zip is rebuilt as a valid single-root archive with explicit delivery manifest and SHA verification.
 
 ### Validation
 - PASS `git status --short --branch` for the repo root: clean working tree.
 - PASS `git rev-list --left-right --count HEAD...origin/checkpoint/live-nav-ui-review`: `0 0`.
 - PASS focused local runtime/regression evidence for the attendance lifecycle fix as recorded in the current source tree.
-- PASS release-package integrity for the rebuilt `field_staff.zip`: one top-level `field_staff/` folder, no Git metadata, no nested archives or backup junk, and SHA parity confirmed against the current source tree.
-- BLOCKED on exact hosted-file comparison pending direct cPanel sign-in in the browser.
+- PASS release-package integrity for the rebuilt `field_staff.zip` at `D:\October projects\field_staff\field_staff.zip`: one top-level `field_staff/` folder, no nested archives or backup junk, and SHA verification against the extracted source tree.
+- PASS exact hosted SHA match for `/home/erpxolluxn/demo.erpxolluxn.com/modules/field_staff/views/attendance_dashboard.php` against the local source; no backup/upload diff was required for that file.
+- PASS archive inspection: the current ZIP contains 48 extracted entries under a single top-level `field_staff/` directory and a valid `DELIVERY_MANIFEST.txt`.
 
 ### Live / deployed status
-- The demo admin portal is reachable, and the cPanel login window is open.
-- The remaining deployment verification cannot proceed without the authenticated cPanel session; page-load success alone is not proof of a correct hosted deploy.
-- The source package is now valid and ready for the final hosted comparison and upload flow once the cPanel session is available.
+- The demo admin portal is reachable and authenticated.
+- The exact hosted attendance file matches the current local source SHA (`FF08C867972CF3F571F91C90F3EF31C983AA385ABDD979854780A265BE6A31F7`), so no replacement was required.
+- The remaining live acceptance is the dedicated-employee clock/break test on the deployed account, which is still blocked on secure sign-in to the dedicated test employee or another explicitly authorized employee session.
 
 ### Current blocker and remaining acceptance
-The repo and source tree are valid, and the package is fixed. The remaining work is live verification only:
+The repo and source tree are valid, the ZIP package is fixed, and the hosted attendance file is verified as matching local source. The remaining work is live behavioral validation only:
 
-- exact hosted SHA of `views/attendance_dashboard.php`
-- fresh dedicated-employee live attendance/break test against the deployed version
-- hosted backup and replacement of affected file(s) only
+- secure sign-in to the dedicated employee account (`fs.payroll.livetest@example.invalid`) for the fresh clock/break flow
+- dedicated-employee live attendance/break test against the deployed version
 - payroll, permission, approval/correction, and export acceptance checks with explicit statutory verification
 
-We are paused only on the required authenticated cPanel session; the local source is already validated and package-ready.
+The source is already validated and package-ready; the only remaining live blocker is the dedicated employee sign-in required for the server-side attendance test.
 
 | Acceptance | Local | Live |
 |---|---|---|

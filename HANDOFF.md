@@ -1,15 +1,16 @@
 ﻿# Field Staff Module Handoff
 
 ## Current phase - 2026-10-23 UTC
-The verified repository state is on `checkpoint/live-nav-ui-review` at `fe85e11`. A fresh Git check shows a clean working tree and `origin/checkpoint/live-nav-ui-review` is fully synced to the same commit (`git rev-list --left-right --count HEAD...origin/checkpoint/live-nav-ui-review` returned `0 0`). The local source is valid and committed.
+The verified repository state is on `checkpoint/live-nav-ui-review` at `6e71759`. A fresh Git check shows a clean working tree and `origin/checkpoint/live-nav-ui-review` is fully synced to the same commit (`git rev-list --left-right --count HEAD...origin/checkpoint/live-nav-ui-review` returned `0 0`). The local source is valid and committed.
 
 - Source root: `D:\October projects\field_staff\field_staff`
 - Branch: `checkpoint/live-nav-ui-review`
-- HEAD: `fe85e11`
+- HEAD: `6e71759`
 - Remote sync: `origin/checkpoint/live-nav-ui-review` matches local HEAD.
-- Working tree: clean; no uncommitted source changes remain at the repository root after the fix commit.
-- ZIP status: the package was rebuilt to a valid single-root archive with one top-level `field_staff/` folder and explicit manifest + SHA verification. The current `field_staff.zip` is now aligned with the source tree and suitable for release packaging checks.
-- Demo/deployment status: hosted page-load observations were made, but exact server-side SHA comparison for the deployed attendance view and the final live acceptance checks remain blocked pending direct cPanel sign-in in the browser session.
+- Working tree: clean; no uncommitted source changes remain at the repository root after the status-refresh commit.
+- ZIP status: the package was rebuilt to a valid single-root archive with one top-level `field_staff/` folder and explicit manifest + SHA verification. The current `field_staff.zip` remains aligned with the source tree and suitable for release packaging checks.
+- Demo/deployment status: exact hosted SHA comparison on `/home/erpxolluxn/demo.erpxolluxn.com/modules/field_staff/views/attendance_dashboard.php` is now verified against the local source. The file content and SHA256 match exactly (`FF08C867972CF3F571F91C90F3EF31C983AA385ABDD979854780A265BE6A31F7`), so there is no pending backup/upload diff for that file.
+- Dedicated live test: the hosted clock/break acceptance is still pending a secure sign-in to the dedicated employee account (`fs.payroll.livetest@example.invalid`) or another explicit authorized employee login. The current admin session is working, but the live employee-side break test has not been completed using that account.
 
 ## Break lifecycle milestone - 2026-10-22 UTC (current)
 ### Implemented and locally tested
