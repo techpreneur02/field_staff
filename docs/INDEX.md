@@ -7,6 +7,7 @@ Current release: 1.1.0
 ## Core Documents
 
 - Setup and Operations: ./SETUP_AND_OPERATIONS.md
+- User Guide: ./USER_GUIDE.md
 - Permissions Matrix: ./PERMISSIONS_MATRIX.md
 - Payslips Management: ./PAYSLIPS_MANAGEMENT.md
 - API Endpoints: ./API_ENDPOINTS.md

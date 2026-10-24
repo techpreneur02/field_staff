@@ -822,14 +822,6 @@ function field_staff_init_menu_items()
             ]);
         }
 
-        if (field_staff_can_manage_hr_workspace()) {
-            $CI->app_menu->add_sidebar_children_item(FS_MODULE_NAME, [
-                'slug' => 'field_staff_hr_management',
-                'name' => 'HR Management Workspace',
-                'href' => field_staff_admin_url('field_staff/hr_management'),
-            ]);
-        }
-
         return;
     }
 
@@ -858,13 +850,6 @@ function field_staff_init_menu_items()
                 add_submenu_item(FS_MODULE_NAME, [
                     'name' => 'HR Settings',
                     'href' => field_staff_admin_url('field_staff/hr_settings'),
-                ]);
-            }
-
-            if (field_staff_can_manage_hr_workspace()) {
-                add_submenu_item(FS_MODULE_NAME, [
-                    'name' => 'HR Management Workspace',
-                    'href' => field_staff_admin_url('field_staff/hr_management'),
                 ]);
             }
         }

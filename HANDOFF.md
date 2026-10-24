@@ -1,16 +1,17 @@
 ﻿# Field Staff Module Handoff
 
 ## Current phase - 2026-10-23 UTC
-The verified repository state is on `checkpoint/live-nav-ui-review` at `6e71759`. A fresh Git check shows a clean working tree and `origin/checkpoint/live-nav-ui-review` is fully synced to the same commit (`git rev-list --left-right --count HEAD...origin/checkpoint/live-nav-ui-review` returned `0 0`). The local source is valid and committed.
+The verified repository state is on `checkpoint/live-nav-ui-review` and is ready for release packaging. This update preserves the current implementation state, adds the user guide to the module, and prepares the package for GitHub publication without claiming final live demo acceptance.
 
 - Source root: `D:\October projects\field_staff\field_staff`
 - Branch: `checkpoint/live-nav-ui-review`
-- HEAD: `6e71759`
-- Remote sync: `origin/checkpoint/live-nav-ui-review` matches local HEAD.
-- Working tree: clean; no uncommitted source changes remain at the repository root after the status-refresh commit.
-- ZIP status: the package was rebuilt to a valid single-root archive with one top-level `field_staff/` folder and explicit manifest + SHA verification. The current `field_staff.zip` remains aligned with the source tree and suitable for release packaging checks.
-- Demo/deployment status: exact hosted SHA comparison on `/home/erpxolluxn/demo.erpxolluxn.com/modules/field_staff/views/attendance_dashboard.php` is now verified against the local source. The file content and SHA256 match exactly (`FF08C867972CF3F571F91C90F3EF31C983AA385ABDD979854780A265BE6A31F7`), so there is no pending backup/upload diff for that file.
-- Dedicated live test: the hosted clock/break acceptance is still pending a secure sign-in to the dedicated employee account (`fs.payroll.livetest@example.invalid`) or another explicit authorized employee login. The current admin session is working, but the live employee-side break test has not been completed using that account.
+- Working tree: not yet committed at the start of this packaging task; all current source changes remain in the repo and will be committed as one package update.
+- Documentation: the end-user guide is now included in the module under `docs/USER_GUIDE.md` and linked from `docs/INDEX.md`.
+- ZIP status: the package was rebuilt to a valid single-root archive with one top-level `field_staff/` folder and explicit manifest + SHA verification. The current `field_staff.zip` is aligned with the source tree and suitable for release packaging checks.
+- Demo/deployment status: exact hosted SHA comparison on `/home/erpxolluxn/demo.erpxolluxn.com/modules/field_staff/views/attendance_dashboard.php` is verified against the local source (`FF08C867972CF3F571F91C90F3EF31C983AA385ABDD979854780A265BE6A31F7`). This confirms the hosted file currently matches the authoritative local source for that file.
+- Access gate: the remote host cannot be trusted until its SSH host key is restored. `ssh` currently fails with `REMOTE HOST IDENTIFICATION HAS CHANGED!` for `162.35.104.112`, which blocks secure deployment access and any restricted-user setup.
+- Preferred access model: a dedicated SFTP/SSH account with chroot to `/home/erpxolluxn/demo.erpxolluxn.com/modules/field_staff` only. SSH-key-only access is not a directory restriction. FTPS with TLS verification is the fallback only if the host cannot support chrooted SFTP.
+- Live acceptance: still unverified beyond the exact file SHA match; final live functional approval remains a separate task once access and employee-session validation are authorized.
 
 ## Break lifecycle milestone - 2026-10-22 UTC (current)
 ### Implemented and locally tested

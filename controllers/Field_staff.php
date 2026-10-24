@@ -4,6 +4,8 @@ defined('BASEPATH') or exit('No direct script access allowed');
 
 class Field_staff extends AdminController
 {
+    public $pdf_generator = null;
+
     public function __construct()
     {
         parent::__construct();
@@ -1118,7 +1120,57 @@ class Field_staff extends AdminController
     }
 
     /**
-     * Download a best-effort PDF for the selected payroll register from the saved cutoff register rows.
+     * Generate a genuine PDF for the selected payroll register using supported Perfex runtime facilities.
+     */
+    private function render_payroll_register_pdf_bytes($html, $filename)
+    {
+        if (is_callable($this->pdf_generator)) {
+            $pdf_bytes = call_user_func($this->pdf_generator, $html, $filename);
+            if (!is_string($pdf_bytes) || $pdf_bytes === '') {
+                throw new RuntimeException('PDF generator returned an empty payload.');
+            }
+            if (strpos($pdf_bytes, '%PDF-') !== 0) {
+                throw new RuntimeException('PDF generator did not return a valid PDF payload.');
+            }
+            return $pdf_bytes;
+        }
+
+        if (class_exists('TCPDF')) {
+            $pdf = new \TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
+            $pdf->SetCreator('Field Staff');
+            $pdf->SetAuthor('Field Staff');
+            $pdf->SetTitle($filename);
+            $pdf->SetAutoPageBreak(true, 15);
+            $pdf->AddPage();
+            $pdf->writeHTML($html, true, false, true, false, '');
+
+            $pdf_bytes = $pdf->Output('', 'S');
+            if (!is_string($pdf_bytes) || $pdf_bytes === '' || strpos($pdf_bytes, '%PDF-') !== 0) {
+                throw new RuntimeException('TCPDF did not return a valid PDF payload.');
+            }
+
+            return $pdf_bytes;
+        }
+
+        if (class_exists('Dompdf\\Dompdf')) {
+            $dompdf = new \Dompdf\Dompdf();
+            $dompdf->loadHtml($html);
+            $dompdf->setPaper('A4', 'portrait');
+            $dompdf->render();
+
+            $pdf_bytes = $dompdf->output();
+            if (!is_string($pdf_bytes) || $pdf_bytes === '' || strpos($pdf_bytes, '%PDF-') !== 0) {
+                throw new RuntimeException('Dompdf did not return a valid PDF payload.');
+            }
+
+            return $pdf_bytes;
+        }
+
+        throw new RuntimeException('No supported PDF generator is available in this Perfex runtime (TCPDF / Dompdf missing).');
+    }
+
+    /**
+     * Download the selected payroll register as a genuine PDF using supported Perfex facilities.
      */
     public function download_payroll_register_pdf()
     {
@@ -1135,21 +1187,19 @@ class Field_staff extends AdminController
         $html = $this->render_payroll_register_html($cutoff, $rows, $totals);
         $filename = 'payroll_register_' . ($cutoff_id > 0 ? (int) $cutoff_id : 'all') . '_' . date('Ymd_His');
 
-        if (class_exists('Dompdf\Dompdf')) {
-            $dompdf = new \Dompdf\Dompdf();
-            $dompdf->loadHtml($html);
-            $dompdf->setPaper('A4', 'portrait');
-            $dompdf->render();
+        try {
+            $pdf_bytes = $this->render_payroll_register_pdf_bytes($html, $filename);
             header('Content-Type: application/pdf');
             header('Content-Disposition: attachment; filename="' . $filename . '.pdf"');
-            echo $dompdf->output();
+            echo $pdf_bytes;
+            exit;
+        } catch (RuntimeException $e) {
+            http_response_code(500);
+            header('Content-Type: text/plain; charset=utf-8');
+            header('Content-Disposition: attachment; filename="' . $filename . '.txt"');
+            echo 'PDF generation unavailable: ' . $e->getMessage();
             exit;
         }
-
-        header('Content-Type: text/html; charset=utf-8');
-        header('Content-Disposition: attachment; filename="' . $filename . '.html"');
-        echo $html;
-        exit;
     }
 
     /**

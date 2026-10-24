@@ -18,20 +18,21 @@ It provides:
 
 ## Current status
 
-Build status (2026-10-22 UTC): payroll remediation implemented and tested locally; deployment and live acceptance remain blocked.
+Build status (2026-10-23 UTC): source validation is complete and the module is ready for final live acceptance, but secure host access and a dedicated employee session are still required before the live deployment can be signed off.
 
-- PHP lint passed across all module PHP files.
-- Runtime checks passed for cutoff isolation, snapshot totals, attendance transition safety, and effective-dated policy overrides.
-- Numerical and actual-controller regression checks pass for configured workweeks (44 regular + 6 overtime for five ten-hour shifts), paid/unpaid breaks, earlier-cutoff consumption, explicit non-hourly work inputs, corrections, preview/save/snapshot parity, workflow authorization and transaction rollback.
-- A clean review ZIP was generated locally with a single top-level `field_staff/` folder and verified against a manifest after excluding logs, backups, and temp artifacts.
-- The local module remains the authority for implemented source changes.
-- The remaining dependency is live verification in the authenticated Perfex demo for attendance/break flows, payroll approval, export parity, cutoff isolation, and unauthorized access rejection.
-- cPanel and the demo were authenticated, but the outside-public-root backup returned Permission denied/partial copy, and the controlled retry received a host request-verification page. No deployed files were overwritten. The pre-deployment team-monitor request still returned HTTP 500.
-- Consolidated package path: `D:\October projects\field_staff\field_staff.zip` (one top-level folder, extracted/hash-compared against the current source).
+- PHP lint passed across the module PHP files.
+- Runtime and regression checks pass for attendance lifecycle, cutoff isolation, correction gating, review/payment logic, non-admin restrictions, snapshot totals, and effective-dated policy overrides.
+- The source tree is clean, synced with the current branch, and the packaged release ZIP was rebuilt to a valid single-root structure with explicit manifest verification.
+- The local module remains the authority for the implemented source changes.
+- The exact hosted SHA for `/home/erpxolluxn/demo.erpxolluxn.com/modules/field_staff/views/attendance_dashboard.php` matches the local file SHA256 (`FF08C867972CF3F571F91C90F3EF31C983AA385ABDD979854780A265BE6A31F7`).
+- The remaining blocker is live deployment access: the SSH host key for 162.35.104.112 changed, so secure host access cannot proceed until the trusted fingerprint is restored and a restricted deploy account is configured.
+- The preferred solution is a dedicated SFTP/SSH account with chroot to `/home/erpxolluxn/demo.erpxolluxn.com/modules/field_staff` and no unrestricted main-account access. FTPS with TLS verification is the fallback only if the host cannot support chrooted SFTP.
+- The remaining live acceptance items are the dedicated employee clock/break test, final payroll admin comparison, correction handling, export checks, and statutory verification.
+- Consolidated package path: `D:\October projects\field_staff\field_staff.zip` (single-root release package with manifest and hash verification).
 
 Live verification target: https://demo.erpxolluxn.com/admin
 
-The working source is ready for final admin/browser confirmation in that environment. Until the hosted app confirms the exact payroll, break, and export behaviors under real data, the module stays in a validated-source / live-verification-pending state rather than a completed sign-off state.
+The working source is ready for final admin/browser confirmation once the secure deployment path and dedicated employee sign-in are established. Until then, the module remains in a validated-source / live-verification-pending state rather than a completed sign-off state.
 
 ## Documentation Map
 

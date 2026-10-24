@@ -6,6 +6,21 @@ The format follows Keep a Changelog principles and semantic versioning intent.
 
 ## [Unreleased]
 
+### Documentation and module package update - 2026-10-23 UTC
+- Added the end-user documentation to the complete module package: `docs/USER_GUIDE.md` plus the index link in `docs/INDEX.md`.
+- Kept the module package scoped to code, docs, tests, and assets without Git metadata, backup folders, log files, temp files, or nested archive bundles.
+- Rebuilt the final source package at `D:\October projects\field_staff\field_staff.zip` from the current working tree and verified the extracted contents against the manifest.
+- Recorded completed implementation work, validation status, and the remaining unverified live acceptance items without claiming full deployment sign-off.
+- No secret material, private keys, or credentials were added to the repository or documentation.
+
+### Deployment access and final live verification - 2026-10-23 UTC
+- Confirmed the local source remains clean, synced, and validated; the current repo branch is aligned with the latest checkpoint.
+- Verified the exact SHA256 for the hosted attendance dashboard file and matched it against the local source: `FF08C867972CF3F571F91C90F3EF31C983AA385ABDD979854780A265BE6A31F7`.
+- Documented the secure-access requirement for the host: an SSH key alone is not a directory restriction. A dedicated SFTP/SSH user with chroot to `/home/erpxolluxn/demo.erpxolluxn.com/modules/field_staff` is the preferred access model. FTPS with TLS verification is the fallback only if the host cannot support chrooted SFTP.
+- Confirmed the blocking condition: `ssh` to 162.35.104.112 fails because the remote host key changed (`REMOTE HOST IDENTIFICATION HAS CHANGED!`), so a trusted host fingerprint must be restored before restricted access can be created.
+- The deployment-access step remains the gate to the remaining live employee-side acceptance checks: dedicated employee sign-in, break/clock lifecycle validation, payroll/admin parity, exports, and statutory signoff.
+- The current source package remains valid while the final host-side deployment and live acceptance remain open items.
+
 ### Break lifecycle and live status - 2026-10-22 UTC
 - Enforced the complete Clock In / Break Out / Break In / Clock Out lifecycle using server-confirmed action allowlists and employee-row transaction locking.
 - Preserved multiple paid/unpaid breaks and their original types. Rejected duplicate/invalid actions, malformed/overlapping/future timestamps and missing-return closure attempts without inventing return times.

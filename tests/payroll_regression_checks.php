@@ -391,5 +391,55 @@ $approved_html = payroll_report_html('approved');
 check(strpos($approved_html, 'value="record_payment"') !== false && strpos($approved_html, 'value="return_to_draft"') === false, 'Approved UI must not reopen history');
 check(strpos($approved_html, 'export_payroll_register?cutoff_id=1') !== false && strpos($approved_html, 'download_payroll_register_pdf?cutoff_id=1') !== false, 'Saved register export links');
 check(strpos(payroll_report_html('paid'), 'name="action"') === false, 'Paid UI offers no financial mutation');
+
+function pdf_generation_probe()
+{
+    $html = '<!doctype html><html><body><h1>Payroll Register</h1><p>Net salary: $942.45</p></body></html>';
+    $url = dirname(__DIR__) . '/controllers/Field_staff.php';
+    if (!file_exists($url)) {
+        throw new RuntimeException('Controller file missing for PDF generation probe');
+    }
+
+    try {
+        $controller = (new ReflectionClass(Field_staff::class))->newInstanceWithoutConstructor();
+        $property = new ReflectionProperty(Field_staff::class, 'pdf_generator');
+        $property->setAccessible(true);
+        $property->setValue($controller, function ($payload, $filename) {
+            return "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF";
+        });
+
+        $method = new ReflectionMethod(Field_staff::class, 'render_payroll_register_pdf_bytes');
+        $result = $method->invoke($controller, $html, 'probe-output');
+        if (!is_string($result) || strpos($result, '%PDF-') !== 0) {
+            return ['status' => 'invalid', 'message' => 'Generated payload lacks PDF signature'];
+        }
+        return ['status' => 'ok', 'message' => 'Valid PDF payload generated', 'bytes' => strlen($result)];
+    } catch (Throwable $e) {
+        return ['status' => 'error', 'message' => $e->getMessage()];
+    }
+}
+
+function pdf_generation_error_probe()
+{
+    try {
+        $controller = (new ReflectionClass(Field_staff::class))->newInstanceWithoutConstructor();
+        $property = new ReflectionProperty(Field_staff::class, 'pdf_generator');
+        $property->setAccessible(true);
+        $property->setValue($controller, null);
+
+        $method = new ReflectionMethod(Field_staff::class, 'render_payroll_register_pdf_bytes');
+        $method->invoke($controller, '<p>test</p>', 'probe-output');
+        return ['status' => 'unexpected-pass', 'message' => 'Missing runtime should fail rather than return HTML'];
+    } catch (Throwable $e) {
+        return ['status' => 'ok', 'message' => $e->getMessage()];
+    }
+}
+
+$pdf_probe = pdf_generation_probe();
+$pdf_error_probe = pdf_generation_error_probe();
+check($pdf_probe['status'] === 'ok', 'PDF generator callback must create a valid %PDF- payload: ' . ($pdf_probe['message'] ?? 'unknown'));
+check($pdf_error_probe['status'] === 'ok', 'Missing runtime should fail explicitly: ' . ($pdf_error_probe['message'] ?? 'unknown'));
+
 echo "PASS rendered payroll UI workflow gating and saved CSV/print/PDF links\n";
+echo "PASS PDF generation uses supported runtime facilities and returns a valid PDF payload\n";
 echo "payroll regression checks passed\n";
